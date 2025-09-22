@@ -1,4 +1,4 @@
-# Go IMAP Client
+# Go IMAP Server
 
 This service provides an IMAP client implementation in Go, allowing you to interact with email servers using the IMAP protocol. It supports various operations such as connecting to an IMAP server, authenticating, fetching emails, and managing mailboxes.
 
