@@ -1,5 +1,5 @@
 module go-imap
 
-go 1.25.1
+go 1.25
 
 require github.com/mattn/go-sqlite3 v1.14.32 // indirect
