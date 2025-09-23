@@ -10,7 +10,7 @@ RUN apk add --no-cache git build-base sqlite-dev
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source code
+# Copy the full source code
 COPY . .
 
 # Enable CGO for go-sqlite3
@@ -18,8 +18,8 @@ ENV CGO_ENABLED=1
 ENV GOOS=linux
 ENV GOARCH=amd64
 
-# Build the application
-RUN go build -a -installsuffix cgo -o imap-server main.go
+# Build the application from the cmd/server entry point
+RUN go build -a -o imap-server ./cmd/server
 
 # Stage 2: runtime
 FROM alpine:3.18

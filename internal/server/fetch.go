@@ -1,0 +1,172 @@
+package server
+
+import (
+	"database/sql"
+	"fmt"
+	"net"
+	"strconv"
+	"strings"
+
+	"go-imap/internal/models"
+)
+
+func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	if len(parts) < 3 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD SELECT requires folder name", tag))
+		return
+	}
+
+	folder := strings.Trim(parts[2], "\"")
+	state.SelectedFolder = folder
+
+	var count int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM mails WHERE folder = ?", folder).Scan(&count)
+	if err != nil {
+		count = 0
+	}
+
+	var recent int
+	err = s.db.QueryRow("SELECT COUNT(*) FROM mails WHERE folder = ? AND flags NOT LIKE '%\\Seen%'", folder).Scan(&recent)
+	if err != nil {
+		recent = 0
+	}
+
+	s.sendResponse(conn, fmt.Sprintf("* %d EXISTS", count))
+	s.sendResponse(conn, fmt.Sprintf("* %d RECENT", recent))
+	s.sendResponse(conn, "* OK [UIDVALIDITY 1] UID validity status")
+	s.sendResponse(conn, fmt.Sprintf("* OK [UIDNEXT %d] Predicted next UID", count+1))
+	s.sendResponse(conn, "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
+	s.sendResponse(conn, "* OK [PERMANENTFLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft \\*)] Flags permitted")
+
+	cmd := strings.ToUpper(parts[1])
+	if cmd == "SELECT" {
+		s.sendResponse(conn, fmt.Sprintf("%s OK [READ-WRITE] SELECT completed", tag))
+	} else {
+		s.sendResponse(conn, fmt.Sprintf("%s OK [READ-ONLY] EXAMINE completed", tag))
+	}
+}
+
+func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	if state.SelectedFolder == "" {
+		s.sendResponse(conn, fmt.Sprintf("%s NO No folder selected", tag))
+		return
+	}
+
+	if len(parts) < 4 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD FETCH requires sequence and items", tag))
+		return
+	}
+
+	sequence := parts[2]
+	items := strings.Join(parts[3:], " ")
+	items = strings.Trim(items, "()")
+
+	var rows *sql.Rows
+	var err error
+
+	if sequence == "1:*" {
+		rows, err = s.db.Query("SELECT id, raw_message, flags FROM mails WHERE folder = ? ORDER BY id ASC", state.SelectedFolder)
+	} else {
+		msgNum, parseErr := strconv.Atoi(sequence)
+		if parseErr != nil {
+			s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence number", tag))
+			return
+		}
+		rows, err = s.db.Query("SELECT id, raw_message, flags FROM mails WHERE folder = ? ORDER BY id ASC LIMIT 1 OFFSET ?", state.SelectedFolder, msgNum-1)
+	}
+
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+	defer rows.Close()
+
+	seqNum := 1
+	for rows.Next() {
+		var id int
+		var rawMsg, flags string
+		rows.Scan(&id, &rawMsg, &flags)
+
+		if !strings.Contains(rawMsg, "\r\n") {
+			rawMsg = strings.ReplaceAll(rawMsg, "\n", "\r\n")
+		}
+
+		itemsUpper := strings.ToUpper(items)
+		if strings.Contains(itemsUpper, "BODY[]") || strings.Contains(itemsUpper, "RFC822") {
+			s.sendResponse(conn, fmt.Sprintf("* %d FETCH (BODY[] {%d}", seqNum, len(rawMsg)))
+			conn.Write([]byte(rawMsg + "\r\n"))
+			s.sendResponse(conn, ")")
+		} else if strings.Contains(itemsUpper, "FLAGS") {
+			if flags == "" {
+				flags = "()"
+			} else {
+				flags = fmt.Sprintf("(%s)", flags)
+			}
+			s.sendResponse(conn, fmt.Sprintf("* %d FETCH (FLAGS %s)", seqNum, flags))
+		} else {
+			s.sendResponse(conn, fmt.Sprintf("* %d FETCH (FLAGS ())", seqNum))
+		}
+		seqNum++
+	}
+
+	s.sendResponse(conn, fmt.Sprintf("%s OK FETCH completed", tag))
+}
+
+func (s *IMAPServer) handleSearch(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	if state.SelectedFolder == "" {
+		s.sendResponse(conn, fmt.Sprintf("%s NO No folder selected", tag))
+		return
+	}
+
+	rows, err := s.db.Query("SELECT ROW_NUMBER() OVER (ORDER BY id ASC) as seq FROM mails WHERE folder = ?", state.SelectedFolder)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Search failed", tag))
+		return
+	}
+	defer rows.Close()
+
+	var results []string
+	for rows.Next() {
+		var seq int
+		rows.Scan(&seq)
+		results = append(results, strconv.Itoa(seq))
+	}
+
+	s.sendResponse(conn, fmt.Sprintf("* SEARCH %s", strings.Join(results, " ")))
+	s.sendResponse(conn, fmt.Sprintf("%s OK SEARCH completed", tag))
+}
+
+func (s *IMAPServer) handleStatus(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	if len(parts) < 4 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD STATUS requires folder and items", tag))
+		return
+	}
+
+	folder := strings.Trim(parts[2], "\"")
+
+	var count int
+	s.db.QueryRow("SELECT COUNT(*) FROM mails WHERE folder = ?", folder).Scan(&count)
+
+	s.sendResponse(conn, fmt.Sprintf("* STATUS \"%s\" (MESSAGES %d RECENT 0 UIDNEXT %d UIDVALIDITY 1 UNSEEN 0)", folder, count, count+1))
+	s.sendResponse(conn, fmt.Sprintf("%s OK STATUS completed", tag))
+}
