@@ -14,7 +14,7 @@ import (
 
 const (
 	DB_FILE   = "mails.db"
-	SERVER_IP = "0.0.0.0:143" // Use non-privileged port
+	SERVER_IP = "0.0.0.0:143"
 )
 
 type IMAPServer struct {
@@ -25,7 +25,12 @@ type ClientState struct {
 	authenticated  bool
 	selectedFolder string
 	conn           net.Conn
+	username       string
 }
+
+// ============================
+// Database initialization
+// ============================
 
 func (s *IMAPServer) initDB() error {
 	var err error
@@ -34,8 +39,7 @@ func (s *IMAPServer) initDB() error {
 		return err
 	}
 
-	// Create tables if they don't exist
-	createTables := `
+	schema := `
 	CREATE TABLE IF NOT EXISTS mails (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		subject TEXT,
@@ -46,57 +50,76 @@ func (s *IMAPServer) initDB() error {
 		flags TEXT DEFAULT '',
 		folder TEXT DEFAULT 'INBOX'
 	);
-	
+
 	CREATE TABLE IF NOT EXISTS folders (
 		name TEXT PRIMARY KEY,
 		delimiter TEXT DEFAULT '/',
 		attributes TEXT DEFAULT ''
 	);
-	
-	INSERT OR IGNORE INTO folders (name, attributes) VALUES ('INBOX', '');
-	INSERT OR IGNORE INTO folders (name, attributes) VALUES ('Sent', '');
-	INSERT OR IGNORE INTO folders (name, attributes) VALUES ('Drafts', '');
-	INSERT OR IGNORE INTO folders (name, attributes) VALUES ('Trash', '');
-	`
 
-	_, err = s.db.Exec(createTables)
+	INSERT OR IGNORE INTO folders (name) VALUES
+		('INBOX'),
+		('Sent'),
+		('Drafts'),
+		('Trash');
+	`
+	if _, err = s.db.Exec(schema); err != nil {
+		return err
+	}
+
+	// Insert test mails if DB is empty
+	var count int
+	err = s.db.QueryRow("SELECT COUNT(*) FROM mails").Scan(&count)
 	if err != nil {
 		return err
 	}
 
-	// Insert sample emails if none exist
-	var count int
-	err = s.db.QueryRow("SELECT COUNT(*) FROM mails").Scan(&count)
-	if err == nil && count == 0 {
-		s.insertSampleEmails()
+	if count == 0 {
+		testMails := []struct {
+			subject, sender, recipient, body string
+		}{
+			{
+				"Welcome to SQLite IMAP",
+				"admin@example.com",
+				"user@example.com",
+				"From: admin@example.com\r\n" +
+					"To: user@example.com\r\n" +
+					"Subject: Welcome to SQLite IMAP\r\n" +
+					"Date: " + time.Now().Format(time.RFC1123Z) + "\r\n" +
+					"\r\n" +
+					"Hello user@example.com,\r\nThis is your first test mail!\r\n",
+			},
+			{
+				"Meeting Reminder",
+				"boss@example.com",
+				"user@example.com",
+				"From: boss@example.com\r\n" +
+					"To: user@example.com\r\n" +
+					"Subject: Meeting Reminder\r\n" +
+					"Date: " + time.Now().Add(-2*time.Hour).Format(time.RFC1123Z) + "\r\n" +
+					"\r\n" +
+					"Don’t forget our meeting at 3PM today.\r\n",
+			},
+		}
+
+		for _, m := range testMails {
+			_, err = s.db.Exec(
+				"INSERT INTO mails (subject, sender, recipient, date_sent, raw_message, folder) VALUES (?, ?, ?, ?, ?, ?)",
+				m.subject, m.sender, m.recipient, time.Now().Format(time.RFC3339), m.body, "INBOX",
+			)
+			if err != nil {
+				return err
+			}
+		}
+		log.Println("Inserted sample mails for user@example.com")
 	}
 
 	return nil
 }
 
-func (s *IMAPServer) insertSampleEmails() {
-	sampleEmails := []struct {
-		subject, sender, recipient, rawMessage string
-	}{
-		{
-			"Welcome to SQLite IMAP",
-			"admin@example.com",
-			"user@example.com",
-			"From: admin@example.com\r\nTo: user@example.com\r\nSubject: Welcome to SQLite IMAP\r\nDate: " + time.Now().Format(time.RFC1123Z) + "\r\n\r\nWelcome to your SQLite IMAP server!\r\n\r\nThis is a test message.\r\n",
-		},
-		{
-			"Test Message 2",
-			"test@example.com",
-			"user@example.com",
-			"From: test@example.com\r\nTo: user@example.com\r\nSubject: Test Message 2\r\nDate: " + time.Now().Add(-24*time.Hour).Format(time.RFC1123Z) + "\r\n\r\nThis is another test message with some content.\r\n\r\nBest regards,\r\nTest User\r\n",
-		},
-	}
-
-	for _, email := range sampleEmails {
-		s.db.Exec("INSERT INTO mails (subject, sender, recipient, date_sent, raw_message, folder) VALUES (?, ?, ?, ?, ?, 'INBOX')",
-			email.subject, email.sender, email.recipient, time.Now().Format(time.RFC1123Z), email.rawMessage)
-	}
-}
+// ============================
+// IMAP handling
+// ============================
 
 func (s *IMAPServer) handleConnection(conn net.Conn) {
 	defer conn.Close()
@@ -106,7 +129,7 @@ func (s *IMAPServer) handleConnection(conn net.Conn) {
 		conn:          conn,
 	}
 
-	// Send greeting
+	// Greeting
 	s.sendResponse(conn, "* OK [CAPABILITY IMAP4rev1 UIDPLUS IDLE] SQLite IMAP server ready")
 
 	buf := make([]byte, 4096)
@@ -132,25 +155,6 @@ func (s *IMAPServer) handleConnection(conn net.Conn) {
 		tag := parts[0]
 		cmd := strings.ToUpper(parts[1])
 
-		if cmd == "UID" && len(parts) > 2 {
-			subCmd := strings.ToUpper(parts[2])
-			switch subCmd {
-			case "FETCH":
-				s.handleUIDFetch(conn, tag, parts, state)
-			case "SEARCH":
-				s.handleUIDSearch(conn, tag, parts, state)
-			case "STORE":
-				s.handleUIDStore(conn, tag, parts, state)
-			default:
-				s.sendResponse(conn, fmt.Sprintf("%s BAD Unknown UID subcommand: %s", tag, subCmd))
-			}
-			continue
-		}
-		if cmd == "IDLE" {
-			s.handleIdle(conn, tag, state)
-			continue
-		}
-
 		switch cmd {
 		case "CAPABILITY":
 			s.handleCapability(conn, tag)
@@ -166,6 +170,10 @@ func (s *IMAPServer) handleConnection(conn net.Conn) {
 			s.handleSearch(conn, tag, parts, state)
 		case "STATUS":
 			s.handleStatus(conn, tag, parts, state)
+		case "UID":
+			s.handleUID(conn, tag, parts, state)
+		case "IDLE":
+			s.handleIdle(conn, tag, state)
 		case "NOOP":
 			s.sendResponse(conn, fmt.Sprintf("%s OK NOOP completed", tag))
 		case "LOGOUT":
@@ -187,13 +195,18 @@ func (s *IMAPServer) handleCapability(conn net.Conn, tag string) {
 	s.sendResponse(conn, fmt.Sprintf("%s OK CAPABILITY completed", tag))
 }
 
+// Accept any username/password combination
 func (s *IMAPServer) handleLogin(conn net.Conn, tag string, parts []string, state *ClientState) {
 	if len(parts) < 4 {
 		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN requires username and password", tag))
 		return
 	}
-	// Accept any username/password for demo purposes
+
+	username := strings.Trim(parts[2], "\"")
+
+	log.Printf("Accepting login for user: %s", username)
 	state.authenticated = true
+	state.username = username
 	s.sendResponse(conn, fmt.Sprintf("%s OK LOGIN completed", tag))
 }
 
@@ -262,6 +275,25 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 		s.sendResponse(conn, fmt.Sprintf("%s OK [READ-WRITE] SELECT completed", tag))
 	} else {
 		s.sendResponse(conn, fmt.Sprintf("%s OK [READ-ONLY] EXAMINE completed", tag))
+	}
+}
+
+func (s *IMAPServer) handleUID(conn net.Conn, tag string, parts []string, state *ClientState) {
+	if len(parts) < 3 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD UID requires sub-command", tag))
+		return
+	}
+
+	subCmd := strings.ToUpper(parts[2])
+	switch subCmd {
+	case "FETCH":
+		s.handleUIDFetch(conn, tag, parts, state)
+	case "SEARCH":
+		s.handleUIDSearch(conn, tag, parts, state)
+	case "STORE":
+		s.handleUIDStore(conn, tag, parts, state)
+	default:
+		s.sendResponse(conn, fmt.Sprintf("%s BAD Unknown UID command: %s", tag, subCmd))
 	}
 }
 
@@ -638,28 +670,27 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 }
 
 func main() {
+	log.Println("Starting SQLite IMAP server (no-auth mode)...")
+
 	server := &IMAPServer{}
 
-	// Initialize database
 	if err := server.initDB(); err != nil {
 		log.Fatal("Failed to initialize database:", err)
 	}
-	defer server.db.Close()
 
-	// Start listening
 	ln, err := net.Listen("tcp", SERVER_IP)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Failed to start TCP listener:", err)
 	}
 	defer ln.Close()
 
 	log.Printf("SQLite IMAP server running on %s", SERVER_IP)
 	log.Println("Configure your email client with:")
-	log.Println("  Server: localhost")
+	log.Println("  Server: localhost (or container IP)")
 	log.Println("  Port: 143")
 	log.Println("  Security: None")
-	log.Println("  Username: any")
-	log.Println("  Password: any")
+	log.Println("  Username: anything")
+	log.Println("  Password: anything")
 
 	for {
 		conn, err := ln.Accept()
@@ -667,6 +698,8 @@ func main() {
 			log.Println("Accept error:", err)
 			continue
 		}
+
+		log.Printf("New connection from: %s", conn.RemoteAddr())
 		go server.handleConnection(conn)
 	}
 }
