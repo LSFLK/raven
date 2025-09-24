@@ -57,6 +57,9 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 		case "LOGOUT":
 			s.handleLogout(conn, tag)
 			return
+		case "STARTTLS":
+			s.handleStartTLS(conn, tag)
+			return
 		default:
 			s.sendResponse(conn, fmt.Sprintf("%s BAD Unknown command: %s", tag, cmd))
 		}
