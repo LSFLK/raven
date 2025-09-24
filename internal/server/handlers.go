@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/tls"
 	"fmt"
 	"log"
 	"net"
@@ -10,8 +11,8 @@ import (
 )
 
 func (s *IMAPServer) handleCapability(conn net.Conn, tag string) {
-	s.sendResponse(conn, "* CAPABILITY IMAP4rev1 LOGIN IDLE")
-	s.sendResponse(conn, fmt.Sprintf("%s OK CAPABILITY completed", tag))
+    s.sendResponse(conn, "* CAPABILITY IMAP4rev1 STARTTLS LOGIN IDLE")
+    s.sendResponse(conn, fmt.Sprintf("%s OK CAPABILITY completed", tag))
 }
 
 func (s *IMAPServer) handleLogin(conn net.Conn, tag string, parts []string, state *models.ClientState) {
@@ -63,4 +64,27 @@ func (s *IMAPServer) handleIdle(conn net.Conn, tag string, state *models.ClientS
 	}
 	s.sendResponse(conn, "+ idling")
 	s.sendResponse(conn, fmt.Sprintf("%s OK IDLE completed", tag))
+}
+
+func (s *IMAPServer) handleStartTLS(conn net.Conn, tag string) {
+	// Respond to client to begin TLS negotiation
+	s.sendResponse(conn, fmt.Sprintf("%s OK Begin TLS negotiation", tag))
+
+	certPath := "/etc/letsencrypt/live/openmail.lk/fullchain.pem"
+	keyPath := "/etc/letsencrypt/live/openmail.lk/privkey.pem"
+
+	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		fmt.Printf("Failed to load TLS cert/key: %v\n", err)
+		return
+	}
+
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+	}
+
+	tlsConn := tls.Server(conn, tlsConfig)
+
+	// Restart handler with upgraded TLS connection
+	handleClient(s, tlsConn, &models.ClientState{})
 }
