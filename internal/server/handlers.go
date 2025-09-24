@@ -18,12 +18,14 @@ func (s *IMAPServer) handleCapability(conn net.Conn, tag string) {
 
 func (s *IMAPServer) handleLogin(conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	if len(parts) < 4 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN requires email and password", tag))
+		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN requires username and password", tag))
 		return
 	}
 
-	email := strings.Trim(parts[2], "\"")
+	username := strings.Trim(parts[2], "\"")
 	password := strings.Trim(parts[3], "\"")
+
+	email := username + "@openmail.lk"
 
 	// Prepare JSON body
 	requestBody := fmt.Sprintf(`{"email":"%s","password":"%s"}`, email, password)
@@ -53,9 +55,9 @@ func (s *IMAPServer) handleLogin(conn net.Conn, tag string, parts []string, stat
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 200 {
-		log.Printf("Accepting login for user: %s", email)
+		log.Printf("Accepting login for user: %s", username)
 		state.Authenticated = true
-		state.Username = email
+		state.Username = username
 		s.sendResponse(conn, fmt.Sprintf("%s OK LOGIN completed", tag))
 	} else {
 		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN authentication failed", tag))
