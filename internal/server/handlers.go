@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"strings"
 
 	"go-imap/internal/models"
@@ -22,11 +23,43 @@ func (s *IMAPServer) handleLogin(conn net.Conn, tag string, parts []string, stat
 	}
 
 	username := strings.Trim(parts[2], "\"")
-	log.Printf("Accepting login for user: %s", username)
+	password := strings.Trim(parts[3], "\"")
 
-	state.Authenticated = true
-	state.Username = username
-	s.sendResponse(conn, fmt.Sprintf("%s OK LOGIN completed", tag))
+	// Prepare JSON body
+	requestBody := fmt.Sprintf(`{"username":"%s","password":"%s"}`, username, password)
+
+	// Create HTTP request
+	req, err := http.NewRequest("POST", "https://thunder-server:8090/users/authenticate", strings.NewReader(requestBody))
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN internal error", tag))
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	// TLS config for system CA bundle (default)
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: true,
+	}
+	transport := &http.Transport{TLSClientConfig: tlsConfig}
+	client := &http.Client{Transport: transport}
+
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("LOGIN: error reaching auth server: %v", err)
+		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN unable to reach auth server", tag))
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 200 {
+		log.Printf("Accepting login for user: %s", username)
+		state.Authenticated = true
+		state.Username = username
+		s.sendResponse(conn, fmt.Sprintf("%s OK LOGIN completed", tag))
+	} else {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN authentication failed", tag))
+	}
 }
 
 func (s *IMAPServer) handleList(conn net.Conn, tag string, parts []string, state *models.ClientState) {
