@@ -14,7 +14,7 @@ func main() {
 	log.Println("Starting SQLite IMAP server (no-auth mode)...")
 
 	// Init DB
-	database, err := db.InitDB("mails.db")
+	database, err := db.InitDB("data/mails.db")
 	if err != nil {
 		log.Fatal("Failed to initialize database:", err)
 	}
