@@ -18,15 +18,15 @@ func (s *IMAPServer) handleCapability(conn net.Conn, tag string) {
 
 func (s *IMAPServer) handleLogin(conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	if len(parts) < 4 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN requires username and password", tag))
+		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN requires email and password", tag))
 		return
 	}
 
-	username := strings.Trim(parts[2], "\"")
+	email := strings.Trim(parts[2], "\"")
 	password := strings.Trim(parts[3], "\"")
 
 	// Prepare JSON body
-	requestBody := fmt.Sprintf(`{"username":"%s","password":"%s"}`, username, password)
+	requestBody := fmt.Sprintf(`{"email":"%s","password":"%s"}`, email, password)
 
 	// Create HTTP request
 	req, err := http.NewRequest("POST", "https://thunder-server:8090/users/authenticate", strings.NewReader(requestBody))
@@ -53,9 +53,9 @@ func (s *IMAPServer) handleLogin(conn net.Conn, tag string, parts []string, stat
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 200 {
-		log.Printf("Accepting login for user: %s", username)
+		log.Printf("Accepting login for user: %s", email)
 		state.Authenticated = true
-		state.Username = username
+		state.Username = email
 		s.sendResponse(conn, fmt.Sprintf("%s OK LOGIN completed", tag))
 	} else {
 		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN authentication failed", tag))
