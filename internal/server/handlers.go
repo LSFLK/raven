@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"go-imap/internal/models"
+	"go-imap/internal/conf"
 )
 
 func (s *IMAPServer) handleCapability(conn net.Conn, tag string) {
@@ -26,7 +27,14 @@ func (s *IMAPServer) handleLogin(conn net.Conn, tag string, parts []string, stat
 	username := strings.Trim(parts[2], "\"")
 	password := strings.Trim(parts[3], "\"")
 
-	email := username + "@openmail.lk"
+	// Load domain from config file
+	cfg, err := conf.LoadConfig("/etc/goImap/silver.yaml")
+	if err != nil || cfg.Domain == "" {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN config error", tag))
+		return
+	}
+
+	email := username + "@" + cfg.Domain
 
 	// Prepare JSON body
 	requestBody := fmt.Sprintf(`{"email":"%s","password":"%s"}`, email, password)
