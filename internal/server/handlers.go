@@ -195,3 +195,32 @@ func (s *IMAPServer) handleStartTLS(conn net.Conn, tag string) {
 	// Restart handler with upgraded TLS connection
 	handleClient(s, tlsConn, &models.ClientState{})
 }
+
+func (s *IMAPServer) HandleSSLConnection(conn net.Conn) {
+	// Load domain from config file
+	cfg, err := conf.LoadConfig("/etc/goImap/silver.yaml")
+	if err != nil || cfg.Domain == "" {
+		log.Printf("Failed to load domain from config: %v", err)
+		conn.Close()
+		return
+	}
+
+	certPath := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem", cfg.Domain)
+	keyPath := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem", cfg.Domain)
+
+	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		log.Printf("Failed to load TLS cert/key: %v", err)
+		conn.Close()
+		return
+	}
+
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+	}
+
+	tlsConn := tls.Server(conn, tlsConfig)
+
+	// Start IMAP session over TLS
+	handleClient(s, tlsConn, &models.ClientState{})
+}
