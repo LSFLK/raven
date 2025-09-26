@@ -44,7 +44,7 @@ RUN mkdir -p /app/data && chown -R imapuser:imapuser /app
 USER imapuser
 
 # Expose IMAP port
-EXPOSE 143
+EXPOSE 143 993
 
 # Set environment variables
 ENV DB_FILE=/app/data/mails.db
