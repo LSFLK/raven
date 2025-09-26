@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"go-imap/internal/models"
 )
@@ -97,8 +98,64 @@ func (s *IMAPServer) handleIdle(conn net.Conn, tag string, state *models.ClientS
 		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
 		return
 	}
+
+	if state.SelectedFolder == "" {
+		s.sendResponse(conn, fmt.Sprintf("%s NO No folder selected", tag))
+		return
+	}
+
+	// Tell client we’re entering idle mode
 	s.sendResponse(conn, "+ idling")
-	s.sendResponse(conn, fmt.Sprintf("%s OK IDLE completed", tag))
+
+	buf := make([]byte, 4096)
+
+	// Track previous state of the folder
+	var prevCount, prevUnseen int
+	_ = s.db.QueryRow("SELECT COUNT(*) FROM mails WHERE folder = ?", state.SelectedFolder).Scan(&prevCount)
+	_ = s.db.QueryRow("SELECT COUNT(*) FROM mails WHERE folder = ? AND flags NOT LIKE '%\\Seen%'", state.SelectedFolder).Scan(&prevUnseen)
+
+	for {
+		// Poll every 2 seconds for changes
+		time.Sleep(2 * time.Second)
+
+		// Check current mailbox state
+		var count, unseen int
+		_ = s.db.QueryRow("SELECT COUNT(*) FROM mails WHERE folder = ?", state.SelectedFolder).Scan(&count)
+		_ = s.db.QueryRow("SELECT COUNT(*) FROM mails WHERE folder = ? AND flags NOT LIKE '%\\Seen%'", state.SelectedFolder).Scan(&unseen)
+
+		// Notify about new messages
+		if count > prevCount {
+			s.sendResponse(conn, fmt.Sprintf("* %d EXISTS", count))
+			newRecent := count - prevCount
+			if newRecent > 0 {
+				s.sendResponse(conn, fmt.Sprintf("* %d RECENT", newRecent))
+			}
+		}
+
+		// Notify about expunged (deleted) messages
+		if count < prevCount {
+			for i := prevCount; i > count; i-- {
+				s.sendResponse(conn, fmt.Sprintf("* %d EXPUNGE", i))
+			}
+		}
+
+		// Notify about unseen count change
+		if unseen != prevUnseen {
+			s.sendResponse(conn, fmt.Sprintf("* OK [UNSEEN %d] Message %d is first unseen", unseen, unseen))
+		}
+
+		// Update cached values
+		prevCount = count
+		prevUnseen = unseen
+
+		// Check if client sent DONE (non-blocking read)
+		conn.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
+		n, err := conn.Read(buf)
+		if err == nil && strings.TrimSpace(strings.ToUpper(string(buf[:n]))) == "DONE" {
+			s.sendResponse(conn, fmt.Sprintf("%s OK IDLE terminated", tag))
+			return
+		}
+	}
 }
 
 func (s *IMAPServer) handleStartTLS(conn net.Conn, tag string) {
