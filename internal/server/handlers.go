@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"go-imap/internal/models"
+	"go-imap/internal/conf"
 )
 
 func (s *IMAPServer) handleCapability(conn net.Conn, tag string) {
@@ -26,7 +27,14 @@ func (s *IMAPServer) handleLogin(conn net.Conn, tag string, parts []string, stat
 	username := strings.Trim(parts[2], "\"")
 	password := strings.Trim(parts[3], "\"")
 
-	email := username + "@openmail.lk"
+	// Load domain from config file
+	cfg, err := conf.LoadConfig("/etc/goImap/silver.yaml")
+	if err != nil || cfg.Domain == "" {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN config error", tag))
+		return
+	}
+
+	email := username + "@" + cfg.Domain
 
 	// Prepare JSON body
 	requestBody := fmt.Sprintf(`{"email":"%s","password":"%s"}`, email, password)
@@ -162,8 +170,15 @@ func (s *IMAPServer) handleStartTLS(conn net.Conn, tag string) {
 	// Respond to client to begin TLS negotiation
 	s.sendResponse(conn, fmt.Sprintf("%s OK Begin TLS negotiation", tag))
 
-	certPath := "/etc/letsencrypt/live/openmail.lk/fullchain.pem"
-	keyPath := "/etc/letsencrypt/live/openmail.lk/privkey.pem"
+	// Load domain from config file
+	cfg, err := conf.LoadConfig("/etc/goImap/silver.yaml")
+	if err != nil || cfg.Domain == "" {
+		fmt.Printf("Failed to load domain from config: %v\n", err)
+		return
+	}
+
+	certPath := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem", cfg.Domain)
+	keyPath := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem", cfg.Domain)
 
 	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {
