@@ -49,43 +49,5 @@ func InitDB(file string) (*sql.DB, error) {
 		return nil, err
 	}
 
-	if count == 0 {
-		testMails := []struct {
-			subject, sender, recipient, body string
-		}{
-			{
-				"Welcome to SQLite IMAP",
-				"admin@example.com",
-				"user@example.com",
-				"From: admin@example.com\r\n" +
-					"To: user@example.com\r\n" +
-					"Subject: Welcome to SQLite IMAP\r\n" +
-					"Date: " + time.Now().Format(time.RFC1123Z) + "\r\n" +
-					"\r\nHello user@example.com,\r\nThis is your first test mail!\r\n",
-			},
-			{
-				"Meeting Reminder",
-				"boss@example.com",
-				"user@example.com",
-				"From: boss@example.com\r\n" +
-					"To: user@example.com\r\n" +
-					"Subject: Meeting Reminder\r\n" +
-					"Date: " + time.Now().Add(-2*time.Hour).Format(time.RFC1123Z) + "\r\n" +
-					"\r\nDon’t forget our meeting at 3PM today.\r\n",
-			},
-		}
-
-		for _, m := range testMails {
-			_, err = db.Exec(
-				"INSERT INTO mails (subject, sender, recipient, date_sent, raw_message, folder) VALUES (?, ?, ?, ?, ?, ?)",
-				m.subject, m.sender, m.recipient, time.Now().Format(time.RFC3339), m.body, "INBOX",
-			)
-			if err != nil {
-				return nil, err
-			}
-		}
-		log.Println("Inserted sample mails for user@example.com")
-	}
-
 	return db, nil
 }
