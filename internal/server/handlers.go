@@ -170,8 +170,15 @@ func (s *IMAPServer) handleStartTLS(conn net.Conn, tag string) {
 	// Respond to client to begin TLS negotiation
 	s.sendResponse(conn, fmt.Sprintf("%s OK Begin TLS negotiation", tag))
 
-	certPath := "/etc/letsencrypt/live/openmail.lk/fullchain.pem"
-	keyPath := "/etc/letsencrypt/live/openmail.lk/privkey.pem"
+	// Load domain from config file
+	cfg, err := conf.LoadConfig("/etc/goImap/silver.yaml")
+	if err != nil || cfg.Domain == "" {
+		fmt.Printf("Failed to load domain from config: %v\n", err)
+		return
+	}
+
+	certPath := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem", cfg.Domain)
+	keyPath := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem", cfg.Domain)
 
 	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {
