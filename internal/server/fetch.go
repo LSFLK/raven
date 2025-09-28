@@ -102,17 +102,43 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		}
 
 		itemsUpper := strings.ToUpper(items)
-		if strings.Contains(itemsUpper, "BODY[]") || strings.Contains(itemsUpper, "RFC822") {
-			s.sendResponse(conn, fmt.Sprintf("* %d FETCH (BODY[] {%d}", seqNum, len(rawMsg)))
-			conn.Write([]byte(rawMsg + "\r\n"))
-			s.sendResponse(conn, ")")
-		} else if strings.Contains(itemsUpper, "FLAGS") {
+		responseParts := []string{}
+
+		if strings.Contains(itemsUpper, "UID") {
+			responseParts = append(responseParts, fmt.Sprintf("UID %d", id))
+		}
+		if strings.Contains(itemsUpper, "FLAGS") {
 			if flags == "" {
 				flags = "()"
 			} else {
 				flags = fmt.Sprintf("(%s)", flags)
 			}
-			s.sendResponse(conn, fmt.Sprintf("* %d FETCH (FLAGS %s)", seqNum, flags))
+			responseParts = append(responseParts, fmt.Sprintf("FLAGS %s", flags))
+		}
+		if strings.Contains(itemsUpper, "INTERNALDATE") {
+			var internalDate string
+			s.db.QueryRow("SELECT date_sent FROM mails WHERE id = ?", id).Scan(&internalDate)
+			if internalDate == "" {
+				internalDate = "01-Jan-1970 00:00:00 +0000"
+			}
+			responseParts = append(responseParts, fmt.Sprintf("INTERNALDATE \"%s\"", internalDate))
+		}
+		if strings.Contains(itemsUpper, "RFC822.SIZE") {
+			responseParts = append(responseParts, fmt.Sprintf("RFC822.SIZE %d", len(rawMsg)))
+		}
+		if strings.Contains(itemsUpper, "BODY.PEEK[HEADER]") {
+			headerEnd := strings.Index(rawMsg, "\r\n\r\n")
+			headers := rawMsg
+			if headerEnd != -1 {
+				headers = rawMsg[:headerEnd+2] // include last CRLF
+			}
+			responseParts = append(responseParts, fmt.Sprintf("BODY[HEADER] {%d}\r\n%s", len(headers), headers))
+		}
+		if strings.Contains(itemsUpper, "BODY[]") || strings.Contains(itemsUpper, "RFC822") {
+			responseParts = append(responseParts, fmt.Sprintf("BODY[] {%d}\r\n%s", len(rawMsg), rawMsg))
+		}
+		if len(responseParts) > 0 {
+			s.sendResponse(conn, fmt.Sprintf("* %d FETCH (%s)", seqNum, strings.Join(responseParts, " ")))
 		} else {
 			s.sendResponse(conn, fmt.Sprintf("* %d FETCH (FLAGS ())", seqNum))
 		}
