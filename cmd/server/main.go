@@ -9,6 +9,7 @@ import (
 )
 
 const SERVER_IP = "0.0.0.0:143"
+const SERVER_IP_SSL = "0.0.0.0:993"
 
 func main() {
 	log.Println("Starting SQLite IMAP server (no-auth mode)...")
@@ -21,28 +22,57 @@ func main() {
 
 	imapServer := server.NewIMAPServer(database)
 
-	ln, err := net.Listen("tcp", SERVER_IP)
-	if err != nil {
-		log.Fatal("Failed to start TCP listener:", err)
-	}
-	defer ln.Close()
+	// Start plain IMAP (143)
+	go func() {
+		ln, err := net.Listen("tcp", SERVER_IP)
+		if err != nil {
+			log.Fatal("Failed to start TCP listener:", err)
+		}
+		defer ln.Close()
 
-	log.Printf("SQLite IMAP server running on %s", SERVER_IP)
+		log.Printf("SQLite IMAP server running on %s", SERVER_IP)
+		log.Println("Configure your email client with:")
+		log.Println("  Server: localhost (or container IP)")
+		log.Println("  Port: 143")
+		log.Println("  Security: None")
+		log.Println("  Username: anything")
+		log.Println("  Password: anything")
+
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				log.Println("Accept error:", err)
+				continue
+			}
+
+			log.Printf("New connection from: %s", conn.RemoteAddr())
+			go imapServer.HandleConnection(conn)
+		}
+	}()
+
+	// Start IMAPS (993)
+	lnSSL, err := net.Listen("tcp", SERVER_IP_SSL)
+	if err != nil {
+		log.Fatal("Failed to start SSL TCP listener:", err)
+	}
+	defer lnSSL.Close()
+
+	log.Printf("SQLite IMAPS server running on %s", SERVER_IP_SSL)
 	log.Println("Configure your email client with:")
 	log.Println("  Server: localhost (or container IP)")
-	log.Println("  Port: 143")
-	log.Println("  Security: None")
+	log.Println("  Port: 993")
+	log.Println("  Security: SSL/TLS")
 	log.Println("  Username: anything")
 	log.Println("  Password: anything")
 
 	for {
-		conn, err := ln.Accept()
+		conn, err := lnSSL.Accept()
 		if err != nil {
 			log.Println("Accept error:", err)
 			continue
 		}
 
-		log.Printf("New connection from: %s", conn.RemoteAddr())
-		go imapServer.HandleConnection(conn)
+		log.Printf("New SSL connection from: %s", conn.RemoteAddr())
+		go imapServer.HandleSSLConnection(conn)
 	}
 }
