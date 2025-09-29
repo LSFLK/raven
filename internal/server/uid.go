@@ -148,7 +148,7 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 			continue
 		}
 
-		if strings.Contains(itemsUpper, "BODY[]") || strings.Contains(itemsUpper, "RFC822") {
+		if strings.Contains(itemsUpper, "BODY[]") || strings.Contains(itemsUpper, "BODY.PEEK[]") || strings.Contains(itemsUpper, "RFC822") {
 			responseParts = append(responseParts, fmt.Sprintf("BODY[] {%d}", len(rawMsg)))
 			s.sendResponse(conn, fmt.Sprintf("* %d FETCH (%s)", seqNum, strings.Join(responseParts, " ")))
 			conn.Write([]byte(rawMsg + "\r\n"))

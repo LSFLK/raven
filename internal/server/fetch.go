@@ -74,7 +74,40 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 	var rows *sql.Rows
 	var err error
 
-	if sequence == "1:*" {
+	// Support for sequence ranges (e.g., 1:2, 2:4, 1:*, *)
+	seqRange := strings.Split(sequence, ":")
+	var start, end int
+	var useRange bool
+
+	if len(seqRange) == 2 {
+		useRange = true
+		if seqRange[0] == "*" {
+			start = -1 // will handle below
+		} else {
+			start, err = strconv.Atoi(seqRange[0])
+			if err != nil || start < 1 {
+				s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence number", tag))
+				return
+			}
+		}
+		if seqRange[1] == "*" {
+			// Get max count for end
+			s.db.QueryRow("SELECT COUNT(*) FROM mails WHERE folder = ?", state.SelectedFolder).Scan(&end)
+		} else {
+			end, err = strconv.Atoi(seqRange[1])
+			if err != nil || end < 1 {
+				s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence number", tag))
+				return
+			}
+		}
+		if start == -1 {
+			start = end
+		}
+		if end < start {
+			end = start
+		}
+		rows, err = s.db.Query("SELECT id, raw_message, flags FROM mails WHERE folder = ? ORDER BY id ASC LIMIT ? OFFSET ?", state.SelectedFolder, end-start+1, start-1)
+	} else if sequence == "1:*" || sequence == "*" {
 		rows, err = s.db.Query("SELECT id, raw_message, flags FROM mails WHERE folder = ? ORDER BY id ASC", state.SelectedFolder)
 	} else {
 		msgNum, parseErr := strconv.Atoi(sequence)
@@ -92,6 +125,9 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 	defer rows.Close()
 
 	seqNum := 1
+	if useRange {
+		seqNum = start
+	}
 	for rows.Next() {
 		var id int
 		var rawMsg, flags string
@@ -102,17 +138,43 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		}
 
 		itemsUpper := strings.ToUpper(items)
-		if strings.Contains(itemsUpper, "BODY[]") || strings.Contains(itemsUpper, "RFC822") {
-			s.sendResponse(conn, fmt.Sprintf("* %d FETCH (BODY[] {%d}", seqNum, len(rawMsg)))
-			conn.Write([]byte(rawMsg + "\r\n"))
-			s.sendResponse(conn, ")")
-		} else if strings.Contains(itemsUpper, "FLAGS") {
+		responseParts := []string{}
+
+		if strings.Contains(itemsUpper, "UID") {
+			responseParts = append(responseParts, fmt.Sprintf("UID %d", id))
+		}
+		if strings.Contains(itemsUpper, "FLAGS") {
 			if flags == "" {
 				flags = "()"
 			} else {
 				flags = fmt.Sprintf("(%s)", flags)
 			}
-			s.sendResponse(conn, fmt.Sprintf("* %d FETCH (FLAGS %s)", seqNum, flags))
+			responseParts = append(responseParts, fmt.Sprintf("FLAGS %s", flags))
+		}
+		if strings.Contains(itemsUpper, "INTERNALDATE") {
+			var internalDate string
+			s.db.QueryRow("SELECT date_sent FROM mails WHERE id = ?", id).Scan(&internalDate)
+			if internalDate == "" {
+				internalDate = "01-Jan-1970 00:00:00 +0000"
+			}
+			responseParts = append(responseParts, fmt.Sprintf("INTERNALDATE \"%s\"", internalDate))
+		}
+		if strings.Contains(itemsUpper, "RFC822.SIZE") {
+			responseParts = append(responseParts, fmt.Sprintf("RFC822.SIZE %d", len(rawMsg)))
+		}
+		if strings.Contains(itemsUpper, "BODY.PEEK[HEADER]") {
+			headerEnd := strings.Index(rawMsg, "\r\n\r\n")
+			headers := rawMsg
+			if headerEnd != -1 {
+				headers = rawMsg[:headerEnd+2] // include last CRLF
+			}
+			responseParts = append(responseParts, fmt.Sprintf("BODY[HEADER] {%d}\r\n%s", len(headers), headers))
+		}
+		if strings.Contains(itemsUpper, "BODY[]") || strings.Contains(itemsUpper, "RFC822") {
+			responseParts = append(responseParts, fmt.Sprintf("BODY[] {%d}\r\n%s", len(rawMsg), rawMsg))
+		}
+		if len(responseParts) > 0 {
+			s.sendResponse(conn, fmt.Sprintf("* %d FETCH (%s)", seqNum, strings.Join(responseParts, " ")))
 		} else {
 			s.sendResponse(conn, fmt.Sprintf("* %d FETCH (FLAGS ())", seqNum))
 		}
