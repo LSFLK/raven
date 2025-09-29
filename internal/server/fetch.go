@@ -74,7 +74,40 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 	var rows *sql.Rows
 	var err error
 
-	if sequence == "1:*" {
+	// Support for sequence ranges (e.g., 1:2, 2:4, 1:*, *)
+	seqRange := strings.Split(sequence, ":")
+	var start, end int
+	var useRange bool
+
+	if len(seqRange) == 2 {
+		useRange = true
+		if seqRange[0] == "*" {
+			start = -1 // will handle below
+		} else {
+			start, err = strconv.Atoi(seqRange[0])
+			if err != nil || start < 1 {
+				s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence number", tag))
+				return
+			}
+		}
+		if seqRange[1] == "*" {
+			// Get max count for end
+			s.db.QueryRow("SELECT COUNT(*) FROM mails WHERE folder = ?", state.SelectedFolder).Scan(&end)
+		} else {
+			end, err = strconv.Atoi(seqRange[1])
+			if err != nil || end < 1 {
+				s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence number", tag))
+				return
+			}
+		}
+		if start == -1 {
+			start = end
+		}
+		if end < start {
+			end = start
+		}
+		rows, err = s.db.Query("SELECT id, raw_message, flags FROM mails WHERE folder = ? ORDER BY id ASC LIMIT ? OFFSET ?", state.SelectedFolder, end-start+1, start-1)
+	} else if sequence == "1:*" || sequence == "*" {
 		rows, err = s.db.Query("SELECT id, raw_message, flags FROM mails WHERE folder = ? ORDER BY id ASC", state.SelectedFolder)
 	} else {
 		msgNum, parseErr := strconv.Atoi(sequence)
@@ -92,6 +125,9 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 	defer rows.Close()
 
 	seqNum := 1
+	if useRange {
+		seqNum = start
+	}
 	for rows.Next() {
 		var id int
 		var rawMsg, flags string
