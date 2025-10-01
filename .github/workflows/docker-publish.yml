@@ -7,13 +7,17 @@ on:
   release:
     types: [published]
 
+# ✅ Explicit top-level permissions set to read-only
+permissions:
+  contents: read
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
 
     permissions:
       contents: read
-      packages: write  # Only write permission for packages, not write-all
+      packages: write
 
     steps:
       # Checkout repo
@@ -31,14 +35,14 @@ jobs:
       # Build Docker image
       - name: Build Docker image
         run: |
-          IMAGE_NAME=ghcr.io/${{ github.repository }}/go-imap
+          IMAGE_NAME=ghcr.io/${{ github.repository }}
           VERSION=${{ github.sha }}
           docker build -t $IMAGE_NAME:latest -t $IMAGE_NAME:$VERSION .
 
       # Push Docker image
       - name: Push Docker image
         run: |
-          IMAGE_NAME=ghcr.io/${{ github.repository }}/go-imap
+          IMAGE_NAME=ghcr.io/${{ github.repository }}
           VERSION=${{ github.sha }}
           docker push $IMAGE_NAME:latest
           docker push $IMAGE_NAME:$VERSION
