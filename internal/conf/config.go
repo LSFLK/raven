@@ -6,17 +6,36 @@ import (
 )
 
 type Config struct {
-	Domain string `yaml:"domain"`
+	Domain        string `yaml:"domain"`
+	AuthServerURL string `yaml:"auth_server_url"`
 }
 
-func LoadConfig(path string) (*Config, error) {
-	data, err := ioutil.ReadFile(path)
+func LoadConfig() (*Config, error) {
+	var cfg Config
+
+	// Try multiple possible paths
+	configPaths := []string{
+		"/etc/goImap/goimap.yaml",
+		"./config/goimap.yaml",
+		"./goimap.yaml",
+		"config/goimap.yaml",
+	}
+
+	var data []byte
+	var err error
+	for _, path := range configPaths {
+		data, err = ioutil.ReadFile(path)
+		if err == nil {
+			break
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
-	var cfg Config
+
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
+
 	return &cfg, nil
 }
