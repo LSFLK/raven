@@ -1,7 +1,7 @@
-name: "Feature Request"
-description: "Propose a new feature or improvement"
+name: Feature Request
+description: Propose a new feature or improvement
 title: "[FEATURE] "
-labels: ["feature"]
+labels: [feature]
 assignees: []
 body:
   - type: markdown
@@ -10,25 +10,25 @@ body:
   - type: textarea
     id: summary
     attributes:
-      label: "Summary"
-      description: "Describe the feature briefly"
-      placeholder: "E.g., Add dark mode support"
+      label: Summary
+      description: Describe the feature briefly
+      placeholder: E.g., Add dark mode support
     validations:
       required: true
   - type: textarea
     id: motivation
     attributes:
-      label: "Why is this feature needed?"
-      description: "Explain the problem this feature solves"
+      label: Why is this feature needed?
+      description: Explain the problem this feature solves
     validations:
       required: true
   - type: textarea
     id: alternatives
     attributes:
-      label: "Alternatives Considered"
-      description: "List other solutions or features considered"
+      label: Alternatives Considered
+      description: List other solutions or features considered
   - type: textarea
     id: additional
     attributes:
-      label: "Additional Context"
-      description: "Add screenshots, mockups, or references if available"
+      label: Additional Context
+      description: Add screenshots, mockups, or references if available

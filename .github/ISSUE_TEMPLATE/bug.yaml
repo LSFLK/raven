@@ -1,7 +1,7 @@
-name: "Bug Report"
-description: "Report a bug or issue"
-title: "[BUG] "
-labels: ["bug"]
+name: Bug Report
+description: Report a bug or issue
+title: [BUG]
+labels: [bug]
 assignees: []
 body:
   - type: markdown
@@ -10,27 +10,27 @@ body:
   - type: textarea
     id: steps
     attributes:
-      label: "Steps to Reproduce"
-      description: "How can we reproduce the issue?"
+      label: Steps to Reproduce
+      description: How can we reproduce the issue?
       placeholder: "1. Go to...\n2. Click...\n3. See error"
     validations:
       required: true
   - type: textarea
     id: expected
     attributes:
-      label: "Expected Behavior"
-      description: "What did you expect to happen?"
+      label: Expected Behavior
+      description: What did you expect to happen?
     validations:
       required: true
   - type: textarea
     id: actual
     attributes:
-      label: "Actual Behavior"
-      description: "What actually happened?"
+      label: Actual Behavior
+      description: What actually happened?
     validations:
       required: true
   - type: textarea
     id: logs
     attributes:
-      label: "Relevant Logs / Screenshots"
-      description: "Attach logs or screenshots if possible"
+      label: Relevant Logs / Screenshots
+      description: Attach logs or screenshots if possible
