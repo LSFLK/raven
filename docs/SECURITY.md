@@ -18,4 +18,4 @@ If you discover a security vulnerability in this project, please report it by em
 
 We will respond within 48 hours to acknowledge receipt of your report. Once confirmed, we will work on a fix and notify you when the vulnerability is resolved.
 
-For urgent security issues, please use **PGP-encrypted email** with our [PGP public key](./keys/PGP_PUBLIC_KEY.asc).
+For urgent security issues, please use **PGP-encrypted email** with our [PGP public key](./docs/keys/PGP_PUBLIC_KEY.asc).
