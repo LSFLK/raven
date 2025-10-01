@@ -14,7 +14,12 @@ This is a IMAP server implementation in Go for Silver Mail. It supports basic IM
 
 ```bash
 docker build -t silver-imap .
-docker run -it --rm -p 143:143 -p 993:993 silver-imap
+docker run -d --rm \
+  --name silver-imap \
+  -p 143:143 -p 993:993 \
+  -v $(pwd)/config:/etc/goImap \
+  -v $(pwd)/data:/app/data \
+  silver-imap
 ```
 
 3. The server will start and listen on ports 143 (IMAP) and 993 (IMAPS).
