@@ -1,0 +1,17 @@
+name: "Task"
+description: "General task to be completed"
+title: "[TASK] "
+labels: ["task"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: "## Task Description"
+  - type: textarea
+    id: description
+    attributes:
+      label: "What needs to be done?"
+      description: "Provide details of the task"
+      placeholder: "E.g., Set up CI/CD pipeline"
+    validations:
+      required: true
