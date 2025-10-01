@@ -1,23 +1,22 @@
-# Go IMAP Server
+# Silver Go IMAP Server
 
-This service provides an IMAP client implementation in Go, allowing you to interact with email servers using the IMAP protocol. It supports various operations such as connecting to an IMAP server, authenticating, fetching emails, and managing mailboxes.
+This is a IMAP server implementation in Go for Silver Mail. It supports basic IMAP functionalities and is designed to be lightweight and efficient. 
 
-## Create a project folder and Go module
+## How to run the server
 
-```bash
-cd go-imap
-go mod init go-imap
-```
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/Aravinda-HWK/Silver-IMAP.git
+   cd Silver-IMAP
+   ```
 
-## Install dependencies
-
-```bash
-go get github.com/mattn/go-sqlite3
-```
-
-## Run the service
+2. Build and run the Docker container:
 
 ```bash
-go run main.go
+docker build -t silver-imap .
+docker run -it --rm -p 143:143 -p 993:993 silver-imap
 ```
+
+3. The server will start and listen on ports 143 (IMAP) and 993 (IMAPS).
+4. You can connect to the server using any IMAP client.
 
