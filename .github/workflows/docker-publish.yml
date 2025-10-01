@@ -13,7 +13,7 @@ jobs:
 
     permissions:
       contents: read
-      packages: write  # Required to push to GHCR
+      packages: write  # Only write permission for packages, not write-all
 
     steps:
       # Checkout repo
