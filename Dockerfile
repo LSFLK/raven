@@ -13,10 +13,11 @@ RUN go mod download
 # Copy the full source code
 COPY . .
 
-# Enable CGO for go-sqlite3
+# Enable CGO
 ENV CGO_ENABLED=1
-ENV GOOS=linux
-ENV GOARCH=amd64
+
+# Install gcc and musl-dev for CGO
+RUN apk add --no-cache gcc musl-dev
 
 # Build the application from the cmd/server entry point
 RUN go build -a -o imap-server ./cmd/server
