@@ -1,0 +1,5 @@
+# Ignore configuration and data directories
+config
+data
+
+

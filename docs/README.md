@@ -1,22 +1,66 @@
-# Raven IMAP Server
+# Silver Go IMAP Server
 
-This is a IMAP server implementation in Go for Silver Mail. It supports basic IMAP functionalities and is designed to be lightweight and efficient. 
+A lightweight and efficient IMAP server implementation in Go, designed for Silver Mail with support for core IMAP functionalities.
 
-## How to run the server
+---
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/Aravinda-HWK/Silver-IMAP.git
-   cd Silver-IMAP
-   ```
+## 🚀 Quick Start
 
-2. Build and run the Docker container:
+### Option 1: Pull from GitHub Container Registry (Recommended)
 
 ```bash
-docker build -t silver-imap .
-docker run -it --rm -p 143:143 -p 993:993 silver-imap
+docker pull ghcr.io/aravinda-hwk/silver-mda:latest
+docker run -d --rm \
+  --name silver-mda \
+  -p 143:143 -p 993:993 \
+  -v $(pwd)/config:/etc/goImap \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/certs:/certs \
+  ghcr.io/aravinda-hwk/silver-mda:latest
 ```
 
-3. The server will start and listen on ports 143 (IMAP) and 993 (IMAPS).
-4. You can connect to the server using any IMAP client.
+### Option 2: Build from Source
 
+1. Clone the repository:
+```bash
+git clone https://github.com/Aravinda-HWK/Silver-IMAP.git
+cd Silver-IMAP
+```
+
+2. Build and run:
+```bash
+docker build -t silver-mda .
+docker run -d --rm \
+  --name silver-mda \
+  -p 143:143 -p 993:993 \
+  -v $(pwd)/config:/etc/goImap \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/certs:/certs \
+  silver-mda
+```
+
+The server will start and listen on:
+- **Port 143** - IMAP
+- **Port 993** - IMAPS
+
+Connect using any IMAP client to start managing your emails.
+
+---
+
+## 📂 Required Volume Mounts
+
+| Volume | Path | Description |
+|--------|------|-------------|
+| **Configuration** | `-v $(pwd)/config:/etc/goImap` | Configuration directory containing `goimap.yaml` |
+| **Data** | `-v $(pwd)/data:/app/data` | Data directory for SQLite database (`mail.db`) and mail storage |
+| **Certificates** | `-v $(pwd)/certs:/certs` | TLS/SSL certificates directory containing `fullchain.pem` and `privkey.pem` for IMAPS and STARTTLS |
+
+---
+
+## 🔐 Certificate Requirements
+
+Your `/certs` directory must contain:
+- `fullchain.pem` - Full certificate chain
+- `privkey.pem` - Private key
+
+These certificates are required for secure connections on port 993 and STARTTLS functionality.
