@@ -23,8 +23,8 @@ func (s *IMAPServer) HandleConnection(conn net.Conn) {
 		Conn:          conn,
 	}
 
-	// Greeting
-	s.sendResponse(conn, "* OK [CAPABILITY IMAP4rev1 STARTTLS UIDPLUS IDLE] SQLite IMAP server ready")
+	// Greeting - advertise basic capabilities in greeting
+	s.sendResponse(conn, "* OK [CAPABILITY IMAP4rev1 STARTTLS LOGINDISABLED UIDPLUS IDLE] SQLite IMAP server ready")
 
 	handleClient(s, conn, state)
 }
