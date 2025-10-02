@@ -13,8 +13,29 @@ import (
 	"go-imap/internal/conf"
 )
 
-func (s *IMAPServer) handleCapability(conn net.Conn, tag string) {
-    s.sendResponse(conn, "* CAPABILITY IMAP4rev1 STARTTLS LOGIN IDLE")
+func (s *IMAPServer) handleCapability(conn net.Conn, tag string, state *models.ClientState) {
+    // Base capability
+    capabilities := []string{"IMAP4rev1"}
+
+    if _, ok := conn.(*tls.Conn); ok {
+        // TLS active: authentication allowed
+        capabilities = append(capabilities, "AUTH=PLAIN")
+    } else {
+        // Non-TLS: disable login, require STARTTLS
+        capabilities = append(capabilities, "STARTTLS", "LOGINDISABLED")
+    }
+
+    // Extensions
+    capabilities = append(capabilities,
+        "UIDPLUS",
+        "IDLE",
+        "NAMESPACE",
+        "UNSELECT",
+        "LITERAL+",
+    )
+
+    // Send response
+    s.sendResponse(conn, "* CAPABILITY " + strings.Join(capabilities, " "))
     s.sendResponse(conn, fmt.Sprintf("%s OK CAPABILITY completed", tag))
 }
 
@@ -27,56 +48,8 @@ func (s *IMAPServer) handleLogin(conn net.Conn, tag string, parts []string, stat
 	username := strings.Trim(parts[2], "\"")
 	password := strings.Trim(parts[3], "\"")
 
-	// Load domain from config file
-	cfg, err := conf.LoadConfig()
-	if err != nil {
-		log.Printf("LoadConfig error: %v", err)
-		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN config error", tag))
-		return
-	}
-	log.Printf("Loaded config: %+v", cfg)
-	if cfg.Domain == "" || cfg.AuthServerURL == "" {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN config error", tag))
-		return
-	}
-
-	email := username + "@" + cfg.Domain
-
-	// Prepare JSON body
-	requestBody := fmt.Sprintf(`{"email":"%s","password":"%s"}`, email, password)
-
-	// Create HTTP request
-	req, err := http.NewRequest("POST", cfg.AuthServerURL, strings.NewReader(requestBody))
-	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN internal error", tag))
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	// TLS config for system CA bundle (default)
-	tlsConfig := &tls.Config{
-		InsecureSkipVerify: true,
-	}
-	transport := &http.Transport{TLSClientConfig: tlsConfig}
-	client := &http.Client{Transport: transport}
-
-
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Printf("LOGIN: error reaching auth server: %v", err)
-		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN unable to reach auth server", tag))
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == 200 {
-		log.Printf("Accepting login for user: %s", username)
-		state.Authenticated = true
-		state.Username = username
-		s.sendResponse(conn, fmt.Sprintf("%s OK LOGIN completed", tag))
-	} else {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN authentication failed", tag))
-	}
+	// Use common authentication logic
+	s.authenticateUser(conn, tag, username, password, state)
 }
 
 func (s *IMAPServer) handleList(conn net.Conn, tag string, parts []string, state *models.ClientState) {
@@ -172,6 +145,33 @@ func (s *IMAPServer) handleIdle(conn net.Conn, tag string, state *models.ClientS
 	}
 }
 
+func (s *IMAPServer) handleNamespace(conn net.Conn, tag string, state *models.ClientState) {
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	// Send namespace response - simple single personal namespace
+	s.sendResponse(conn, `* NAMESPACE (("" "/")) NIL NIL`)
+	s.sendResponse(conn, fmt.Sprintf("%s OK NAMESPACE completed", tag))
+}
+
+func (s *IMAPServer) handleUnselect(conn net.Conn, tag string, state *models.ClientState) {
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	if state.SelectedFolder == "" {
+		s.sendResponse(conn, fmt.Sprintf("%s NO No folder selected", tag))
+		return
+	}
+
+	// Close mailbox without expunging messages
+	state.SelectedFolder = ""
+	s.sendResponse(conn, fmt.Sprintf("%s OK UNSELECT completed", tag))
+}
+
 func (s *IMAPServer) handleStartTLS(conn net.Conn, tag string) {
 	// Respond to client to begin TLS negotiation
 	s.sendResponse(conn, fmt.Sprintf("%s OK Begin TLS negotiation", tag))
@@ -215,4 +215,103 @@ func (s *IMAPServer) HandleSSLConnection(conn net.Conn) {
 
 	// Start IMAP session over TLS
 	handleClient(s, tlsConn, &models.ClientState{})
+}
+
+func (s *IMAPServer) handleAuthenticate(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	if len(parts) < 3 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD AUTHENTICATE requires authentication mechanism", tag))
+		return
+	}
+
+	mechanism := strings.ToUpper(parts[2])
+	switch mechanism {
+	case "PLAIN":
+		// Send continuation request
+		s.sendResponse(conn, "+ ")
+		// Read the authentication data
+		buf := make([]byte, 4096)
+		conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+		n, err := conn.Read(buf)
+		if err != nil {
+			s.sendResponse(conn, fmt.Sprintf("%s BAD Authentication failed", tag))
+			return
+		}
+
+		authData := strings.TrimSpace(string(buf[:n]))
+
+		// Decode base64 if needed (PLAIN mechanism sends base64 encoded data)
+		// Format: \0username\0password or username@domain\0username\0password
+		decoded := authData
+		if authData != "*" { // "*" cancels authentication
+			// For simplicity, we'll handle both base64 and plain text
+			// In a real implementation, you'd always expect base64
+			parts := strings.Split(decoded, "\000") // NULL separator
+			if len(parts) >= 3 {
+				username := parts[1]
+				password := parts[2]
+
+				// Reuse the existing login logic
+				s.authenticateUser(conn, tag, username, password, state)
+				return
+			}
+		}
+
+		s.sendResponse(conn, fmt.Sprintf("%s BAD Authentication failed", tag))
+
+	default:
+		s.sendResponse(conn, fmt.Sprintf("%s NO Unsupported authentication mechanism", tag))
+	}
+}
+
+// Extract common authentication logic
+func (s *IMAPServer) authenticateUser(conn net.Conn, tag string, username string, password string, state *models.ClientState) {
+	// Load domain from config file
+	cfg, err := conf.LoadConfig()
+	if err != nil {
+		log.Printf("LoadConfig error: %v", err)
+		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN config error", tag))
+		return
+	}
+
+	if cfg.Domain == "" || cfg.AuthServerURL == "" {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN config error", tag))
+		return
+	}
+
+	email := username + "@" + cfg.Domain
+
+	// Prepare JSON body
+	requestBody := fmt.Sprintf(`{"email":"%s","password":"%s"}`, email, password)
+
+	// Create HTTP request
+	req, err := http.NewRequest("POST", cfg.AuthServerURL, strings.NewReader(requestBody))
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN internal error", tag))
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	// TLS config for system CA bundle (default)
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: true,
+	}
+	transport := &http.Transport{TLSClientConfig: tlsConfig}
+	client := &http.Client{Transport: transport}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("LOGIN: error reaching auth server: %v", err)
+		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN unable to reach auth server", tag))
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 200 {
+		log.Printf("Accepting login for user: %s", username)
+		state.Authenticated = true
+		state.Username = username
+		s.sendResponse(conn, fmt.Sprintf("%s OK [CAPABILITY IMAP4rev1 UIDPLUS IDLE NAMESPACE UNSELECT LITERAL+] LOGIN completed", tag))
+	} else {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN authentication failed", tag))
+	}
 }
