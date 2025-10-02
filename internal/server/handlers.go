@@ -14,18 +14,30 @@ import (
 )
 
 func (s *IMAPServer) handleCapability(conn net.Conn, tag string, state *models.ClientState) {
-    // Base capability
+    // Base capabilities
     capabilities := []string{"IMAP4rev1"}
 
+    // Detect TLS: real TLS connection or test mock that advertises TLS
+    isTLS := false
     if _, ok := conn.(*tls.Conn); ok {
-        // TLS active: authentication allowed
-        capabilities = append(capabilities, "AUTH=PLAIN")
+        isTLS = true
     } else {
-        // Non-TLS: disable login, require STARTTLS
+        // Allow test doubles to signal TLS via an interface
+        type tlsAware interface{ IsTLS() bool }
+        if ta, ok := any(conn).(tlsAware); ok && ta.IsTLS() {
+            isTLS = true
+        }
+    }
+
+    if isTLS {
+        // TLS is active → allow authentication
+        capabilities = append(capabilities, "AUTH=PLAIN", "LOGIN")
+    } else {
+        // Plain connection → require STARTTLS and disable login
         capabilities = append(capabilities, "STARTTLS", "LOGINDISABLED")
     }
 
-    // Extensions
+    // Add extension capabilities
     capabilities = append(capabilities,
         "UIDPLUS",
         "IDLE",
@@ -34,8 +46,8 @@ func (s *IMAPServer) handleCapability(conn net.Conn, tag string, state *models.C
         "LITERAL+",
     )
 
-    // Send response
-    s.sendResponse(conn, "* CAPABILITY " + strings.Join(capabilities, " "))
+    // Send CAPABILITY response
+    s.sendResponse(conn, "* CAPABILITY "+strings.Join(capabilities, " "))
     s.sendResponse(conn, fmt.Sprintf("%s OK CAPABILITY completed", tag))
 }
 
