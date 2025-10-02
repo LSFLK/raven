@@ -3,7 +3,7 @@ name: Publish Docker Image
 on:
   push:
     branches:
-      - release
+      - main
   release:
     types: [published]
 
