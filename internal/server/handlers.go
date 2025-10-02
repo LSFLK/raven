@@ -175,15 +175,8 @@ func (s *IMAPServer) handleStartTLS(conn net.Conn, tag string) {
 	// Respond to client to begin TLS negotiation
 	s.sendResponse(conn, fmt.Sprintf("%s OK Begin TLS negotiation", tag))
 
-	// Load domain from config file
-	cfg, err := conf.LoadConfig()
-	if err != nil || cfg.Domain == "" {
-		fmt.Printf("Failed to load domain from config: %v\n", err)
-		return
-	}
-
-	certPath := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem", cfg.Domain)
-	keyPath := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem", cfg.Domain)
+	certPath := "/certs/fullchain.pem"
+	keyPath := "/certs/privkey.pem"
 
 	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {
@@ -202,16 +195,9 @@ func (s *IMAPServer) handleStartTLS(conn net.Conn, tag string) {
 }
 
 func (s *IMAPServer) HandleSSLConnection(conn net.Conn) {
-	// Load domain from config file
-	cfg, err := conf.LoadConfig()
-	if err != nil || cfg.Domain == "" {
-		log.Printf("Failed to load domain from config: %v", err)
-		conn.Close()
-		return
-	}
 
-	certPath := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem", cfg.Domain)
-	keyPath := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem", cfg.Domain)
+	certPath := "/certs/fullchain.pem"
+	keyPath := "/certs/privkey.pem"
 
 	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {
