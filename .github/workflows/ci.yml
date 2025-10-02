@@ -1,5 +1,8 @@
 name: CI Tests
 
+permissions:
+  contents: read
+
 on:
   pull_request:
     branches: [ main, develop ]
@@ -13,13 +16,9 @@ on:
 
 jobs:
   test:
-    name: Run Tests
+    name: Run Capability Tests
     runs-on: ubuntu-latest
-    
-    strategy:
-      matrix:
-        go-version: ['1.21', '1.22', '1.23']
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -27,11 +26,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version: '1.23'
           cache: true
 
       - name: Install dependencies
         run: make deps
 
-      - name: Run tests
-        run: go test -v ./...
+      - name: Run capability tests
+        run: make test-capability

@@ -35,9 +35,11 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 
 		switch cmd {
 		case "CAPABILITY":
-			s.handleCapability(conn, tag)
+			s.handleCapability(conn, tag, state)
 		case "LOGIN":
 			s.handleLogin(conn, tag, parts, state)
+		case "AUTHENTICATE":
+			s.handleAuthenticate(conn, tag, parts, state)
 		case "LIST":
 			s.handleList(conn, tag, parts, state)
 		case "SELECT", "EXAMINE":
@@ -52,6 +54,10 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 			s.handleUID(conn, tag, parts, state)
 		case "IDLE":
 			s.handleIdle(conn, tag, state)
+		case "NAMESPACE":
+			s.handleNamespace(conn, tag, state)
+		case "UNSELECT":
+			s.handleUnselect(conn, tag, state)
 		case "NOOP":
 			s.sendResponse(conn, fmt.Sprintf("%s OK NOOP completed", tag))
 		case "LOGOUT":
