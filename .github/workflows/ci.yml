@@ -33,6 +33,4 @@ jobs:
         run: make deps
 
       - name: Run capability tests
-        run: make test-capability
-
-
+        run: GOFLAGS="-tags=test" make test-capability
