@@ -31,10 +31,11 @@ func (s *IMAPServer) handleLogin(conn net.Conn, tag string, parts []string, stat
 	cfg, err := conf.LoadConfig()
 	if err != nil {
 		log.Printf("LoadConfig error: %v", err)
+		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN config error", tag))
+		return
 	}
 	log.Printf("Loaded config: %+v", cfg)
-
-	if err != nil || cfg.Domain == "" || cfg.AuthServerURL == "" {
+	if cfg.Domain == "" || cfg.AuthServerURL == "" {
 		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN config error", tag))
 		return
 	}
