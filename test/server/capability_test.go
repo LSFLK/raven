@@ -9,6 +9,22 @@ import (
 	"go-imap/test/helpers"
 )
 
+// Helper to check capability tokens exactly (avoids substring matches like LOGIN in LOGINDISABLED)
+func hasCapabilityToken(line, token string) bool {
+	line = strings.TrimSpace(line)
+	const prefix = "* CAPABILITY "
+	if !strings.HasPrefix(line, prefix) {
+		return false
+	}
+	caps := strings.Fields(strings.TrimSpace(line[len(prefix):]))
+	for _, c := range caps {
+		if c == token {
+			return true
+		}
+	}
+	return false
+}
+
 // TestCapabilityCommand_RFCCompliance tests RFC 3501 compliance
 func TestCapabilityCommand_RFCCompliance(t *testing.T) {
 	tests := []struct {
@@ -78,16 +94,16 @@ func TestCapabilityCommand_RFCCompliance(t *testing.T) {
 
 			capLine := lines[0]
 
-			// Check required capabilities
+			// Check required capabilities using exact token matching
 			for _, cap := range tt.expectCaps {
-				if !strings.Contains(capLine, cap) {
+				if !hasCapabilityToken(capLine, cap) {
 					t.Errorf("Expected capability %s not found in: %s", cap, capLine)
 				}
 			}
 
-			// Check forbidden capabilities
+			// Check forbidden capabilities using exact token matching
 			for _, cap := range tt.forbidCaps {
-				if strings.Contains(capLine, cap) {
+				if hasCapabilityToken(capLine, cap) {
 					t.Errorf("Forbidden capability %s found in: %s", cap, capLine)
 				}
 			}
