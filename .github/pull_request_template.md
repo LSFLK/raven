@@ -19,7 +19,7 @@
 - [ ] Docker build & run validated.
 - [ ] Configuration loading verified for default and custom paths.
 - [ ] Persistent storage with Docker volume verified.
-- [ ] Error handling and logging verifie
+- [ ] Error handling and logging verified
 - [ ] Documentation updated (README, config samples).
 
 ---
