@@ -61,6 +61,11 @@ func (t *TestInterface) HandleNoop(conn net.Conn, tag string, state *models.Clie
 	t.server.handleNoop(conn, tag, state)
 }
 
+// HandleAppend exposes the append handler for testing
+func (t *TestInterface) HandleAppend(conn net.Conn, tag string, parts []string, fullLine string, state *models.ClientState) {
+	t.server.handleAppend(conn, tag, parts, fullLine, state)
+}
+
 // HandleAuthenticate exposes the authenticate handler for testing
 func (t *TestInterface) HandleAuthenticate(conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	t.server.handleAuthenticate(conn, tag, parts, state)
