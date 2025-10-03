@@ -247,6 +247,141 @@ func (s *IMAPServer) handleUnselect(conn net.Conn, tag string, state *models.Cli
 	s.sendResponse(conn, fmt.Sprintf("%s OK UNSELECT completed", tag))
 }
 
+// handleAppend handles the APPEND command to add a message to a mailbox
+func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, fullLine string, state *models.ClientState) {
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	if len(parts) < 3 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD APPEND requires folder name", tag))
+		return
+	}
+
+	// Parse folder name (could be quoted)
+	folder := strings.Trim(parts[2], "\"")
+
+	// Validate folder exists
+	validFolders := map[string]bool{
+		"INBOX":  true,
+		"Sent":   true,
+		"Drafts": true,
+		"Trash":  true,
+	}
+	
+	if !validFolders[folder] {
+		s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Folder does not exist", tag))
+		return
+	}
+
+	// Parse optional flags and date/time
+	// Format: tag APPEND folder [(flags)] [date-time] {size}
+	var flags string
+	
+	// Look for flags in parentheses
+	if strings.Contains(fullLine, "(") && strings.Contains(fullLine, ")") {
+		startIdx := strings.Index(fullLine, "(")
+		endIdx := strings.Index(fullLine, ")")
+		if startIdx < endIdx {
+			flags = fullLine[startIdx+1 : endIdx]
+		}
+	}
+
+	// Look for literal size indicator {size}
+	literalStartIdx := strings.Index(fullLine, "{")
+	literalEndIdx := strings.Index(fullLine, "}")
+	
+	if literalStartIdx == -1 || literalEndIdx == -1 || literalStartIdx > literalEndIdx {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD APPEND requires message size", tag))
+		return
+	}
+
+	// Extract the size
+	sizeStr := fullLine[literalStartIdx+1 : literalEndIdx]
+	var messageSize int
+	fmt.Sscanf(sizeStr, "%d", &messageSize)
+	
+	if messageSize <= 0 || messageSize > 50*1024*1024 { // Max 50MB
+		s.sendResponse(conn, fmt.Sprintf("%s NO Message size invalid or too large", tag))
+		return
+	}
+
+	// Send continuation response
+	s.sendResponse(conn, "+ Ready for literal data")
+
+	// Read the message data
+	messageData := make([]byte, messageSize)
+	totalRead := 0
+	
+	conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
+	for totalRead < messageSize {
+		n, err := conn.Read(messageData[totalRead:])
+		if err != nil {
+			log.Printf("Error reading message data: %v", err)
+			s.sendResponse(conn, fmt.Sprintf("%s NO Failed to read message data", tag))
+			return
+		}
+		totalRead += n
+	}
+
+	rawMessage := string(messageData)
+
+	// Parse email headers for metadata
+	subject := ""
+	sender := ""
+	recipient := ""
+	dateSent := time.Now().Format("02-Jan-2006 15:04:05 -0700")
+
+	lines := strings.Split(rawMessage, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			break // End of headers
+		}
+		
+		upperLine := strings.ToUpper(line)
+		if strings.HasPrefix(upperLine, "SUBJECT:") {
+			subject = strings.TrimSpace(line[8:])
+		} else if strings.HasPrefix(upperLine, "FROM:") {
+			sender = strings.TrimSpace(line[5:])
+		} else if strings.HasPrefix(upperLine, "TO:") {
+			recipient = strings.TrimSpace(line[3:])
+		} else if strings.HasPrefix(upperLine, "DATE:") {
+			dateSent = strings.TrimSpace(line[5:])
+		}
+	}
+
+	// Ensure message has CRLF line endings
+	if !strings.Contains(rawMessage, "\r\n") {
+		rawMessage = strings.ReplaceAll(rawMessage, "\n", "\r\n")
+	}
+
+	// Insert into database
+	_, err := s.db.Exec(
+		"INSERT INTO mails (subject, sender, recipient, date_sent, raw_message, flags, folder) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		subject, sender, recipient, dateSent, rawMessage, flags, folder,
+	)
+
+	if err != nil {
+		log.Printf("Failed to insert message: %v", err)
+		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to save message", tag))
+		return
+	}
+
+	// Get the newly inserted message ID for APPENDUID response
+	var newUID int64
+	err = s.db.QueryRow("SELECT last_insert_rowid()").Scan(&newUID)
+	if err != nil {
+		log.Printf("Failed to get new UID: %v", err)
+	}
+
+	log.Printf("Message appended to folder '%s' with UID %d", folder, newUID)
+	
+	// Send success response with APPENDUID (RFC 4315 - UIDPLUS extension)
+	s.sendResponse(conn, fmt.Sprintf("%s OK [APPENDUID 1 %d] APPEND completed", tag, newUID))
+}
+
 func (s *IMAPServer) handleStartTLS(conn net.Conn, tag string) {
 	// Respond to client to begin TLS negotiation
 	s.sendResponse(conn, fmt.Sprintf("%s OK Begin TLS negotiation", tag))

@@ -58,6 +58,8 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 			s.handleNamespace(conn, tag, state)
 		case "UNSELECT":
 			s.handleUnselect(conn, tag, state)
+		case "APPEND":
+			s.handleAppend(conn, tag, parts, line, state)
 		case "NOOP":
 			s.handleNoop(conn, tag, state)
 		case "LOGOUT":

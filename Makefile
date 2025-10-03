@@ -5,6 +5,7 @@
 #   make test-noop       - Run NOOP command tests
 #   make test-capability - Run CAPABILITY command tests
 #   make test-logout     - Run LOGOUT command tests
+#   make test-append     - Run APPEND command tests
 #   make test-commands   - Run all command tests
 #   make help            - Show all available targets
 
@@ -26,7 +27,11 @@ test-noop:
 test-logout:
 	go test -tags=test -v ./test/server -run "TestLogoutCommand"
 
-# Run all command tests (CAPABILITY + NOOP + LOGOUT)
+# Run only APPEND-related tests
+test-append:
+	go test -tags=test -v ./test/server -run "TestAppendCommand"
+
+# Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND)
 test-commands:
 	@echo "Running CAPABILITY tests..."
 	@go test -tags=test -v ./test/server -run "TestCapabilityCommand"
@@ -34,6 +39,8 @@ test-commands:
 	@go test -tags=test -v ./test/server -run "TestNoopCommand"
 	@echo "\nRunning LOGOUT tests..."
 	@go test -tags=test -v ./test/server -run "TestLogoutCommand"
+	@echo "\nRunning APPEND tests..."
+	@go test -tags=test -v ./test/server -run "TestAppendCommand"
 
 # Run tests with verbose output
 test-verbose:
@@ -99,7 +106,8 @@ help:
 	@echo "  test-capability      - Run CAPABILITY command tests only"
 	@echo "  test-noop            - Run NOOP command tests only"
 	@echo "  test-logout          - Run LOGOUT command tests only"
-	@echo "  test-commands        - Run all command tests (CAPABILITY + NOOP + LOGOUT)"
+	@echo "  test-append          - Run APPEND command tests only"
+	@echo "  test-commands        - Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND)"
 	@echo "  test-verbose         - Run tests with verbose output"
 	@echo "  test-coverage        - Run tests with coverage report"
 	@echo "  test-race            - Run tests with race detection"
