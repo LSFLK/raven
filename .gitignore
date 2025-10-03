@@ -3,4 +3,5 @@ config
 data
 certs
 
-
+# Ignore the trunk directory
+.trunk

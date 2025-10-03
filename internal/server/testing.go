@@ -56,6 +56,11 @@ func (t *TestInterface) HandleUnselect(conn net.Conn, tag string, state *models.
 	t.server.handleUnselect(conn, tag, state)
 }
 
+// HandleNoop exposes the noop handler for testing
+func (t *TestInterface) HandleNoop(conn net.Conn, tag string, state *models.ClientState) {
+	t.server.handleNoop(conn, tag, state)
+}
+
 // HandleAuthenticate exposes the authenticate handler for testing
 func (t *TestInterface) HandleAuthenticate(conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	t.server.handleAuthenticate(conn, tag, parts, state)

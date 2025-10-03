@@ -5,18 +5,16 @@ permissions:
 
 on:
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
     paths:
       - '**.go'
       - go.mod
       - go.sum
       - .github/workflows/**
-  push:
-    branches: [ main, develop ]
 
 jobs:
-  test:
-    name: Run Capability Tests
+  test-commands:
+    name: Run Specific Tests
     runs-on: ubuntu-latest
 
     steps:
@@ -32,5 +30,8 @@ jobs:
       - name: Install dependencies
         run: make deps
 
-      - name: Run capability tests
-        run: make test-capability
+      - name: Test CAPABILITY command
+        run: go test -tags=test -v ./test/server -run "TestCapabilityCommand"
+
+      - name: Test NOOP command
+        run: go test -tags=test -v ./test/server -run "TestNoopCommand"
