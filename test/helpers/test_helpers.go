@@ -95,6 +95,35 @@ func SetupTestServer(t *testing.T) *server.TestInterface {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
 
+	// Initialize database schema
+	schema := `
+	CREATE TABLE IF NOT EXISTS mails (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		subject TEXT,
+		sender TEXT,
+		recipient TEXT,
+		date_sent TEXT,
+		raw_message TEXT,
+		flags TEXT DEFAULT '',
+		folder TEXT DEFAULT 'INBOX'
+	);
+
+	CREATE TABLE IF NOT EXISTS folders (
+		name TEXT PRIMARY KEY,
+		delimiter TEXT DEFAULT '/',
+		attributes TEXT DEFAULT ''
+	);
+
+	INSERT OR IGNORE INTO folders (name) VALUES
+		('INBOX'),
+		('Sent'),
+		('Drafts'),
+		('Trash');
+	`
+	if _, err = db.Exec(schema); err != nil {
+		t.Fatalf("Failed to initialize test database schema: %v", err)
+	}
+
 	imapServer := server.NewIMAPServer(db)
 	return server.NewTestInterface(imapServer)
 }
