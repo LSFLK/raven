@@ -4,6 +4,7 @@
 #   make test            - Run all tests
 #   make test-noop       - Run NOOP command tests
 #   make test-capability - Run CAPABILITY command tests
+#   make test-logout     - Run LOGOUT command tests
 #   make test-commands   - Run all command tests
 #   make help            - Show all available targets
 
@@ -21,12 +22,18 @@ test-capability:
 test-noop:
 	go test -tags=test -v ./test/server -run "TestNoopCommand"
 
-# Run all command tests (CAPABILITY + NOOP)
+# Run only LOGOUT-related tests
+test-logout:
+	go test -tags=test -v ./test/server -run "TestLogoutCommand"
+
+# Run all command tests (CAPABILITY + NOOP + LOGOUT)
 test-commands:
 	@echo "Running CAPABILITY tests..."
 	@go test -tags=test -v ./test/server -run "TestCapabilityCommand"
 	@echo "\nRunning NOOP tests..."
 	@go test -tags=test -v ./test/server -run "TestNoopCommand"
+	@echo "\nRunning LOGOUT tests..."
+	@go test -tags=test -v ./test/server -run "TestLogoutCommand"
 
 # Run tests with verbose output
 test-verbose:
@@ -91,7 +98,8 @@ help:
 	@echo "  test                 - Run all tests"
 	@echo "  test-capability      - Run CAPABILITY command tests only"
 	@echo "  test-noop            - Run NOOP command tests only"
-	@echo "  test-commands        - Run all command tests (CAPABILITY + NOOP)"
+	@echo "  test-logout          - Run LOGOUT command tests only"
+	@echo "  test-commands        - Run all command tests (CAPABILITY + NOOP + LOGOUT)"
 	@echo "  test-verbose         - Run tests with verbose output"
 	@echo "  test-coverage        - Run tests with coverage report"
 	@echo "  test-race            - Run tests with race detection"

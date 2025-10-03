@@ -88,7 +88,7 @@ func (s *IMAPServer) handleList(conn net.Conn, tag string, parts []string, state
 }
 
 func (s *IMAPServer) handleLogout(conn net.Conn, tag string) {
-	s.sendResponse(conn, "* BYE SQLite IMAP server logging out")
+	s.sendResponse(conn, "* BYE IMAP4rev1 Server logging out")
 	s.sendResponse(conn, fmt.Sprintf("%s OK LOGOUT completed", tag))
 }
 
