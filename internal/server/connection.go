@@ -59,7 +59,7 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 		case "UNSELECT":
 			s.handleUnselect(conn, tag, state)
 		case "NOOP":
-			s.sendResponse(conn, fmt.Sprintf("%s OK NOOP completed", tag))
+			s.handleNoop(conn, tag, state)
 		case "LOGOUT":
 			s.handleLogout(conn, tag)
 			return

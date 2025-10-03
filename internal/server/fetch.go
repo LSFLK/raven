@@ -36,6 +36,10 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 		recent = 0
 	}
 
+	// Initialize state tracking for NOOP and other commands
+	state.LastMessageCount = count
+	state.LastRecentCount = recent
+
 	s.sendResponse(conn, fmt.Sprintf("* %d EXISTS", count))
 	s.sendResponse(conn, fmt.Sprintf("* %d RECENT", recent))
 	s.sendResponse(conn, "* OK [UIDVALIDITY 1] UID validity status")

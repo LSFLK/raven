@@ -1,6 +1,13 @@
 # Makefile for Go IMAP Server Testing
+#
+# Quick Reference:
+#   make test            - Run all tests
+#   make test-noop       - Run NOOP command tests
+#   make test-capability - Run CAPABILITY command tests
+#   make test-commands   - Run all command tests
+#   make help            - Show all available targets
 
-.PHONY: test test-capability test-verbose test-coverage test-race clean
+.PHONY: test test-capability test-noop test-commands test-verbose test-coverage test-race clean
 
 # Run all tests
 test:
@@ -8,7 +15,18 @@ test:
 
 # Run only capability-related tests
 test-capability:
-	go test -tags=test -v ./test/server -run "TestCapability"
+	go test -tags=test -v ./test/server -run "TestCapabilityCommand"
+
+# Run only NOOP-related tests
+test-noop:
+	go test -tags=test -v ./test/server -run "TestNoopCommand"
+
+# Run all command tests (CAPABILITY + NOOP)
+test-commands:
+	@echo "Running CAPABILITY tests..."
+	@go test -tags=test -v ./test/server -run "TestCapabilityCommand"
+	@echo "\nRunning NOOP tests..."
+	@go test -tags=test -v ./test/server -run "TestNoopCommand"
 
 # Run tests with verbose output
 test-verbose:
@@ -19,14 +37,15 @@ test-coverage:
 	go test -tags=test -cover ./...
 	go test -tags=test -coverprofile=coverage.out ./test/server
 	go tool cover -html=coverage.out -o coverage.html
+	@echo "\nCoverage report generated: coverage.html"
 
 # Run tests with race detection
 test-race:
 	go test -tags=test -race ./...
 
-# Run capability tests with detailed output
+# Run capability tests with detailed output (deprecated, use test-capability)
 test-capability-detailed:
-	go test -tags=test -v -run "TestCapability" ./test/server
+	go test -tags=test -v -run "TestCapabilityCommand" ./test/server
 
 # Run benchmarks
 bench:
@@ -67,17 +86,26 @@ ci: deps check
 # Help
 help:
 	@echo "Available targets:"
+	@echo ""
+	@echo "Testing:"
 	@echo "  test                 - Run all tests"
-	@echo "  test-capability      - Run capability tests only"
+	@echo "  test-capability      - Run CAPABILITY command tests only"
+	@echo "  test-noop            - Run NOOP command tests only"
+	@echo "  test-commands        - Run all command tests (CAPABILITY + NOOP)"
 	@echo "  test-verbose         - Run tests with verbose output"
 	@echo "  test-coverage        - Run tests with coverage report"
 	@echo "  test-race            - Run tests with race detection"
 	@echo "  bench                - Run benchmarks"
 	@echo "  test-single TEST=... - Run a specific test"
-	@echo "  clean                - Clean test artifacts"
+	@echo ""
+	@echo "Development:"
 	@echo "  deps                 - Install dependencies"
 	@echo "  fmt                  - Format code"
 	@echo "  lint                 - Lint code"
+	@echo "  clean                - Clean test artifacts"
+	@echo ""
+	@echo "CI/CD:"
 	@echo "  check                - Run all quality checks"
 	@echo "  ci                   - Run CI pipeline"
+	@echo ""
 	@echo "  help                 - Show this help"
