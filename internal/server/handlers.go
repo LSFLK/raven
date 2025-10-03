@@ -92,6 +92,66 @@ func (s *IMAPServer) handleLogout(conn net.Conn, tag string) {
 	s.sendResponse(conn, fmt.Sprintf("%s OK LOGOUT completed", tag))
 }
 
+func (s *IMAPServer) handleNoop(conn net.Conn, tag string, state *models.ClientState) {
+	// NOOP can be used before authentication
+	// If authenticated and a folder is selected, check for mailbox updates
+	// and send untagged responses per RFC 3501
+	if state.Authenticated && state.SelectedFolder != "" {
+		// Get current mailbox state
+		var currentCount int
+		err := s.db.QueryRow("SELECT COUNT(*) FROM mails WHERE folder = ?", state.SelectedFolder).Scan(&currentCount)
+		if err != nil {
+			// If there's a database error, just complete normally
+			s.sendResponse(conn, fmt.Sprintf("%s OK NOOP completed", tag))
+			return
+		}
+
+		var currentRecent int
+		err = s.db.QueryRow("SELECT COUNT(*) FROM mails WHERE folder = ? AND flags NOT LIKE '%\\Seen%'", state.SelectedFolder).Scan(&currentRecent)
+		if err != nil {
+			currentRecent = 0
+		}
+
+		// Check for new messages (EXISTS response)
+		if currentCount > state.LastMessageCount {
+			s.sendResponse(conn, fmt.Sprintf("* %d EXISTS", currentCount))
+			
+			// Calculate new recent messages
+			newRecent := currentCount - state.LastMessageCount
+			if newRecent > 0 {
+				s.sendResponse(conn, fmt.Sprintf("* %d RECENT", newRecent))
+			}
+		}
+
+		// Check for expunged (deleted) messages
+		if currentCount < state.LastMessageCount {
+			// Send EXPUNGE for each deleted message
+			// Note: In a real implementation, you'd track which specific messages
+			// were expunged. Here we send generic expunge notifications.
+			for i := state.LastMessageCount; i > currentCount; i-- {
+				s.sendResponse(conn, fmt.Sprintf("* %d EXPUNGE", i))
+			}
+		}
+
+		// Check for flag changes (simplified - just report recent count changes)
+		if currentRecent != state.LastRecentCount && currentCount == state.LastMessageCount {
+			// Messages exist but recent count changed (flags were modified)
+			// In a full implementation, you'd send FETCH responses with updated flags
+			// For now, we send an informational message
+			if currentRecent > 0 {
+				s.sendResponse(conn, fmt.Sprintf("* %d RECENT", currentRecent))
+			}
+		}
+
+		// Update state tracking
+		state.LastMessageCount = currentCount
+		state.LastRecentCount = currentRecent
+	}
+	
+	// Always complete successfully per RFC 3501
+	s.sendResponse(conn, fmt.Sprintf("%s OK NOOP completed", tag))
+}
+
 func (s *IMAPServer) handleIdle(conn net.Conn, tag string, state *models.ClientState) {
 	if !state.Authenticated {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
@@ -181,6 +241,9 @@ func (s *IMAPServer) handleUnselect(conn net.Conn, tag string, state *models.Cli
 
 	// Close mailbox without expunging messages
 	state.SelectedFolder = ""
+	// Reset state tracking
+	state.LastMessageCount = 0
+	state.LastRecentCount = 0
 	s.sendResponse(conn, fmt.Sprintf("%s OK UNSELECT completed", tag))
 }
 
