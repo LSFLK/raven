@@ -23,15 +23,18 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 
 	folder := strings.Trim(parts[2], "\"")
 	state.SelectedFolder = folder
+	tableName := s.getUserTableName(state.Username)
 
 	var count int
-	err := s.db.QueryRow("SELECT COUNT(*) FROM mails WHERE folder = ?", folder).Scan(&count)
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ?", tableName)
+	err := s.db.QueryRow(query, folder).Scan(&count)
 	if err != nil {
 		count = 0
 	}
 
 	var recent int
-	err = s.db.QueryRow("SELECT COUNT(*) FROM mails WHERE folder = ? AND flags NOT LIKE '%\\Seen%'", folder).Scan(&recent)
+	query = fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ? AND flags NOT LIKE '%%\\Seen%%'", tableName)
+	err = s.db.QueryRow(query, folder).Scan(&recent)
 	if err != nil {
 		recent = 0
 	}
@@ -74,6 +77,7 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 	sequence := parts[2]
 	items := strings.Join(parts[3:], " ")
 	items = strings.Trim(items, "()")
+	tableName := s.getUserTableName(state.Username)
 
 	var rows *sql.Rows
 	var err error
@@ -96,7 +100,8 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		}
 		if seqRange[1] == "*" {
 			// Get max count for end
-			s.db.QueryRow("SELECT COUNT(*) FROM mails WHERE folder = ?", state.SelectedFolder).Scan(&end)
+			query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ?", tableName)
+			s.db.QueryRow(query, state.SelectedFolder).Scan(&end)
 		} else {
 			end, err = strconv.Atoi(seqRange[1])
 			if err != nil || end < 1 {
@@ -110,16 +115,19 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		if end < start {
 			end = start
 		}
-		rows, err = s.db.Query("SELECT id, raw_message, flags FROM mails WHERE folder = ? ORDER BY id ASC LIMIT ? OFFSET ?", state.SelectedFolder, end-start+1, start-1)
+		query := fmt.Sprintf("SELECT id, raw_message, flags FROM %s WHERE folder = ? ORDER BY id ASC LIMIT ? OFFSET ?", tableName)
+		rows, err = s.db.Query(query, state.SelectedFolder, end-start+1, start-1)
 	} else if sequence == "1:*" || sequence == "*" {
-		rows, err = s.db.Query("SELECT id, raw_message, flags FROM mails WHERE folder = ? ORDER BY id ASC", state.SelectedFolder)
+		query := fmt.Sprintf("SELECT id, raw_message, flags FROM %s WHERE folder = ? ORDER BY id ASC", tableName)
+		rows, err = s.db.Query(query, state.SelectedFolder)
 	} else {
 		msgNum, parseErr := strconv.Atoi(sequence)
 		if parseErr != nil {
 			s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence number", tag))
 			return
 		}
-		rows, err = s.db.Query("SELECT id, raw_message, flags FROM mails WHERE folder = ? ORDER BY id ASC LIMIT 1 OFFSET ?", state.SelectedFolder, msgNum-1)
+		query := fmt.Sprintf("SELECT id, raw_message, flags FROM %s WHERE folder = ? ORDER BY id ASC LIMIT 1 OFFSET ?", tableName)
+		rows, err = s.db.Query(query, state.SelectedFolder, msgNum-1)
 	}
 
 	if err != nil {
@@ -157,7 +165,8 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		}
 		if strings.Contains(itemsUpper, "INTERNALDATE") {
 			var internalDate string
-			s.db.QueryRow("SELECT date_sent FROM mails WHERE id = ?", id).Scan(&internalDate)
+			query := fmt.Sprintf("SELECT date_sent FROM %s WHERE id = ?", tableName)
+			s.db.QueryRow(query, id).Scan(&internalDate)
 			if internalDate == "" {
 				internalDate = "01-Jan-1970 00:00:00 +0000"
 			}
@@ -199,7 +208,9 @@ func (s *IMAPServer) handleSearch(conn net.Conn, tag string, parts []string, sta
 		return
 	}
 
-	rows, err := s.db.Query("SELECT ROW_NUMBER() OVER (ORDER BY id ASC) as seq FROM mails WHERE folder = ?", state.SelectedFolder)
+	tableName := s.getUserTableName(state.Username)
+	query := fmt.Sprintf("SELECT ROW_NUMBER() OVER (ORDER BY id ASC) as seq FROM %s WHERE folder = ?", tableName)
+	rows, err := s.db.Query(query, state.SelectedFolder)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Search failed", tag))
 		return
@@ -229,9 +240,11 @@ func (s *IMAPServer) handleStatus(conn net.Conn, tag string, parts []string, sta
 	}
 
 	folder := strings.Trim(parts[2], "\"")
+	tableName := s.getUserTableName(state.Username)
 
 	var count int
-	s.db.QueryRow("SELECT COUNT(*) FROM mails WHERE folder = ?", folder).Scan(&count)
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ?", tableName)
+	s.db.QueryRow(query, folder).Scan(&count)
 
 	s.sendResponse(conn, fmt.Sprintf("* STATUS \"%s\" (MESSAGES %d RECENT 0 UIDNEXT %d UIDVALIDITY 1 UNSEEN 0)", folder, count, count+1))
 	s.sendResponse(conn, fmt.Sprintf("%s OK STATUS completed", tag))
