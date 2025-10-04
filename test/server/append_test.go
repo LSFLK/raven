@@ -14,7 +14,9 @@ import (
 
 // TestAppendCommand_Basic tests basic APPEND functionality
 func TestAppendCommand_Basic(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	db := helpers.CreateTestDB(t)
+	helpers.CreateTestUserTable(t, db, "testuser")
+	server := helpers.TestServerWithDB(db)
 	conn := helpers.NewMockConn()
 
 	state := &models.ClientState{
@@ -53,7 +55,9 @@ func TestAppendCommand_Basic(t *testing.T) {
 
 // TestAppendCommand_WithFlags tests APPEND with flags
 func TestAppendCommand_WithFlags(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	db := helpers.CreateTestDB(t)
+	helpers.CreateTestUserTable(t, db, "testuser")
+	server := helpers.TestServerWithDB(db)
 	conn := helpers.NewMockConn()
 
 	state := &models.ClientState{
@@ -131,7 +135,9 @@ func TestAppendCommand_InvalidFolder(t *testing.T) {
 
 // TestAppendCommand_ToINBOX tests APPEND to INBOX folder
 func TestAppendCommand_ToINBOX(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	db := helpers.CreateTestDB(t)
+	helpers.CreateTestUserTable(t, db, "testuser")
+	server := helpers.TestServerWithDB(db)
 	conn := helpers.NewMockConn()
 
 	state := &models.ClientState{
@@ -156,7 +162,9 @@ func TestAppendCommand_ToINBOX(t *testing.T) {
 
 // TestAppendCommand_ToDrafts tests APPEND to Drafts folder
 func TestAppendCommand_ToDrafts(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	db := helpers.CreateTestDB(t)
+	helpers.CreateTestUserTable(t, db, "testuser")
+	server := helpers.TestServerWithDB(db)
 	conn := helpers.NewMockConn()
 
 	state := &models.ClientState{

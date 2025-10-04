@@ -2,10 +2,12 @@ package helpers
 
 import (
 	"database/sql"
+	"fmt"
 	"net"
 	"testing"
 	"time"
 
+	"go-imap/internal/db"
 	"go-imap/internal/server"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -95,30 +97,12 @@ func SetupTestServer(t *testing.T) *server.TestInterface {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
 
-	// Initialize database schema
+	// Initialize database schema with metadata table
 	schema := `
-	CREATE TABLE IF NOT EXISTS mails (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		subject TEXT,
-		sender TEXT,
-		recipient TEXT,
-		date_sent TEXT,
-		raw_message TEXT,
-		flags TEXT DEFAULT '',
-		folder TEXT DEFAULT 'INBOX'
+	CREATE TABLE IF NOT EXISTS user_metadata (
+		username TEXT PRIMARY KEY,
+		created_at TEXT DEFAULT CURRENT_TIMESTAMP
 	);
-
-	CREATE TABLE IF NOT EXISTS folders (
-		name TEXT PRIMARY KEY,
-		delimiter TEXT DEFAULT '/',
-		attributes TEXT DEFAULT ''
-	);
-
-	INSERT OR IGNORE INTO folders (name) VALUES
-		('INBOX'),
-		('Sent'),
-		('Drafts'),
-		('Trash');
 	`
 	if _, err = db.Exec(schema); err != nil {
 		t.Fatalf("Failed to initialize test database schema: %v", err)
@@ -136,9 +120,43 @@ func TestServerWithDB(db *sql.DB) *server.TestInterface {
 
 // CreateTestDB creates an in-memory SQLite database for testing
 func CreateTestDB(t *testing.T) *sql.DB {
-	db, err := sql.Open("sqlite3", ":memory:")
+	database, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
-	return db
+	
+	// Create user_metadata table
+	metadataSchema := `
+	CREATE TABLE IF NOT EXISTS user_metadata (
+		username TEXT PRIMARY KEY,
+		created_at TEXT DEFAULT CURRENT_TIMESTAMP
+	);
+	`
+	if _, err = database.Exec(metadataSchema); err != nil {
+		t.Fatalf("Failed to initialize test database metadata schema: %v", err)
+	}
+	
+	return database
+}
+
+// CreateTestUserTable creates a table for a test user
+func CreateTestUserTable(t *testing.T, database *sql.DB, username string) {
+	err := db.CreateUserTable(database, username)
+	if err != nil {
+		t.Fatalf("Failed to create user table for %s: %v", username, err)
+	}
+}
+
+// InsertTestMail inserts a test mail into a user's table
+func InsertTestMail(t *testing.T, database *sql.DB, username, subject, sender, recipient, folder string) {
+	tableName := db.GetUserTableName(username)
+	query := fmt.Sprintf(
+		"INSERT INTO %s (subject, sender, recipient, date_sent, raw_message, flags, folder) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		tableName,
+	)
+	rawMessage := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\nTest message body", sender, recipient, subject)
+	_, err := database.Exec(query, subject, sender, recipient, "01-Jan-2024 12:00:00 +0000", rawMessage, "", folder)
+	if err != nil {
+		t.Fatalf("Failed to insert test mail: %v", err)
+	}
 }

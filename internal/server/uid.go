@@ -48,12 +48,14 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 	sequence := parts[3]
 	items := strings.Join(parts[4:], " ")
 	items = strings.Trim(items, "()")
+	tableName := s.getUserTableName(state.Username)
 
 	var rows *sql.Rows
 	var err error
 
 	if sequence == "1:*" {
-		rows, err = s.db.Query("SELECT id, raw_message, flags, ROW_NUMBER() OVER (ORDER BY id ASC) as seq FROM mails WHERE folder = ? ORDER BY id ASC", state.SelectedFolder)
+		query := fmt.Sprintf("SELECT id, raw_message, flags, ROW_NUMBER() OVER (ORDER BY id ASC) as seq FROM %s WHERE folder = ? ORDER BY id ASC", tableName)
+		rows, err = s.db.Query(query, state.SelectedFolder)
 	} else if strings.Contains(sequence, ":") {
 		r := strings.Split(sequence, ":")
 		if len(r) == 2 {
@@ -63,7 +65,8 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 				s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid UID range", tag))
 				return
 			}
-			rows, err = s.db.Query("SELECT id, raw_message, flags, ROW_NUMBER() OVER (ORDER BY id ASC) as seq FROM mails WHERE folder = ? AND id >= ? AND id <= ? ORDER BY id ASC", state.SelectedFolder, start, end)
+			query := fmt.Sprintf("SELECT id, raw_message, flags, ROW_NUMBER() OVER (ORDER BY id ASC) as seq FROM %s WHERE folder = ? AND id >= ? AND id <= ? ORDER BY id ASC", tableName)
+			rows, err = s.db.Query(query, state.SelectedFolder, start, end)
 		} else {
 			s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid UID range format", tag))
 			return
@@ -74,7 +77,8 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 			s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid UID", tag))
 			return
 		}
-		rows, err = s.db.Query("SELECT id, raw_message, flags, ROW_NUMBER() OVER (ORDER BY id ASC) as seq FROM mails WHERE folder = ? AND id = ?", state.SelectedFolder, uid)
+		query := fmt.Sprintf("SELECT id, raw_message, flags, ROW_NUMBER() OVER (ORDER BY id ASC) as seq FROM %s WHERE folder = ? AND id = ?", tableName)
+		rows, err = s.db.Query(query, state.SelectedFolder, uid)
 	}
 
 	if err != nil {
@@ -172,7 +176,9 @@ func (s *IMAPServer) handleUIDSearch(conn net.Conn, tag string, parts []string, 
 		return
 	}
 
-	rows, err := s.db.Query("SELECT id FROM mails WHERE folder = ? ORDER BY id ASC", state.SelectedFolder)
+	tableName := s.getUserTableName(state.Username)
+	query := fmt.Sprintf("SELECT id FROM %s WHERE folder = ? ORDER BY id ASC", tableName)
+	rows, err := s.db.Query(query, state.SelectedFolder)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Search failed", tag))
 		return
@@ -206,6 +212,7 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 	sequence := parts[3]
 	flagsStr := strings.Join(parts[5:], " ")
 	flagsStr = strings.Trim(flagsStr, "()")
+	tableName := s.getUserTableName(state.Username)
 
 	if !strings.Contains(flagsStr, "\\Seen") {
 		s.sendResponse(conn, fmt.Sprintf("%s BAD Only \\Seen flag supported", tag))
@@ -214,7 +221,8 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 
 	var err error
 	if sequence == "1:*" {
-		_, err = s.db.Exec("UPDATE mails SET flags = CASE WHEN flags LIKE '%\\Seen%' THEN flags ELSE flags || ' \\Seen' END WHERE folder = ?", state.SelectedFolder)
+		query := fmt.Sprintf("UPDATE %s SET flags = CASE WHEN flags LIKE '%%\\Seen%%' THEN flags ELSE flags || ' \\Seen' END WHERE folder = ?", tableName)
+		_, err = s.db.Exec(query, state.SelectedFolder)
 	} else if strings.Contains(sequence, ":") {
 		r := strings.Split(sequence, ":")
 		if len(r) == 2 {
@@ -224,7 +232,8 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 				s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid UID range", tag))
 				return
 			}
-			_, err = s.db.Exec("UPDATE mails SET flags = CASE WHEN flags LIKE '%\\Seen%' THEN flags ELSE flags || ' \\Seen' END WHERE folder = ? AND id >= ? AND id <= ?", state.SelectedFolder, start, end)
+			query := fmt.Sprintf("UPDATE %s SET flags = CASE WHEN flags LIKE '%%\\Seen%%' THEN flags ELSE flags || ' \\Seen' END WHERE folder = ? AND id >= ? AND id <= ?", tableName)
+			_, err = s.db.Exec(query, state.SelectedFolder, start, end)
 		} else {
 			s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid UID range format", tag))
 			return
@@ -235,7 +244,8 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 			s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid UID", tag))
 			return
 		}
-		_, err = s.db.Exec("UPDATE mails SET flags = CASE WHEN flags LIKE '%\\Seen%' THEN flags ELSE flags || ' \\Seen' END WHERE folder = ? AND id = ?", state.SelectedFolder, uid)
+		query := fmt.Sprintf("UPDATE %s SET flags = CASE WHEN flags LIKE '%%\\Seen%%' THEN flags ELSE flags || ' \\Seen' END WHERE folder = ? AND id = ?", tableName)
+		_, err = s.db.Exec(query, state.SelectedFolder, uid)
 	}
 
 	if err != nil {
