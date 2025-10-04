@@ -97,9 +97,12 @@ func (s *IMAPServer) handleNoop(conn net.Conn, tag string, state *models.ClientS
 	// If authenticated and a folder is selected, check for mailbox updates
 	// and send untagged responses per RFC 3501
 	if state.Authenticated && state.SelectedFolder != "" {
+		tableName := s.getUserTableName(state.Username)
+		
 		// Get current mailbox state
 		var currentCount int
-		err := s.db.QueryRow("SELECT COUNT(*) FROM mails WHERE folder = ?", state.SelectedFolder).Scan(&currentCount)
+		query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ?", tableName)
+		err := s.db.QueryRow(query, state.SelectedFolder).Scan(&currentCount)
 		if err != nil {
 			// If there's a database error, just complete normally
 			s.sendResponse(conn, fmt.Sprintf("%s OK NOOP completed", tag))
@@ -107,7 +110,8 @@ func (s *IMAPServer) handleNoop(conn net.Conn, tag string, state *models.ClientS
 		}
 
 		var currentRecent int
-		err = s.db.QueryRow("SELECT COUNT(*) FROM mails WHERE folder = ? AND flags NOT LIKE '%\\Seen%'", state.SelectedFolder).Scan(&currentRecent)
+		query = fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ? AND flags NOT LIKE '%%\\Seen%%'", tableName)
+		err = s.db.QueryRow(query, state.SelectedFolder).Scan(&currentRecent)
 		if err != nil {
 			currentRecent = 0
 		}
@@ -163,15 +167,18 @@ func (s *IMAPServer) handleIdle(conn net.Conn, tag string, state *models.ClientS
 		return
 	}
 
-	// Tell client we’re entering idle mode
+	// Tell client we're entering idle mode
 	s.sendResponse(conn, "+ idling")
 
 	buf := make([]byte, 4096)
+	tableName := s.getUserTableName(state.Username)
 
 	// Track previous state of the folder
 	var prevCount, prevUnseen int
-	_ = s.db.QueryRow("SELECT COUNT(*) FROM mails WHERE folder = ?", state.SelectedFolder).Scan(&prevCount)
-	_ = s.db.QueryRow("SELECT COUNT(*) FROM mails WHERE folder = ? AND flags NOT LIKE '%\\Seen%'", state.SelectedFolder).Scan(&prevUnseen)
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ?", tableName)
+	_ = s.db.QueryRow(query, state.SelectedFolder).Scan(&prevCount)
+	query = fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ? AND flags NOT LIKE '%%\\Seen%%'", tableName)
+	_ = s.db.QueryRow(query, state.SelectedFolder).Scan(&prevUnseen)
 
 	for {
 		// Poll every 2 seconds for changes
@@ -179,8 +186,10 @@ func (s *IMAPServer) handleIdle(conn net.Conn, tag string, state *models.ClientS
 
 		// Check current mailbox state
 		var count, unseen int
-		_ = s.db.QueryRow("SELECT COUNT(*) FROM mails WHERE folder = ?", state.SelectedFolder).Scan(&count)
-		_ = s.db.QueryRow("SELECT COUNT(*) FROM mails WHERE folder = ? AND flags NOT LIKE '%\\Seen%'", state.SelectedFolder).Scan(&unseen)
+		query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ?", tableName)
+		_ = s.db.QueryRow(query, state.SelectedFolder).Scan(&count)
+		query = fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ? AND flags NOT LIKE '%%\\Seen%%'", tableName)
+		_ = s.db.QueryRow(query, state.SelectedFolder).Scan(&unseen)
 
 		// Notify about new messages
 		if count > prevCount {
@@ -358,10 +367,12 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 	}
 
 	// Insert into database
-	_, err := s.db.Exec(
-		"INSERT INTO mails (subject, sender, recipient, date_sent, raw_message, flags, folder) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		subject, sender, recipient, dateSent, rawMessage, flags, folder,
+	tableName := s.getUserTableName(state.Username)
+	query := fmt.Sprintf(
+		"INSERT INTO %s (subject, sender, recipient, date_sent, raw_message, flags, folder) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		tableName,
 	)
+	_, err := s.db.Exec(query, subject, sender, recipient, dateSent, rawMessage, flags, folder)
 
 	if err != nil {
 		log.Printf("Failed to insert message: %v", err)
@@ -518,6 +529,14 @@ func (s *IMAPServer) authenticateUser(conn net.Conn, tag string, username string
 
 	if resp.StatusCode == 200 {
 		log.Printf("Accepting login for user: %s", username)
+		
+		// Ensure user table exists
+		if err := s.ensureUserTable(username); err != nil {
+			log.Printf("Failed to create user table: %v", err)
+			s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN server error", tag))
+			return
+		}
+		
 		state.Authenticated = true
 		state.Username = username
 		s.sendResponse(conn, fmt.Sprintf("%s OK [CAPABILITY IMAP4rev1 UIDPLUS IDLE NAMESPACE UNSELECT LITERAL+] LOGIN completed", tag))
