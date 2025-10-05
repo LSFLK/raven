@@ -14,7 +14,7 @@ import (
 // TestLogoutCommand_Unauthenticated tests LOGOUT before authentication
 // RFC 3501: LOGOUT can be used in any state
 func TestLogoutCommand_Unauthenticated(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
 
 	server.HandleLogout(conn, "L001")
@@ -41,7 +41,7 @@ func TestLogoutCommand_Unauthenticated(t *testing.T) {
 
 // TestLogoutCommand_Authenticated tests LOGOUT after successful authentication
 func TestLogoutCommand_Authenticated(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
 
 	server.HandleLogout(conn, "A023")
@@ -73,7 +73,7 @@ func TestLogoutCommand_Authenticated(t *testing.T) {
 
 // TestLogoutCommand_WithSelectedFolder tests LOGOUT with a folder selected
 func TestLogoutCommand_WithSelectedFolder(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
 
 	// Simulate state with selected folder
@@ -106,7 +106,7 @@ func TestLogoutCommand_WithSelectedFolder(t *testing.T) {
 // TestLogoutCommand_ResponseOrder tests that BYE is sent before OK
 // This is a MUST requirement from RFC 3501
 func TestLogoutCommand_ResponseOrder(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
 
 	server.HandleLogout(conn, "L004")
@@ -147,7 +147,7 @@ func TestLogoutCommand_ResponseOrder(t *testing.T) {
 // TestLogoutCommand_MultipleSequentialLogouts tests multiple LOGOUT commands
 // (though in practice connection closes after first)
 func TestLogoutCommand_MultipleSequentialLogouts(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	server := helpers.SetupTestServerSimple(t)
 
 	testCases := []struct {
 		tag          string
@@ -183,7 +183,7 @@ func TestLogoutCommand_MultipleSequentialLogouts(t *testing.T) {
 // TestLogoutCommand_AlwaysSucceeds tests that LOGOUT always returns OK
 // LOGOUT should never fail with BAD or NO response
 func TestLogoutCommand_AlwaysSucceeds(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
 
 	server.HandleLogout(conn, "L005")
@@ -207,7 +207,7 @@ func TestLogoutCommand_AlwaysSucceeds(t *testing.T) {
 
 // TestLogoutCommand_NoArguments tests that LOGOUT doesn't require arguments
 func TestLogoutCommand_NoArguments(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
 
 	// LOGOUT takes no arguments, just tag
@@ -246,7 +246,7 @@ func TestLogoutCommand_TagFormat(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.description, func(t *testing.T) {
-			server := helpers.SetupTestServer(t)
+			server := helpers.SetupTestServerSimple(t)
 			conn := helpers.NewMockConn()
 
 			server.HandleLogout(conn, tc.tag)
@@ -269,7 +269,7 @@ func TestLogoutCommand_TagFormat(t *testing.T) {
 
 // TestLogoutCommand_MessageContent tests the content of BYE message
 func TestLogoutCommand_MessageContent(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
 
 	server.HandleLogout(conn, "L007")

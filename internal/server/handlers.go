@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net"
@@ -447,10 +448,26 @@ func (s *IMAPServer) handleAuthenticate(conn net.Conn, tag string, parts []strin
 	mechanism := strings.ToUpper(parts[2])
 	switch mechanism {
 	case "PLAIN":
+		// Do not allow plaintext authentication unless using TLS
+		isTLS := false
+		if _, ok := conn.(*tls.Conn); ok {
+			isTLS = true
+		} else {
+			type tlsAware interface{ IsTLS() bool }
+			if ta, ok := any(conn).(tlsAware); ok && ta.IsTLS() {
+				isTLS = true
+			}
+		}
+		if !isTLS {
+			s.sendResponse(conn, fmt.Sprintf("%s NO Plaintext authentication disallowed without TLS", tag))
+			return
+		}
+
 		// Send continuation request
 		s.sendResponse(conn, "+ ")
+
 		// Read the authentication data
-		buf := make([]byte, 4096)
+		buf := make([]byte, 8192)
 		conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 		n, err := conn.Read(buf)
 		if err != nil {
@@ -460,24 +477,54 @@ func (s *IMAPServer) handleAuthenticate(conn net.Conn, tag string, parts []strin
 
 		authData := strings.TrimSpace(string(buf[:n]))
 
-		// Decode base64 if needed (PLAIN mechanism sends base64 encoded data)
-		// Format: \0username\0password or username@domain\0username\0password
-		decoded := authData
-		if authData != "*" { // "*" cancels authentication
-			// For simplicity, we'll handle both base64 and plain text
-			// In a real implementation, you'd always expect base64
-			parts := strings.Split(decoded, "\000") // NULL separator
-			if len(parts) >= 3 {
-				username := parts[1]
-				password := parts[2]
-
-				// Reuse the existing login logic
-				s.authenticateUser(conn, tag, username, password, state)
-				return
-			}
+		// Client may cancel authentication with a single "*"
+		if authData == "*" {
+			s.sendResponse(conn, fmt.Sprintf("%s BAD Authentication cancelled", tag))
+			return
 		}
 
-		s.sendResponse(conn, fmt.Sprintf("%s BAD Authentication failed", tag))
+		log.Printf("AUTHENTICATE PLAIN: received %d bytes of auth data", len(authData))
+
+		// Decode base64 as per SASL challenge/response (PLAIN uses base64 here)
+		var decoded []byte
+		decoded, err = base64.StdEncoding.DecodeString(authData)
+		if err != nil {
+			log.Printf("AUTHENTICATE PLAIN: base64 decode failed: %v, treating as plain", err)
+			// If decode fails, fall back to treating the input as plain (some test-clients may do this)
+			decoded = []byte(authData)
+		} else {
+			log.Printf("AUTHENTICATE PLAIN: decoded %d bytes", len(decoded))
+		}
+
+		// Split on NUL (\x00). PLAIN: [authzid] \x00 authcid \x00 passwd
+		partsNull := strings.Split(string(decoded), "\x00")
+		log.Printf("AUTHENTICATE PLAIN: split into %d parts", len(partsNull))
+		
+		var username, password string
+		if len(partsNull) >= 3 {
+			username = partsNull[1]
+			password = partsNull[2]
+			log.Printf("AUTHENTICATE PLAIN: extracted username=%s (password length=%d)", username, len(password))
+		} else if len(partsNull) == 2 {
+			// fallback: username and password
+			username = partsNull[0]
+			password = partsNull[1]
+			log.Printf("AUTHENTICATE PLAIN: fallback extracted username=%s (password length=%d)", username, len(password))
+		} else {
+			log.Printf("AUTHENTICATE PLAIN: invalid format, expected 2-3 parts, got %d", len(partsNull))
+			s.sendResponse(conn, fmt.Sprintf("%s BAD Authentication failed", tag))
+			return
+		}
+
+		if username == "" || password == "" {
+			log.Printf("AUTHENTICATE PLAIN: empty username or password")
+			s.sendResponse(conn, fmt.Sprintf("%s BAD Authentication failed", tag))
+			return
+		}
+
+		// Reuse the existing login logic
+		s.authenticateUser(conn, tag, username, password, state)
+		return
 
 	default:
 		s.sendResponse(conn, fmt.Sprintf("%s NO Unsupported authentication mechanism", tag))

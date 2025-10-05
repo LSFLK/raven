@@ -1,15 +1,16 @@
 # Makefile for Go IMAP Server Testing
 #
 # Quick Reference:
-#   make test            - Run all tests
-#   make test-noop       - Run NOOP command tests
-#   make test-capability - Run CAPABILITY command tests
-#   make test-logout     - Run LOGOUT command tests
-#   make test-append     - Run APPEND command tests
-#   make test-commands   - Run all command tests
-#   make help            - Show all available targets
+#   make test              - Run all tests
+#   make test-noop         - Run NOOP command tests
+#   make test-capability   - Run CAPABILITY command tests
+#   make test-logout       - Run LOGOUT command tests
+#   make test-append       - Run APPEND command tests
+#   make test-authenticate - Run AUTHENTICATE command tests
+#   make test-commands     - Run all command tests
+#   make help              - Show all available targets
 
-.PHONY: test test-capability test-noop test-commands test-verbose test-coverage test-race clean
+.PHONY: test test-capability test-noop test-authenticate test-commands test-verbose test-coverage test-race clean
 
 # Run all tests
 test:
@@ -31,7 +32,15 @@ test-logout:
 test-append:
 	go test -tags=test -v ./test/server -run "TestAppendCommand"
 
-# Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND)
+# Run only AUTHENTICATE-related tests
+test-authenticate:
+	go test -tags=test -v ./test/server -run "TestAuthenticate"
+
+# Run AUTHENTICATE benchmarks
+bench-authenticate:
+	go test -tags=test -bench=BenchmarkAuthenticate -benchmem ./test/server
+
+# Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND + AUTHENTICATE)
 test-commands:
 	@echo "Running CAPABILITY tests..."
 	@go test -tags=test -v ./test/server -run "TestCapabilityCommand"
@@ -41,6 +50,8 @@ test-commands:
 	@go test -tags=test -v ./test/server -run "TestLogoutCommand"
 	@echo "\nRunning APPEND tests..."
 	@go test -tags=test -v ./test/server -run "TestAppendCommand"
+	@echo "\nRunning AUTHENTICATE tests..."
+	@go test -tags=test -v ./test/server -run "TestAuthenticate"
 
 # Run tests with verbose output
 test-verbose:
@@ -102,26 +113,28 @@ help:
 	@echo "Available targets:"
 	@echo ""
 	@echo "Testing:"
-	@echo "  test                 - Run all tests"
-	@echo "  test-capability      - Run CAPABILITY command tests only"
-	@echo "  test-noop            - Run NOOP command tests only"
-	@echo "  test-logout          - Run LOGOUT command tests only"
-	@echo "  test-append          - Run APPEND command tests only"
-	@echo "  test-commands        - Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND)"
-	@echo "  test-verbose         - Run tests with verbose output"
-	@echo "  test-coverage        - Run tests with coverage report"
-	@echo "  test-race            - Run tests with race detection"
-	@echo "  bench                - Run benchmarks"
-	@echo "  test-single TEST=... - Run a specific test"
+	@echo "  test                   - Run all tests"
+	@echo "  test-capability        - Run CAPABILITY command tests only"
+	@echo "  test-noop              - Run NOOP command tests only"
+	@echo "  test-logout            - Run LOGOUT command tests only"
+	@echo "  test-append            - Run APPEND command tests only"
+	@echo "  test-authenticate      - Run AUTHENTICATE command tests only"
+	@echo "  test-commands          - Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND + AUTHENTICATE)"
+	@echo "  test-verbose           - Run tests with verbose output"
+	@echo "  test-coverage          - Run tests with coverage report"
+	@echo "  test-race              - Run tests with race detection"
+	@echo "  bench                  - Run all benchmarks"
+	@echo "  bench-authenticate     - Run AUTHENTICATE benchmarks"
+	@echo "  test-single TEST=...   - Run a specific test"
 	@echo ""
 	@echo "Development:"
-	@echo "  deps                 - Install dependencies"
-	@echo "  fmt                  - Format code"
-	@echo "  lint                 - Lint code"
-	@echo "  clean                - Clean test artifacts"
+	@echo "  deps                   - Install dependencies"
+	@echo "  fmt                    - Format code"
+	@echo "  lint                   - Lint code"
+	@echo "  clean                  - Clean test artifacts"
 	@echo ""
 	@echo "CI/CD:"
-	@echo "  check                - Run all quality checks"
-	@echo "  ci                   - Run CI pipeline"
+	@echo "  check                  - Run all quality checks"
+	@echo "  ci                     - Run CI pipeline"
 	@echo ""
-	@echo "  help                 - Show this help"
+	@echo "  help                   - Show this help"

@@ -82,7 +82,7 @@ func TestAppendCommand_WithFlags(t *testing.T) {
 
 // TestAppendCommand_NotAuthenticated tests APPEND without authentication
 func TestAppendCommand_NotAuthenticated(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
 
 	state := &models.ClientState{
@@ -108,7 +108,7 @@ func TestAppendCommand_NotAuthenticated(t *testing.T) {
 
 // TestAppendCommand_InvalidFolder tests APPEND to non-existent folder
 func TestAppendCommand_InvalidFolder(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
 
 	state := &models.ClientState{
@@ -189,7 +189,7 @@ func TestAppendCommand_ToDrafts(t *testing.T) {
 
 // TestAppendCommand_MissingSize tests APPEND without literal size
 func TestAppendCommand_MissingSize(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
 
 	state := &models.ClientState{
