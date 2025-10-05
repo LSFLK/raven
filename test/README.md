@@ -26,7 +26,11 @@ Contains reusable test utilities:
 ### server/
 Contains all server-related tests:
 - **capability_test.go**: RFC 3501 compliance tests, edge cases, performance tests
-- **handlers_test.go**: Integration tests for IMAP command handlers
+- **authenticate_test.go**: AUTHENTICATE PLAIN command tests with base64 encoding/decoding
+- **noop_test.go**: NOOP command tests for mailbox state management
+- **logout_test.go**: LOGOUT command tests for connection cleanup
+- **append_test.go**: APPEND command tests for adding messages to mailboxes
+- **handlers_test.go**: Integration tests for various IMAP command handlers
 
 ## Running Tests
 
@@ -38,6 +42,9 @@ make test
 
 # Run only capability tests
 make test-capability
+
+# Run only authenticate tests
+make test-authenticate
 
 # Run tests with verbose output
 make test-verbose

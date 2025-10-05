@@ -73,7 +73,7 @@ func TestCapabilityCommand_RFCCompliance(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := helpers.SetupTestServer(t)
+			server := helpers.SetupTestServerSimple(t)
 			var conn helpers.MockConnInterface
 			
 			if tt.connType == "tls" {
@@ -127,7 +127,7 @@ func TestCapabilityCommand_TagHandling(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("Tag_%s", tc.tag), func(t *testing.T) {
-			server := helpers.SetupTestServer(t)
+			server := helpers.SetupTestServerSimple(t)
 			conn := helpers.NewMockConn()
 			state := &models.ClientState{Authenticated: false}
 
@@ -153,7 +153,7 @@ func TestCapabilityCommand_TagHandling(t *testing.T) {
 
 // TestCapabilityCommand_CapabilityFormatting tests capability string formatting
 func TestCapabilityCommand_CapabilityFormatting(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
 	state := &models.ClientState{Authenticated: false}
 
@@ -210,7 +210,7 @@ func TestCapabilityCommand_CapabilityFormatting(t *testing.T) {
 // TestCapabilityCommand_EdgeCases tests edge cases and error conditions
 func TestCapabilityCommand_EdgeCases(t *testing.T) {
 	t.Run("EmptyTag", func(t *testing.T) {
-		server := helpers.SetupTestServer(t)
+		server := helpers.SetupTestServerSimple(t)
 		conn := helpers.NewMockConn()
 		state := &models.ClientState{Authenticated: false}
 
@@ -227,7 +227,7 @@ func TestCapabilityCommand_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("NilState", func(t *testing.T) {
-		server := helpers.SetupTestServer(t)
+		server := helpers.SetupTestServerSimple(t)
 		conn := helpers.NewMockConn()
 
 		// This should not panic
@@ -243,7 +243,7 @@ func TestCapabilityCommand_EdgeCases(t *testing.T) {
 
 // TestCapabilityCommand_ResponseTiming tests response timing and ordering
 func TestCapabilityCommand_ResponseTiming(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
 	state := &models.ClientState{Authenticated: false}
 
@@ -275,7 +275,7 @@ func TestCapabilityCommand_ResponseTiming(t *testing.T) {
 
 // TestCapabilityCommand_MemoryUsage tests for memory leaks or excessive allocation
 func TestCapabilityCommand_MemoryUsage(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	server := helpers.SetupTestServerSimple(t)
 	
 	// Run many capability commands to check for memory issues
 	for i := 0; i < 1000; i++ {
@@ -294,7 +294,7 @@ func TestCapabilityCommand_MemoryUsage(t *testing.T) {
 
 // TestCapabilityCommand_StateIsolation tests that different states don't interfere
 func TestCapabilityCommand_StateIsolation(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	server := helpers.SetupTestServerSimple(t)
 
 	states := []*models.ClientState{
 		{Authenticated: false, Username: ""},
