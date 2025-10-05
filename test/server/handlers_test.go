@@ -10,7 +10,7 @@ import (
 
 // TestCapabilityCommand_NonTLSConnection tests CAPABILITY command over non-TLS connection
 func TestCapabilityCommand_NonTLSConnection(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
 	state := &models.ClientState{
 		Authenticated: false,
@@ -75,7 +75,7 @@ func TestCapabilityCommand_NonTLSConnection(t *testing.T) {
 
 // TestCapabilityCommand_TLSConnection tests CAPABILITY command over TLS connection
 func TestCapabilityCommand_TLSConnection(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockTLSConn()
 	state := &models.ClientState{
 		Authenticated: false,
@@ -127,7 +127,7 @@ func TestCapabilityCommand_TLSConnection(t *testing.T) {
 
 // TestCapabilityCommand_ResponseFormat tests the exact format of CAPABILITY response
 func TestCapabilityCommand_ResponseFormat(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
 	state := &models.ClientState{
 		Authenticated: false,
@@ -180,7 +180,7 @@ func TestCapabilityCommand_ResponseFormat(t *testing.T) {
 
 // TestCapabilityCommand_MultipleInvocations tests calling CAPABILITY multiple times
 func TestCapabilityCommand_MultipleInvocations(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
 	state := &models.ClientState{
 		Authenticated: false,
@@ -223,7 +223,7 @@ func TestCapabilityCommand_MultipleInvocations(t *testing.T) {
 // TestCapabilityCommand_AuthenticationStateDoesNotAffectCapabilities tests that 
 // authentication state doesn't change capabilities (connection type does)
 func TestCapabilityCommand_AuthenticationStateDoesNotAffectCapabilities(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	server := helpers.SetupTestServerSimple(t)
 
 	// Test with unauthenticated state
 	conn1 := helpers.NewMockConn()
@@ -259,7 +259,7 @@ func TestCapabilityCommand_AuthenticationStateDoesNotAffectCapabilities(t *testi
 
 // BenchmarkCapabilityCommand benchmarks the CAPABILITY command performance
 func BenchmarkCapabilityCommand(b *testing.B) {
-	server := helpers.SetupTestServer(&testing.T{})
+	server := helpers.SetupTestServerSimple(&testing.T{})
 	state := &models.ClientState{
 		Authenticated: false,
 	}
@@ -273,7 +273,7 @@ func BenchmarkCapabilityCommand(b *testing.B) {
 
 // TestCapabilityCommand_ConcurrentAccess tests concurrent CAPABILITY requests
 func TestCapabilityCommand_ConcurrentAccess(t *testing.T) {
-	server := helpers.SetupTestServer(t)
+	server := helpers.SetupTestServerSimple(t)
 	
 	// Number of concurrent requests
 	const numRequests = 10

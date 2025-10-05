@@ -1,9 +1,13 @@
 package helpers
 
 import (
+	"bufio"
 	"database/sql"
 	"fmt"
+	"io"
 	"net"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -91,7 +95,7 @@ var _ MockConnInterface = (*MockConn)(nil)
 var _ MockConnInterface = (*MockTLSConn)(nil)
 
 // SetupTestServer creates a test IMAP server with in-memory database
-func SetupTestServer(t *testing.T) *server.TestInterface {
+func SetupTestServer(t *testing.T) (*server.TestInterface, func()) {
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
@@ -108,8 +112,35 @@ func SetupTestServer(t *testing.T) *server.TestInterface {
 		t.Fatalf("Failed to initialize test database schema: %v", err)
 	}
 
+	// Create a test user table
+	testUserSchema := `
+	CREATE TABLE IF NOT EXISTS mails_testuser (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		subject TEXT,
+		sender TEXT,
+		recipient TEXT,
+		date_sent TEXT,
+		raw_message TEXT,
+		flags TEXT,
+		folder TEXT DEFAULT 'INBOX'
+	);
+	`
+	if _, err = db.Exec(testUserSchema); err != nil {
+		t.Fatalf("Failed to create test user table: %v", err)
+	}
+
 	imapServer := server.NewIMAPServer(db)
-	return server.NewTestInterface(imapServer)
+	cleanup := func() {
+		db.Close()
+	}
+	return server.NewTestInterface(imapServer), cleanup
+}
+
+// SetupTestServerSimple creates a test IMAP server without cleanup function
+// for backward compatibility with existing tests
+func SetupTestServerSimple(t *testing.T) *server.TestInterface {
+	srv, _ := SetupTestServer(t)
+	return srv
 }
 
 // TestServerWithDB creates a test server with a specific database
@@ -159,4 +190,132 @@ func InsertTestMail(t *testing.T, database *sql.DB, username, subject, sender, r
 	if err != nil {
 		t.Fatalf("Failed to insert test mail: %v", err)
 	}
+}
+
+// TestConn is a bidirectional pipe connection for testing
+type TestConn struct {
+	reader       *io.PipeReader
+	writer       *io.PipeWriter
+	localReader  *io.PipeReader
+	localWriter  *io.PipeWriter
+	closed       bool
+	mu           sync.Mutex
+	isTLS        bool
+	readTimeout  bool
+}
+
+// NewTestConn creates a new bidirectional test connection
+func NewTestConn() *TestConn {
+	// Create two pipes for bidirectional communication
+	serverRead, clientWrite := io.Pipe()
+	clientRead, serverWrite := io.Pipe()
+	
+	return &TestConn{
+		reader:      serverRead,
+		writer:      serverWrite,
+		localReader: clientRead,
+		localWriter: clientWrite,
+		closed:      false,
+		isTLS:       false,
+		readTimeout: false,
+	}
+}
+
+// MarkAsTLS marks this connection as a TLS connection
+func (t *TestConn) MarkAsTLS() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.isTLS = true
+}
+
+// IsTLS returns whether this is a TLS connection
+func (t *TestConn) IsTLS() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.isTLS
+}
+
+// SetReadTimeout simulates read timeout
+func (t *TestConn) SetReadTimeout(timeout bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.readTimeout = timeout
+}
+
+// Read reads data from the server
+func (t *TestConn) Read(b []byte) (int, error) {
+	t.mu.Lock()
+	timeout := t.readTimeout
+	t.mu.Unlock()
+	
+	if timeout {
+		return 0, io.EOF
+	}
+	
+	return t.reader.Read(b)
+}
+
+// Write writes data to the server
+func (t *TestConn) Write(b []byte) (int, error) {
+	return t.writer.Write(b)
+}
+
+// Close closes the connection
+func (t *TestConn) Close() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	
+	if t.closed {
+		return nil
+	}
+	
+	t.closed = true
+	t.reader.Close()
+	t.writer.Close()
+	t.localReader.Close()
+	t.localWriter.Close()
+	return nil
+}
+
+func (t *TestConn) LocalAddr() net.Addr {
+	return &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345}
+}
+
+func (t *TestConn) RemoteAddr() net.Addr {
+	return &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 54321}
+}
+
+func (t *TestConn) SetDeadline(time.Time) error      { return nil }
+func (t *TestConn) SetReadDeadline(time.Time) error  { return nil }
+func (t *TestConn) SetWriteDeadline(time.Time) error { return nil }
+
+// ReadLine reads a line from the server (from client perspective)
+func ReadLine(conn *TestConn) string {
+	reader := bufio.NewReader(conn.localReader)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return ""
+	}
+	return strings.TrimRight(line, "\r\n")
+}
+
+// WriteLine writes a line to the server (from client perspective)
+func WriteLine(conn *TestConn, line string) {
+	conn.localWriter.Write([]byte(line + "\r\n"))
+}
+
+// ReadMultiLine reads multiple lines until a tagged response
+func ReadMultiLine(conn *TestConn, tag string) []string {
+	var lines []string
+	for {
+		line := ReadLine(conn)
+		if line == "" {
+			break
+		}
+		lines = append(lines, line)
+		if strings.HasPrefix(line, tag+" ") {
+			break
+		}
+	}
+	return lines
 }

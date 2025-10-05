@@ -75,3 +75,8 @@ func (t *TestInterface) HandleAuthenticate(conn net.Conn, tag string, parts []st
 func (t *TestInterface) SendResponse(conn net.Conn, response string) {
 	t.server.sendResponse(conn, response)
 }
+
+// HandleClientExported exposes handleClient for testing
+func HandleClientExported(server *TestInterface, conn net.Conn) {
+	handleClient(server.server, conn, &models.ClientState{})
+}
