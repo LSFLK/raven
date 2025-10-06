@@ -39,6 +39,14 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 		recent = 0
 	}
 
+	// Get the next UID (max ID + 1)
+	var maxUID int
+	query = fmt.Sprintf("SELECT COALESCE(MAX(id), 0) FROM %s WHERE folder = ?", tableName)
+	err = s.db.QueryRow(query, folder).Scan(&maxUID)
+	if err != nil {
+		maxUID = 0
+	}
+
 	// Initialize state tracking for NOOP and other commands
 	state.LastMessageCount = count
 	state.LastRecentCount = recent
@@ -46,7 +54,7 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 	s.sendResponse(conn, fmt.Sprintf("* %d EXISTS", count))
 	s.sendResponse(conn, fmt.Sprintf("* %d RECENT", recent))
 	s.sendResponse(conn, "* OK [UIDVALIDITY 1] UID validity status")
-	s.sendResponse(conn, fmt.Sprintf("* OK [UIDNEXT %d] Predicted next UID", count+1))
+	s.sendResponse(conn, fmt.Sprintf("* OK [UIDNEXT %d] Predicted next UID", maxUID+1))
 	s.sendResponse(conn, "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
 	s.sendResponse(conn, "* OK [PERMANENTFLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft \\*)] Flags permitted")
 
@@ -246,6 +254,11 @@ func (s *IMAPServer) handleStatus(conn net.Conn, tag string, parts []string, sta
 	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ?", tableName)
 	s.db.QueryRow(query, folder).Scan(&count)
 
-	s.sendResponse(conn, fmt.Sprintf("* STATUS \"%s\" (MESSAGES %d RECENT 0 UIDNEXT %d UIDVALIDITY 1 UNSEEN 0)", folder, count, count+1))
+	// Get the next UID (max ID + 1)
+	var maxUID int
+	query = fmt.Sprintf("SELECT COALESCE(MAX(id), 0) FROM %s WHERE folder = ?", tableName)
+	s.db.QueryRow(query, folder).Scan(&maxUID)
+
+	s.sendResponse(conn, fmt.Sprintf("* STATUS \"%s\" (MESSAGES %d RECENT 0 UIDNEXT %d UIDVALIDITY 1 UNSEEN 0)", folder, count, maxUID+1))
 	s.sendResponse(conn, fmt.Sprintf("%s OK STATUS completed", tag))
 }
