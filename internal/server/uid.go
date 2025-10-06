@@ -53,33 +53,52 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 	var rows *sql.Rows
 	var err error
 
-	if sequence == "1:*" {
-		query := fmt.Sprintf("SELECT id, raw_message, flags, ROW_NUMBER() OVER (ORDER BY id ASC) as seq FROM %s WHERE folder = ? ORDER BY id ASC", tableName)
-		rows, err = s.db.Query(query, state.SelectedFolder)
-	} else if strings.Contains(sequence, ":") {
-		r := strings.Split(sequence, ":")
-		if len(r) == 2 {
+	// Parse comma-separated UID sequences (e.g., "3:4,6:7" or "1,3,5:7")
+	sequences := strings.Split(sequence, ",")
+	var uidRanges []string
+	var args []interface{}
+	args = append(args, state.SelectedFolder)
+
+	for _, seq := range sequences {
+		seq = strings.TrimSpace(seq)
+		
+		if seq == "1:*" || seq == "*" {
+			// Handle special case
+			uidRanges = append(uidRanges, "1=1")
+		} else if strings.Contains(seq, ":") {
+			// Handle range (e.g., "3:7")
+			r := strings.Split(seq, ":")
+			if len(r) != 2 {
+				s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid UID range format", tag))
+				return
+			}
 			start, err1 := strconv.Atoi(r[0])
 			end, err2 := strconv.Atoi(r[1])
-			if err1 != nil || err2 != nil || start > end {
+			if err1 != nil || err2 != nil {
 				s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid UID range", tag))
 				return
 			}
-			query := fmt.Sprintf("SELECT id, raw_message, flags, ROW_NUMBER() OVER (ORDER BY id ASC) as seq FROM %s WHERE folder = ? AND id >= ? AND id <= ? ORDER BY id ASC", tableName)
-			rows, err = s.db.Query(query, state.SelectedFolder, start, end)
+			if start > end {
+				start, end = end, start
+			}
+			uidRanges = append(uidRanges, "(id >= ? AND id <= ?)")
+			args = append(args, start, end)
 		} else {
-			s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid UID range format", tag))
-			return
+			// Handle single UID (e.g., "3")
+			uid, parseErr := strconv.Atoi(seq)
+			if parseErr != nil {
+				s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid UID", tag))
+				return
+			}
+			uidRanges = append(uidRanges, "id = ?")
+			args = append(args, uid)
 		}
-	} else {
-		uid, parseErr := strconv.Atoi(sequence)
-		if parseErr != nil {
-			s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid UID", tag))
-			return
-		}
-		query := fmt.Sprintf("SELECT id, raw_message, flags, ROW_NUMBER() OVER (ORDER BY id ASC) as seq FROM %s WHERE folder = ? AND id = ?", tableName)
-		rows, err = s.db.Query(query, state.SelectedFolder, uid)
 	}
+
+	// Build the query with OR conditions for multiple ranges
+	whereClause := strings.Join(uidRanges, " OR ")
+	query := fmt.Sprintf("SELECT id, raw_message, flags, ROW_NUMBER() OVER (ORDER BY id ASC) as seq FROM %s WHERE folder = ? AND (%s) ORDER BY id ASC", tableName, whereClause)
+	rows, err = s.db.Query(query, args...)
 
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
@@ -219,34 +238,52 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 		return
 	}
 
-	var err error
-	if sequence == "1:*" {
-		query := fmt.Sprintf("UPDATE %s SET flags = CASE WHEN flags LIKE '%%\\Seen%%' THEN flags ELSE flags || ' \\Seen' END WHERE folder = ?", tableName)
-		_, err = s.db.Exec(query, state.SelectedFolder)
-	} else if strings.Contains(sequence, ":") {
-		r := strings.Split(sequence, ":")
-		if len(r) == 2 {
+	// Parse comma-separated UID sequences (e.g., "3:4,6:7" or "1,3,5:7")
+	sequences := strings.Split(sequence, ",")
+	var uidRanges []string
+	var args []interface{}
+	args = append(args, state.SelectedFolder)
+
+	for _, seq := range sequences {
+		seq = strings.TrimSpace(seq)
+		
+		if seq == "1:*" || seq == "*" {
+			// Handle special case
+			uidRanges = append(uidRanges, "1=1")
+		} else if strings.Contains(seq, ":") {
+			// Handle range (e.g., "3:7")
+			r := strings.Split(seq, ":")
+			if len(r) != 2 {
+				s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid UID range format", tag))
+				return
+			}
 			start, err1 := strconv.Atoi(r[0])
 			end, err2 := strconv.Atoi(r[1])
-			if err1 != nil || err2 != nil || start > end {
+			if err1 != nil || err2 != nil {
 				s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid UID range", tag))
 				return
 			}
-			query := fmt.Sprintf("UPDATE %s SET flags = CASE WHEN flags LIKE '%%\\Seen%%' THEN flags ELSE flags || ' \\Seen' END WHERE folder = ? AND id >= ? AND id <= ?", tableName)
-			_, err = s.db.Exec(query, state.SelectedFolder, start, end)
+			if start > end {
+				start, end = end, start
+			}
+			uidRanges = append(uidRanges, "(id >= ? AND id <= ?)")
+			args = append(args, start, end)
 		} else {
-			s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid UID range format", tag))
-			return
+			// Handle single UID (e.g., "3")
+			uid, parseErr := strconv.Atoi(seq)
+			if parseErr != nil {
+				s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid UID", tag))
+				return
+			}
+			uidRanges = append(uidRanges, "id = ?")
+			args = append(args, uid)
 		}
-	} else {
-		uid, parseErr := strconv.Atoi(sequence)
-		if parseErr != nil {
-			s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid UID", tag))
-			return
-		}
-		query := fmt.Sprintf("UPDATE %s SET flags = CASE WHEN flags LIKE '%%\\Seen%%' THEN flags ELSE flags || ' \\Seen' END WHERE folder = ? AND id = ?", tableName)
-		_, err = s.db.Exec(query, state.SelectedFolder, uid)
 	}
+
+	// Build the query with OR conditions for multiple ranges
+	whereClause := strings.Join(uidRanges, " OR ")
+	query := fmt.Sprintf("UPDATE %s SET flags = CASE WHEN flags LIKE '%%\\Seen%%' THEN flags ELSE flags || ' \\Seen' END WHERE folder = ? AND (%s)", tableName, whereClause)
+	_, err := s.db.Exec(query, args...)
 
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
