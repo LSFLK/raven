@@ -134,16 +134,83 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 			responseParts = append(responseParts, fmt.Sprintf("RFC822.SIZE %d", len(rawMsg)))
 		}
 
-		if strings.Contains(itemsUpper, "BODY.PEEK[HEADER]") {
+		// Handle BODY.PEEK[HEADER.FIELDS (...)] - specific header fields
+		if strings.Contains(itemsUpper, "BODY.PEEK[HEADER.FIELDS") {
+			start := strings.Index(itemsUpper, "BODY.PEEK[HEADER.FIELDS")
+			end := strings.Index(itemsUpper[start:], "]")
+			
+			// Extract requested header field names
+			requestedHeaders := []string{"FROM", "TO", "CC", "BCC", "SUBJECT", "DATE", "MESSAGE-ID", "PRIORITY", "X-PRIORITY", "REFERENCES", "NEWSGROUPS", "IN-REPLY-TO", "CONTENT-TYPE", "REPLY-TO"}
+			if start != -1 && end != -1 {
+				fieldsStr := items[start+len("BODY.PEEK[HEADER.FIELDS ("):]
+				closeParen := strings.Index(fieldsStr, ")")
+				if closeParen != -1 {
+					fieldsStr = fieldsStr[:closeParen]
+					fields := strings.Fields(fieldsStr)
+					if len(fields) > 0 {
+						requestedHeaders = []string{}
+						for _, f := range fields {
+							requestedHeaders = append(requestedHeaders, strings.ToUpper(strings.TrimSpace(f)))
+						}
+					}
+				}
+			}
+			
+			// Extract only the requested headers from the message
+			headersMap := map[string]string{}
+			lines := strings.Split(rawMsg, "\r\n")
+			currentHeader := ""
+			for _, line := range lines {
+				if line == "" {
+					break // End of headers
+				}
+				// Check if this is a continuation line (starts with space or tab)
+				if len(line) > 0 && (line[0] == ' ' || line[0] == '\t') {
+					if currentHeader != "" {
+						headersMap[currentHeader] += "\r\n" + line
+					}
+					continue
+				}
+				// New header line
+				colonIdx := strings.Index(line, ":")
+				if colonIdx != -1 {
+					headerName := strings.ToUpper(strings.TrimSpace(line[:colonIdx]))
+					for _, h := range requestedHeaders {
+						if headerName == h {
+							currentHeader = h
+							headersMap[h] = line
+							break
+						}
+					}
+				}
+			}
+			
+			// Build response with requested headers in order
+			var headerLines []string
+			for _, h := range requestedHeaders {
+				if val, ok := headersMap[h]; ok {
+					headerLines = append(headerLines, val)
+				}
+			}
+			headersStr := strings.Join(headerLines, "\r\n")
+			if len(headersStr) > 0 {
+				headersStr += "\r\n"
+			}
+			headersStr += "\r\n" // Final blank line
+			
+			// Match the exact format the client requested
+			fieldList := strings.Join(requestedHeaders, " ")
+			responseParts = append(responseParts, fmt.Sprintf("BODY[HEADER.FIELDS (%s)] {%d}\r\n%s", fieldList, len(headersStr), headersStr))
+		} else if strings.Contains(itemsUpper, "BODY.PEEK[HEADER]") {
+			// Handle BODY.PEEK[HEADER] - all headers
 			headerEnd := strings.Index(rawMsg, "\r\n\r\n")
 			headers := rawMsg
 			if headerEnd != -1 {
 				headers = rawMsg[:headerEnd+2] // include last CRLF
 			}
 			responseParts = append(responseParts, fmt.Sprintf("BODY[HEADER] {%d}\r\n%s", len(headers), headers))
-		}
-
-		if strings.Contains(itemsUpper, "BODY[]") || strings.Contains(itemsUpper, "BODY.PEEK[]") || strings.Contains(itemsUpper, "RFC822") {
+		} else if strings.Contains(itemsUpper, "BODY[]") || strings.Contains(itemsUpper, "BODY.PEEK[]") || strings.Contains(itemsUpper, "RFC822") {
+			// Handle BODY[] or RFC822 - full message
 			responseParts = append(responseParts, fmt.Sprintf("BODY[] {%d}\r\n%s", len(rawMsg), rawMsg))
 		}
 
