@@ -134,50 +134,23 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 			responseParts = append(responseParts, fmt.Sprintf("RFC822.SIZE %d", len(rawMsg)))
 		}
 
-		if strings.Contains(itemsUpper, "BODY.PEEK[HEADER.FIELDS") {
-			start := strings.Index(itemsUpper, "BODY.PEEK[HEADER.FIELDS")
-			end := strings.Index(itemsUpper[start:], "]")
-			headers := []string{"FROM", "TO", "CC", "BCC", "SUBJECT", "DATE", "MESSAGE-ID", "PRIORITY", "X-PRIORITY", "REFERENCES", "NEWSGROUPS", "IN-REPLY-TO", "CONTENT-TYPE", "REPLY-TO"}
-			if start != -1 && end != -1 {
-				fieldsStr := items[start+len("BODY.PEEK[HEADER.FIELDS (") : start+end]
-				fields := strings.FieldsFunc(fieldsStr, func(r rune) bool { return r == ' ' || r == ',' })
-				if len(fields) > 0 {
-					headers = []string{}
-					for _, f := range fields {
-						headers = append(headers, strings.ToUpper(strings.TrimSpace(f)))
-					}
-				}
+		if strings.Contains(itemsUpper, "BODY.PEEK[HEADER]") {
+			headerEnd := strings.Index(rawMsg, "\r\n\r\n")
+			headers := rawMsg
+			if headerEnd != -1 {
+				headers = rawMsg[:headerEnd+2] // include last CRLF
 			}
-			headersMap := map[string]string{}
-			lines := strings.Split(rawMsg, "\r\n")
-			for _, line := range lines {
-				for _, h := range headers {
-					if strings.HasPrefix(strings.ToUpper(line), h+":") {
-						headersMap[h] = line
-					}
-				}
-			}
-			var headerLines []string
-			for _, h := range headers {
-				if val, ok := headersMap[h]; ok {
-					headerLines = append(headerLines, val)
-				}
-			}
-			headersStr := strings.Join(headerLines, "\r\n") + "\r\n\r\n"
-			responseParts = append(responseParts, fmt.Sprintf("BODY[HEADER] {%d}", len(headersStr)))
-			s.sendResponse(conn, fmt.Sprintf("* %d FETCH (%s)", seqNum, strings.Join(responseParts, " ")))
-			conn.Write([]byte(headersStr))
-			s.sendResponse(conn, ")")
-			continue
+			responseParts = append(responseParts, fmt.Sprintf("BODY[HEADER] {%d}\r\n%s", len(headers), headers))
 		}
 
 		if strings.Contains(itemsUpper, "BODY[]") || strings.Contains(itemsUpper, "BODY.PEEK[]") || strings.Contains(itemsUpper, "RFC822") {
-			responseParts = append(responseParts, fmt.Sprintf("BODY[] {%d}", len(rawMsg)))
+			responseParts = append(responseParts, fmt.Sprintf("BODY[] {%d}\r\n%s", len(rawMsg), rawMsg))
+		}
+
+		if len(responseParts) > 0 {
 			s.sendResponse(conn, fmt.Sprintf("* %d FETCH (%s)", seqNum, strings.Join(responseParts, " ")))
-			conn.Write([]byte(rawMsg + "\r\n"))
-			s.sendResponse(conn, ")")
 		} else {
-			s.sendResponse(conn, fmt.Sprintf("* %d FETCH (%s)", seqNum, strings.Join(responseParts, " ")))
+			s.sendResponse(conn, fmt.Sprintf("* %d FETCH (FLAGS ())", seqNum))
 		}
 	}
 
