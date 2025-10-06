@@ -1,6 +1,6 @@
 name: Task
 description: General task to be completed
-title: "[TASK]"
+title: "[TASK] "
 labels: [task]
 assignees: []
 body:
