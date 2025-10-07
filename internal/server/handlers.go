@@ -138,6 +138,10 @@ func (s *IMAPServer) handleNoop(conn net.Conn, tag string, state *models.ClientS
 			currentRecent = 0
 		}
 
+		// Debug logging
+		fmt.Printf("NOOP Debug: folder=%s, lastCount=%d, currentCount=%d, lastRecent=%d, currentRecent=%d\n",
+			state.SelectedFolder, state.LastMessageCount, currentCount, state.LastRecentCount, currentRecent)
+
 		// Check for new messages (EXISTS response)
 		if currentCount > state.LastMessageCount {
 			s.sendResponse(conn, fmt.Sprintf("* %d EXISTS", currentCount))

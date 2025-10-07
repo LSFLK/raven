@@ -135,8 +135,11 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 		responseParts = append(responseParts, fmt.Sprintf("RFC822.SIZE %d", len(rawMsg)))
 	}
 
+	// Handle multiple body parts - process each separately
+	// This allows handling requests like: BODY.PEEK[HEADER.FIELDS (...)] BODY.PEEK[TEXT]
+	
 	// Handle BODY.PEEK[HEADER.FIELDS (...)] - specific header fields
-	if strings.Contains(itemsUpper, "BODY.PEEK[HEADER.FIELDS") {
+	if strings.Contains(itemsUpper, "BODY.PEEK[HEADER.FIELDS") || strings.Contains(itemsUpper, "BODY[HEADER.FIELDS") {
 			start := strings.Index(itemsUpper, "BODY.PEEK[HEADER.FIELDS")
 			end := strings.Index(itemsUpper[start:], "]")
 			
@@ -202,40 +205,97 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 		fieldList := strings.Join(requestedHeaders, " ")
 		responseParts = append(responseParts, fmt.Sprintf("BODY[HEADER.FIELDS (%s)]", fieldList))
 		literalData = fmt.Sprintf("{%d}\r\n%s", len(headersStr), headersStr)
-	} else if strings.Contains(itemsUpper, "BODY.PEEK[HEADER]") {
-		// Handle BODY.PEEK[HEADER] - all headers
+	}
+	
+	// Handle BODY.PEEK[TEXT] or BODY[TEXT] - message body only (can be combined with other parts)
+	if strings.Contains(itemsUpper, "BODY.PEEK[TEXT]") || strings.Contains(itemsUpper, "BODY[TEXT]") {
+		headerEnd := strings.Index(rawMsg, "\r\n\r\n")
+		body := ""
+		if headerEnd != -1 {
+			body = rawMsg[headerEnd+4:] // skip the double CRLF
+		}
+		
+		// Check for partial fetch like BODY.PEEK[TEXT]<0.2048>
+		partialStart := 0
+		partialLength := len(body)
+		if strings.Contains(itemsUpper, "<") && strings.Contains(itemsUpper, ">") {
+			startIdx := strings.Index(itemsUpper, "<")
+			endIdx := strings.Index(itemsUpper, ">")
+			if startIdx != -1 && endIdx > startIdx {
+				partialSpec := itemsUpper[startIdx+1:endIdx]
+				fmt.Sscanf(partialSpec, "%d.%d", &partialStart, &partialLength)
+				if partialStart < len(body) {
+					endPos := partialStart + partialLength
+					if endPos > len(body) {
+						endPos = len(body)
+					}
+					body = body[partialStart:endPos]
+				} else {
+					body = ""
+				}
+			}
+		}
+		
+		if literalData != "" {
+			literalData += " "
+		}
+		responseParts = append(responseParts, "BODY[TEXT]")
+		literalData += fmt.Sprintf("{%d}\r\n%s", len(body), body)
+	}
+	
+	// Handle BODY.PEEK[HEADER] or BODY[HEADER] - all headers (check it's not HEADER.FIELDS)
+	if (strings.Contains(itemsUpper, "BODY.PEEK[HEADER]") || strings.Contains(itemsUpper, "BODY[HEADER]")) && 
+	   !strings.Contains(itemsUpper, "HEADER.FIELDS") {
 		headerEnd := strings.Index(rawMsg, "\r\n\r\n")
 		headers := rawMsg
 		if headerEnd != -1 {
 			headers = rawMsg[:headerEnd+2] // include last CRLF
+		}
+		if literalData != "" {
+			literalData += " "
 		}
 		responseParts = append(responseParts, "BODY[HEADER]")
-		literalData = fmt.Sprintf("{%d}\r\n%s", len(headers), headers)
-	} else if strings.Contains(itemsUpper, "RFC822.HEADER") {
-		// RFC822.HEADER - return only the header portion
+		literalData += fmt.Sprintf("{%d}\r\n%s", len(headers), headers)
+	}
+	
+	// Handle RFC822.HEADER - return only the header portion
+	if strings.Contains(itemsUpper, "RFC822.HEADER") {
 		headerEnd := strings.Index(rawMsg, "\r\n\r\n")
 		headers := rawMsg
 		if headerEnd != -1 {
 			headers = rawMsg[:headerEnd+2] // include last CRLF
 		}
-		responseParts = append(responseParts, "RFC822.HEADER")
-		literalData = fmt.Sprintf("{%d}\r\n%s", len(headers), headers)
-	} else if strings.Contains(itemsUpper, "BODY[]") || strings.Contains(itemsUpper, "BODY.PEEK[]") || strings.Contains(itemsUpper, "RFC822.TEXT") || (strings.Contains(itemsUpper, "RFC822") && !strings.Contains(itemsUpper, "RFC822.SIZE")) {
-		// RFC822 = entire message (same as BODY[])
-		// RFC822.TEXT = body text only (excluding headers)
-		if strings.Contains(itemsUpper, "RFC822.TEXT") {
-			// Return only the body (text after headers)
-			headerEnd := strings.Index(rawMsg, "\r\n\r\n")
-			body := ""
-			if headerEnd != -1 {
-				body = rawMsg[headerEnd+4:] // skip the double CRLF
-			}
-			responseParts = append(responseParts, "RFC822.TEXT")
-			literalData = fmt.Sprintf("{%d}\r\n%s", len(body), body)
-		} else {
-			responseParts = append(responseParts, "BODY[]")
-			literalData = fmt.Sprintf("{%d}\r\n%s", len(rawMsg), rawMsg)
+		if literalData != "" {
+			literalData += " "
 		}
+		responseParts = append(responseParts, "RFC822.HEADER")
+		literalData += fmt.Sprintf("{%d}\r\n%s", len(headers), headers)
+	}
+	
+	// Handle RFC822.TEXT - body text only (excluding headers)
+	if strings.Contains(itemsUpper, "RFC822.TEXT") {
+		headerEnd := strings.Index(rawMsg, "\r\n\r\n")
+		body := ""
+		if headerEnd != -1 {
+			body = rawMsg[headerEnd+4:] // skip the double CRLF
+		}
+		if literalData != "" {
+			literalData += " "
+		}
+		responseParts = append(responseParts, "RFC822.TEXT")
+		literalData += fmt.Sprintf("{%d}\r\n%s", len(body), body)
+	}
+	
+	// Handle BODY[] / BODY.PEEK[] / RFC822 / RFC822.PEEK - full message
+	if strings.Contains(itemsUpper, "BODY[]") || strings.Contains(itemsUpper, "BODY.PEEK[]") || 
+	   strings.Contains(itemsUpper, "RFC822.PEEK") || 
+	   (strings.Contains(itemsUpper, "RFC822") && !strings.Contains(itemsUpper, "RFC822.SIZE") && 
+	    !strings.Contains(itemsUpper, "RFC822.HEADER") && !strings.Contains(itemsUpper, "RFC822.TEXT") && !strings.Contains(itemsUpper, "RFC822.PEEK")) {
+		if literalData != "" {
+			literalData += " "
+		}
+		responseParts = append(responseParts, "BODY[]")
+		literalData += fmt.Sprintf("{%d}\r\n%s", len(rawMsg), rawMsg)
 	}
 
 		if len(responseParts) > 0 {
