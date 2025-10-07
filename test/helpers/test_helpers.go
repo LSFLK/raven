@@ -2,10 +2,19 @@ package helpers
 
 import (
 	"bufio"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"database/sql"
+	"encoding/pem"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -130,10 +139,17 @@ func SetupTestServer(t *testing.T) (*server.TestInterface, func()) {
 	}
 
 	imapServer := server.NewIMAPServer(db)
+	
+	// Generate test certificates for STARTTLS
+	certPath, keyPath, certCleanup := GenerateTestCertificates(t)
+	testInterface := server.NewTestInterface(imapServer)
+	testInterface.SetTLSCertificates(certPath, keyPath)
+	
 	cleanup := func() {
+		certCleanup()
 		db.Close()
 	}
-	return server.NewTestInterface(imapServer), cleanup
+	return testInterface, cleanup
 }
 
 // SetupTestServerSimple creates a test IMAP server without cleanup function
@@ -318,4 +334,95 @@ func ReadMultiLine(conn *TestConn, tag string) []string {
 		}
 	}
 	return lines
+}
+
+// GenerateTestCertificates generates self-signed certificates for testing STARTTLS
+// Returns the paths to the cert and key files, and a cleanup function
+func GenerateTestCertificates(t *testing.T) (certPath, keyPath string, cleanup func()) {
+	// Create temporary directory for certificates
+	tmpDir := t.TempDir()
+	certPath = filepath.Join(tmpDir, "fullchain.pem")
+	keyPath = filepath.Join(tmpDir, "privkey.pem")
+
+	// Generate private key
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("Failed to generate private key: %v", err)
+	}
+
+	// Create certificate template
+	notBefore := time.Now()
+	notAfter := notBefore.Add(24 * time.Hour) // Valid for 24 hours
+
+	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		t.Fatalf("Failed to generate serial number: %v", err)
+	}
+
+	template := x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			Organization: []string{"Test IMAP Server"},
+			CommonName:   "localhost",
+		},
+		NotBefore:             notBefore,
+		NotAfter:              notAfter,
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		DNSNames:              []string{"localhost"},
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+	}
+
+	// Create self-signed certificate
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
+	if err != nil {
+		t.Fatalf("Failed to create certificate: %v", err)
+	}
+
+	// Write certificate to file
+	certFile, err := os.Create(certPath)
+	if err != nil {
+		t.Fatalf("Failed to create cert file: %v", err)
+	}
+	if err := pem.Encode(certFile, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); err != nil {
+		certFile.Close()
+		t.Fatalf("Failed to encode certificate: %v", err)
+	}
+	certFile.Close()
+
+	// Write private key to file
+	keyFile, err := os.Create(keyPath)
+	if err != nil {
+		t.Fatalf("Failed to create key file: %v", err)
+	}
+	privBytes := x509.MarshalPKCS1PrivateKey(privateKey)
+	if err := pem.Encode(keyFile, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: privBytes}); err != nil {
+		keyFile.Close()
+		t.Fatalf("Failed to encode private key: %v", err)
+	}
+	keyFile.Close()
+
+	cleanup = func() {
+		// Cleanup is handled by t.TempDir()
+	}
+
+	return certPath, keyPath, cleanup
+}
+
+// CreateTLSConfig creates a TLS configuration with test certificates
+func CreateTLSConfig(t *testing.T) (*tls.Config, func()) {
+	certPath, keyPath, cleanup := GenerateTestCertificates(t)
+
+	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		t.Fatalf("Failed to load test certificates: %v", err)
+	}
+
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	}
+
+	return tlsConfig, cleanup
 }

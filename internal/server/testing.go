@@ -71,6 +71,16 @@ func (t *TestInterface) HandleAuthenticate(conn net.Conn, tag string, parts []st
 	t.server.handleAuthenticate(conn, tag, parts, state)
 }
 
+// HandleStartTLS exposes the STARTTLS handler for testing
+func (t *TestInterface) HandleStartTLS(conn net.Conn, tag string, parts []string) {
+	t.server.handleStartTLS(conn, tag, parts)
+}
+
+// SetTLSCertificates sets custom TLS certificate paths for testing
+func (t *TestInterface) SetTLSCertificates(certPath, keyPath string) {
+	t.server.SetTLSCertificates(certPath, keyPath)
+}
+
 // SendResponse exposes the sendResponse method for testing
 func (t *TestInterface) SendResponse(conn net.Conn, response string) {
 	t.server.sendResponse(conn, response)

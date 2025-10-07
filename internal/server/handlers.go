@@ -394,16 +394,30 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 	s.sendResponse(conn, fmt.Sprintf("%s OK [APPENDUID 1 %d] APPEND completed", tag, newUID))
 }
 
-func (s *IMAPServer) handleStartTLS(conn net.Conn, tag string) {
-	// Respond to client to begin TLS negotiation
-	s.sendResponse(conn, fmt.Sprintf("%s OK Begin TLS negotiation", tag))
+func (s *IMAPServer) handleStartTLS(conn net.Conn, tag string, parts []string) {
+	// RFC 3501: STARTTLS takes no arguments
+	if len(parts) > 2 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD STARTTLS command does not accept arguments", tag))
+		return
+	}
 
-	certPath := "/certs/fullchain.pem"
-	keyPath := "/certs/privkey.pem"
+	// Check if already on TLS connection
+	if _, ok := conn.(*tls.Conn); ok {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD TLS already active", tag))
+		return
+	}
 
-	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	// Also check mock TLS connections
+	type tlsAware interface{ IsTLS() bool }
+	if ta, ok := any(conn).(tlsAware); ok && ta.IsTLS() {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD TLS already active", tag))
+		return
+	}
+
+	cert, err := tls.LoadX509KeyPair(s.certPath, s.keyPath)
 	if err != nil {
 		fmt.Printf("Failed to load TLS cert/key: %v\n", err)
+		s.sendResponse(conn, fmt.Sprintf("%s BAD TLS not available", tag))
 		return
 	}
 
@@ -411,9 +425,13 @@ func (s *IMAPServer) handleStartTLS(conn net.Conn, tag string) {
 		Certificates: []tls.Certificate{cert},
 	}
 
+	// RFC 3501: Send OK response before starting TLS negotiation
+	s.sendResponse(conn, fmt.Sprintf("%s OK Begin TLS negotiation now", tag))
+
 	tlsConn := tls.Server(conn, tlsConfig)
 
-	// Restart handler with upgraded TLS connection
+	// RFC 3501: Client MUST discard cached server capabilities after STARTTLS
+	// Restart handler with upgraded TLS connection and fresh state
 	handleClient(s, tlsConn, &models.ClientState{})
 }
 
