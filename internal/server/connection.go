@@ -76,7 +76,7 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 
 func (s *IMAPServer) sendResponse(conn net.Conn, response string) {
 	// Avoid logging full message bodies
-	if strings.Contains(response, "BODY[] ") || strings.Contains(response, "BODY[HEADER] ") {
+	if strings.Contains(response, "BODY[] ") || strings.Contains(response, "BODY[HEADER] ") || strings.Contains(response, "RFC822.HEADER ") || strings.Contains(response, "RFC822.TEXT ") {
 		// Log only the first line/metadata, mask the body
 		if idx := strings.Index(response, "{"); idx != -1 {
 			endIdx := strings.Index(response[idx:], "}\r\n")
