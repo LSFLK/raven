@@ -9,11 +9,23 @@ import (
 )
 
 type IMAPServer struct {
-	db *sql.DB
+	db       *sql.DB
+	certPath string
+	keyPath  string
 }
 
 func NewIMAPServer(database *sql.DB) *IMAPServer {
-	return &IMAPServer{db: database}
+	return &IMAPServer{
+		db:       database,
+		certPath: "/certs/fullchain.pem",
+		keyPath:  "/certs/privkey.pem",
+	}
+}
+
+// SetTLSCertificates sets custom TLS certificate paths (useful for testing)
+func (s *IMAPServer) SetTLSCertificates(certPath, keyPath string) {
+	s.certPath = certPath
+	s.keyPath = keyPath
 }
 
 func (s *IMAPServer) HandleConnection(conn net.Conn) {
