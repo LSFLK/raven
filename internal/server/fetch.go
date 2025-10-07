@@ -247,20 +247,39 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 				headersStr += "\r\n"
 			}
 			headersStr += "\r\n" // Final blank line
-			
-			// Match the exact format the client requested
-			fieldList := strings.Join(requestedHeaders, " ")
-			responseParts = append(responseParts, fmt.Sprintf("BODY[HEADER.FIELDS (%s)] {%d}\r\n%s", fieldList, len(headersStr), headersStr))
-		} else if strings.Contains(itemsUpper, "BODY.PEEK[HEADER]") {
+					// Match the exact format the client requested
+		fieldList := strings.Join(requestedHeaders, " ")
+		responseParts = append(responseParts, fmt.Sprintf("BODY[HEADER.FIELDS (%s)] {%d}\r\n%s", fieldList, len(headersStr), headersStr))
+	} else if strings.Contains(itemsUpper, "BODY.PEEK[HEADER]") {
+		headerEnd := strings.Index(rawMsg, "\r\n\r\n")
+		headers := rawMsg
+		if headerEnd != -1 {
+			headers = rawMsg[:headerEnd+2] // include last CRLF
+		}
+		responseParts = append(responseParts, fmt.Sprintf("BODY[HEADER] {%d}\r\n%s", len(headers), headers))
+	} else if strings.Contains(itemsUpper, "RFC822.HEADER") {
+		// RFC822.HEADER - return only the header portion
+		headerEnd := strings.Index(rawMsg, "\r\n\r\n")
+		headers := rawMsg
+		if headerEnd != -1 {
+			headers = rawMsg[:headerEnd+2] // include last CRLF
+		}
+		responseParts = append(responseParts, fmt.Sprintf("RFC822.HEADER {%d}\r\n%s", len(headers), headers))
+	} else if strings.Contains(itemsUpper, "BODY[]") || strings.Contains(itemsUpper, "RFC822.TEXT") || (strings.Contains(itemsUpper, "RFC822") && !strings.Contains(itemsUpper, "RFC822.SIZE")) {
+		// RFC822 = entire message (same as BODY[])
+		// RFC822.TEXT = body text only (excluding headers)
+		if strings.Contains(itemsUpper, "RFC822.TEXT") {
+			// Return only the body (text after headers)
 			headerEnd := strings.Index(rawMsg, "\r\n\r\n")
-			headers := rawMsg
+			body := ""
 			if headerEnd != -1 {
-				headers = rawMsg[:headerEnd+2] // include last CRLF
+				body = rawMsg[headerEnd+4:] // skip the double CRLF
 			}
-			responseParts = append(responseParts, fmt.Sprintf("BODY[HEADER] {%d}\r\n%s", len(headers), headers))
-		} else if strings.Contains(itemsUpper, "BODY[]") || strings.Contains(itemsUpper, "RFC822") {
+			responseParts = append(responseParts, fmt.Sprintf("RFC822.TEXT {%d}\r\n%s", len(body), body))
+		} else {
 			responseParts = append(responseParts, fmt.Sprintf("BODY[] {%d}\r\n%s", len(rawMsg), rawMsg))
 		}
+	}
 		if len(responseParts) > 0 {
 			s.sendResponse(conn, fmt.Sprintf("* %d FETCH (%s)", seqNum, strings.Join(responseParts, " ")))
 		} else {
