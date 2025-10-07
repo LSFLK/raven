@@ -53,11 +53,32 @@ func (s *IMAPServer) handleCapability(conn net.Conn, tag string, state *models.C
 }
 
 func (s *IMAPServer) handleLogin(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	// Check if LOGIN command has correct number of arguments
 	if len(parts) < 4 {
 		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN requires username and password", tag))
 		return
 	}
 
+	// Detect if TLS is active
+	isTLS := false
+	if _, ok := conn.(*tls.Conn); ok {
+		isTLS = true
+	} else {
+		// Allow test doubles to signal TLS via an interface
+		type tlsAware interface{ IsTLS() bool }
+		if ta, ok := any(conn).(tlsAware); ok && ta.IsTLS() {
+			isTLS = true
+		}
+	}
+
+	// Per RFC 3501: If LOGINDISABLED capability is advertised (i.e., no TLS),
+	// reject the LOGIN command
+	if !isTLS {
+		s.sendResponse(conn, fmt.Sprintf("%s NO [PRIVACYREQUIRED] LOGIN is disabled on insecure connection. Use STARTTLS first.", tag))
+		return
+	}
+
+	// Extract username and password, removing quotes if present
 	username := strings.Trim(parts[2], "\"")
 	password := strings.Trim(parts[3], "\"")
 

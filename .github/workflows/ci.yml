@@ -45,5 +45,8 @@ jobs:
       - name: Test AUTHENTICATE command
         run: go test -tags=test -v ./test/server -run "TestAuthenticate"
 
+      - name: Test LOGIN command
+        run: go test -tags=test -v ./test/server -run "TestLoginCommand"
+
       - name: Test STARTTLS command
         run: go test -tags=test -v ./test/server -run "TestStartTLS"
