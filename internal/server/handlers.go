@@ -489,7 +489,7 @@ func (s *IMAPServer) handleAuthenticate(conn net.Conn, tag string, parts []strin
 		conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 		n, err := conn.Read(buf)
 		if err != nil {
-			s.sendResponse(conn, fmt.Sprintf("%s BAD Authentication failed", tag))
+			s.sendResponse(conn, fmt.Sprintf("%s NO Authentication failed", tag))
 			return
 		}
 
@@ -497,7 +497,7 @@ func (s *IMAPServer) handleAuthenticate(conn net.Conn, tag string, parts []strin
 
 		// Client may cancel authentication with a single "*"
 		if authData == "*" {
-			s.sendResponse(conn, fmt.Sprintf("%s BAD Authentication cancelled", tag))
+			s.sendResponse(conn, fmt.Sprintf("%s BAD Authentication exchange cancelled", tag))
 			return
 		}
 
@@ -530,13 +530,13 @@ func (s *IMAPServer) handleAuthenticate(conn net.Conn, tag string, parts []strin
 			log.Printf("AUTHENTICATE PLAIN: fallback extracted username=%s (password length=%d)", username, len(password))
 		} else {
 			log.Printf("AUTHENTICATE PLAIN: invalid format, expected 2-3 parts, got %d", len(partsNull))
-			s.sendResponse(conn, fmt.Sprintf("%s BAD Authentication failed", tag))
+			s.sendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Invalid credentials format", tag))
 			return
 		}
 
 		if username == "" || password == "" {
 			log.Printf("AUTHENTICATE PLAIN: empty username or password")
-			s.sendResponse(conn, fmt.Sprintf("%s BAD Authentication failed", tag))
+			s.sendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Invalid credentials", tag))
 			return
 		}
 
@@ -555,12 +555,12 @@ func (s *IMAPServer) authenticateUser(conn net.Conn, tag string, username string
 	cfg, err := conf.LoadConfig()
 	if err != nil {
 		log.Printf("LoadConfig error: %v", err)
-		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN config error", tag))
+		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Configuration error", tag))
 		return
 	}
 
 	if cfg.Domain == "" || cfg.AuthServerURL == "" {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN config error", tag))
+		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Configuration error", tag))
 		return
 	}
 
@@ -572,7 +572,7 @@ func (s *IMAPServer) authenticateUser(conn net.Conn, tag string, username string
 	// Create HTTP request
 	req, err := http.NewRequest("POST", cfg.AuthServerURL, strings.NewReader(requestBody))
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN internal error", tag))
+		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Internal error", tag))
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -587,7 +587,7 @@ func (s *IMAPServer) authenticateUser(conn net.Conn, tag string, username string
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("LOGIN: error reaching auth server: %v", err)
-		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN unable to reach auth server", tag))
+		s.sendResponse(conn, fmt.Sprintf("%s NO [UNAVAILABLE] Authentication service unavailable", tag))
 		return
 	}
 	defer resp.Body.Close()
@@ -598,14 +598,34 @@ func (s *IMAPServer) authenticateUser(conn net.Conn, tag string, username string
 		// Ensure user table exists
 		if err := s.ensureUserTable(username); err != nil {
 			log.Printf("Failed to create user table: %v", err)
-			s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN server error", tag))
+			s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Server error", tag))
 			return
 		}
 		
 		state.Authenticated = true
 		state.Username = username
-		s.sendResponse(conn, fmt.Sprintf("%s OK [CAPABILITY IMAP4rev1 UIDPLUS IDLE NAMESPACE UNSELECT LITERAL+] LOGIN completed", tag))
+		
+		// Detect if TLS is active
+		isTLS := false
+		if _, ok := conn.(*tls.Conn); ok {
+			isTLS = true
+		} else {
+			type tlsAware interface{ IsTLS() bool }
+			if ta, ok := any(conn).(tlsAware); ok && ta.IsTLS() {
+				isTLS = true
+			}
+		}
+		
+		// Per RFC 3501, include CAPABILITY response code in OK response
+		// Only do this if security layer was not negotiated (TLS doesn't count as SASL security layer)
+		capabilities := "IMAP4rev1 AUTH=PLAIN"
+		if isTLS {
+			capabilities += " UIDPLUS IDLE NAMESPACE UNSELECT LITERAL+"
+		} else {
+			capabilities += " STARTTLS LOGINDISABLED UIDPLUS IDLE NAMESPACE UNSELECT LITERAL+"
+		}
+		s.sendResponse(conn, fmt.Sprintf("%s OK [CAPABILITY %s] Authenticated", tag))
 	} else {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN authentication failed", tag))
+		s.sendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
 	}
 }
