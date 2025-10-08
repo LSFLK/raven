@@ -50,3 +50,9 @@ jobs:
 
       - name: Test STARTTLS command
         run: go test -tags=test -v ./test/server -run "TestStartTLS"
+
+      - name: Test SELECT command
+        run: go test -tags=test -v ./test/server -run "TestSelectCommand"
+
+      - name: Test EXAMINE command
+        run: go test -tags=test -v ./test/server -run "TestExamineCommand"
