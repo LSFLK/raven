@@ -668,7 +668,7 @@ func (s *IMAPServer) authenticateUser(conn net.Conn, tag string, username string
 		
 		// Per RFC 3501, include CAPABILITY response code in OK response
 		// Only do this if security layer was not negotiated (TLS doesn't count as SASL security layer)
-		capabilities := "IMAP4rev1 AUTH=PLAIN"
+		capabilities := "IMAP4rev1 AUTH=PLAIN LOGIN"
 		if isTLS {
 			capabilities += " UIDPLUS IDLE NAMESPACE UNSELECT LITERAL+"
 		} else {
