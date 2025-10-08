@@ -6,6 +6,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 
 	"go-imap/internal/models"
 )
@@ -178,6 +179,17 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 			s.db.QueryRow(query, id).Scan(&internalDate)
 			if internalDate == "" {
 				internalDate = "01-Jan-1970 00:00:00 +0000"
+			} else {
+				// Convert ISO 8601 format to RFC 3501 IMAP date format
+				// From: "2025-10-07T19:33:57+05:30"
+				// To: "07-Oct-2025 19:33:57 +0530"
+				if strings.Contains(internalDate, "T") {
+					t, err := time.Parse("2006-01-02T15:04:05-07:00", internalDate)
+					if err == nil {
+						// Format as RFC 3501: "02-Jan-2006 15:04:05 -0700"
+						internalDate = t.Format("02-Jan-2006 15:04:05 -0700")
+					}
+				}
 			}
 			responseParts = append(responseParts, fmt.Sprintf("INTERNALDATE \"%s\"", internalDate))
 		}
