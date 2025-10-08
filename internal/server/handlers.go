@@ -109,6 +109,31 @@ func (s *IMAPServer) handleList(conn net.Conn, tag string, parts []string, state
 	s.sendResponse(conn, fmt.Sprintf("%s OK LIST completed", tag))
 }
 
+func (s *IMAPServer) handleLsub(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	// For now, return all folders as subscribed (same as LIST)
+	// In a full implementation, you'd track subscriptions in the database
+	folders := []struct{ name, attrs string }{
+		{"INBOX", ""},
+		{"Sent", ""},
+		{"Drafts", "\\Drafts"},
+		{"Trash", "\\Trash"},
+	}
+
+	for _, folder := range folders {
+		attrs := folder.attrs
+		if attrs == "" {
+			attrs = "\\Unmarked"
+		}
+		s.sendResponse(conn, fmt.Sprintf("* LSUB (%s) \"/\" \"%s\"", attrs, folder.name))
+	}
+	s.sendResponse(conn, fmt.Sprintf("%s OK LSUB completed", tag))
+}
+
 func (s *IMAPServer) handleLogout(conn net.Conn, tag string) {
 	s.sendResponse(conn, "* BYE IMAP4rev1 Server logging out")
 	s.sendResponse(conn, fmt.Sprintf("%s OK LOGOUT completed", tag))
@@ -649,7 +674,7 @@ func (s *IMAPServer) authenticateUser(conn net.Conn, tag string, username string
 		} else {
 			capabilities += " STARTTLS LOGINDISABLED UIDPLUS IDLE NAMESPACE UNSELECT LITERAL+"
 		}
-		s.sendResponse(conn, fmt.Sprintf("%s OK [CAPABILITY %s] Authenticated", tag))
+		s.sendResponse(conn, fmt.Sprintf("%s OK [CAPABILITY %s] Authenticated", tag, capabilities))
 	} else {
 		s.sendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
 	}
