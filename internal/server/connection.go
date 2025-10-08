@@ -42,6 +42,8 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 			s.handleAuthenticate(conn, tag, parts, state)
 		case "LIST":
 			s.handleList(conn, tag, parts, state)
+		case "LSUB":
+			s.handleLsub(conn, tag, parts, state)
 		case "SELECT", "EXAMINE":
 			s.handleSelect(conn, tag, parts, state)
 		case "FETCH":
