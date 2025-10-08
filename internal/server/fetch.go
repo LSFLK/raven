@@ -18,7 +18,8 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 	}
 
 	if len(parts) < 3 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD SELECT requires folder name", tag))
+		cmd := strings.ToUpper(parts[1])
+		s.sendResponse(conn, fmt.Sprintf("%s BAD %s requires folder name", tag, cmd))
 		return
 	}
 
@@ -48,18 +49,58 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 		maxUID = 0
 	}
 
+	// Get the first unseen message sequence number (RFC 3501 requirement)
+	// We need to find the sequence number (position) of the first unseen message
+	var unseenSeqNum int
+	query = fmt.Sprintf(`
+		SELECT seq_num FROM (
+			SELECT ROW_NUMBER() OVER (ORDER BY id ASC) as seq_num, flags
+			FROM %s
+			WHERE folder = ?
+		) WHERE flags IS NULL OR flags NOT LIKE '%%\Seen%%'
+		ORDER BY seq_num ASC
+		LIMIT 1
+	`, tableName)
+	err = s.db.QueryRow(query, folder).Scan(&unseenSeqNum)
+	hasUnseen := (err == nil && unseenSeqNum > 0)
+
 	// Initialize state tracking for NOOP and other commands
 	state.LastMessageCount = count
 	state.LastRecentCount = recent
 
+	// Determine if this is SELECT or EXAMINE
+	cmd := strings.ToUpper(parts[1])
+	isExamine := (cmd == "EXAMINE")
+
+	// Send REQUIRED untagged responses in the correct order per RFC 3501
+	// For SELECT: FLAGS, EXISTS, RECENT
+	// For EXAMINE: EXISTS, RECENT, then FLAGS (per RFC 3501 example)
+	if !isExamine {
+		s.sendResponse(conn, "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
+	}
 	s.sendResponse(conn, fmt.Sprintf("* %d EXISTS", count))
 	s.sendResponse(conn, fmt.Sprintf("* %d RECENT", recent))
-	s.sendResponse(conn, "* OK [UIDVALIDITY 1] UID validity status")
+	
+	// Send REQUIRED OK untagged responses
+	if hasUnseen {
+		s.sendResponse(conn, fmt.Sprintf("* OK [UNSEEN %d] Message %d is first unseen", unseenSeqNum, unseenSeqNum))
+	}
+	s.sendResponse(conn, "* OK [UIDVALIDITY 1] UIDs valid")
 	s.sendResponse(conn, fmt.Sprintf("* OK [UIDNEXT %d] Predicted next UID", maxUID+1))
-	s.sendResponse(conn, "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
-	s.sendResponse(conn, "* OK [PERMANENTFLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft \\*)] Flags permitted")
+	
+	// FLAGS for EXAMINE comes after OK untagged responses
+	if isExamine {
+		s.sendResponse(conn, "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
+	}
+	
+	// PERMANENTFLAGS: Empty for EXAMINE (read-only), full for SELECT
+	if isExamine {
+		s.sendResponse(conn, "* OK [PERMANENTFLAGS ()] No permanent flags permitted")
+	} else {
+		s.sendResponse(conn, "* OK [PERMANENTFLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft \\*)] Limited")
+	}
 
-	cmd := strings.ToUpper(parts[1])
+	// Send tagged completion response
 	if cmd == "SELECT" {
 		s.sendResponse(conn, fmt.Sprintf("%s OK [READ-WRITE] SELECT completed", tag))
 	} else {

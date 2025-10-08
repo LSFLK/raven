@@ -61,6 +61,16 @@ func (t *TestInterface) HandleNoop(conn net.Conn, tag string, state *models.Clie
 	t.server.handleNoop(conn, tag, state)
 }
 
+// HandleSelect exposes the select handler for testing
+func (t *TestInterface) HandleSelect(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	t.server.handleSelect(conn, tag, parts, state)
+}
+
+// HandleExamine exposes the examine handler for testing (uses same handler as SELECT)
+func (t *TestInterface) HandleExamine(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	t.server.handleSelect(conn, tag, parts, state)
+}
+
 // HandleAppend exposes the append handler for testing
 func (t *TestInterface) HandleAppend(conn net.Conn, tag string, parts []string, fullLine string, state *models.ClientState) {
 	t.server.handleAppend(conn, tag, parts, fullLine, state)
