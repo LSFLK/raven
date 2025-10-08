@@ -18,7 +18,8 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 	}
 
 	if len(parts) < 3 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD SELECT requires folder name", tag))
+		cmd := strings.ToUpper(parts[1])
+		s.sendResponse(conn, fmt.Sprintf("%s BAD %s requires folder name", tag, cmd))
 		return
 	}
 
@@ -67,8 +68,16 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 	state.LastMessageCount = count
 	state.LastRecentCount = recent
 
+	// Determine if this is SELECT or EXAMINE
+	cmd := strings.ToUpper(parts[1])
+	isExamine := (cmd == "EXAMINE")
+
 	// Send REQUIRED untagged responses in the correct order per RFC 3501
-	s.sendResponse(conn, "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
+	// For SELECT: FLAGS, EXISTS, RECENT
+	// For EXAMINE: EXISTS, RECENT, then FLAGS (per RFC 3501 example)
+	if !isExamine {
+		s.sendResponse(conn, "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
+	}
 	s.sendResponse(conn, fmt.Sprintf("* %d EXISTS", count))
 	s.sendResponse(conn, fmt.Sprintf("* %d RECENT", recent))
 	
@@ -78,9 +87,20 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 	}
 	s.sendResponse(conn, "* OK [UIDVALIDITY 1] UIDs valid")
 	s.sendResponse(conn, fmt.Sprintf("* OK [UIDNEXT %d] Predicted next UID", maxUID+1))
-	s.sendResponse(conn, "* OK [PERMANENTFLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft \\*)] Limited")
+	
+	// FLAGS for EXAMINE comes after OK untagged responses
+	if isExamine {
+		s.sendResponse(conn, "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
+	}
+	
+	// PERMANENTFLAGS: Empty for EXAMINE (read-only), full for SELECT
+	if isExamine {
+		s.sendResponse(conn, "* OK [PERMANENTFLAGS ()] No permanent flags permitted")
+	} else {
+		s.sendResponse(conn, "* OK [PERMANENTFLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft \\*)] Limited")
+	}
 
-	cmd := strings.ToUpper(parts[1])
+	// Send tagged completion response
 	if cmd == "SELECT" {
 		s.sendResponse(conn, fmt.Sprintf("%s OK [READ-WRITE] SELECT completed", tag))
 	} else {

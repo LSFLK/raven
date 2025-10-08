@@ -484,3 +484,247 @@ func TestSelectCommand_AllMessagesSeen(t *testing.T) {
 		t.Errorf("Expected 0 RECENT messages. Got: %s", response)
 	}
 }
+
+// TestExamineCommand_RFC3501_Compliance tests EXAMINE per RFC 3501 specifications
+func TestExamineCommand_RFC3501_Compliance(t *testing.T) {
+	database := helpers.CreateTestDB(t)
+	defer database.Close()
+	helpers.CreateTestUserTable(t, database, "testuser")
+
+	// Create a mailbox with messages similar to RFC 3501 example
+	tableName := db.GetUserTableName("testuser")
+	query := fmt.Sprintf(
+		"INSERT INTO %s (subject, sender, recipient, date_sent, raw_message, flags, folder) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		tableName,
+	)
+
+	// Insert 7 seen messages
+	for i := 1; i <= 7; i++ {
+		database.Exec(query, fmt.Sprintf("Msg %d", i), "sender@example.com", "recipient@example.com", "01-Jan-2024 12:00:00 +0000", fmt.Sprintf("From: sender@example.com\r\nSubject: Msg %d\r\n\r\nBody", i), "\\Seen", "blurdybloop")
+	}
+
+	// Insert message 8 - first unseen
+	database.Exec(query, "Msg 8", "sender@example.com", "recipient@example.com", "01-Jan-2024 12:00:00 +0000", "From: sender@example.com\r\nSubject: Msg 8\r\n\r\nBody", "", "blurdybloop")
+
+	// Insert remaining unseen messages (9-17)
+	for i := 9; i <= 17; i++ {
+		database.Exec(query, fmt.Sprintf("Msg %d", i), "sender@example.com", "recipient@example.com", "01-Jan-2024 12:00:00 +0000", fmt.Sprintf("From: sender@example.com\r\nSubject: Msg %d\r\n\r\nBody", i), "", "blurdybloop")
+	}
+
+	s := helpers.TestServerWithDB(database)
+	conn := helpers.NewMockTLSConn()
+	state := &models.ClientState{
+		Authenticated: true,
+		Username:      "testuser",
+	}
+
+	s.HandleExamine(conn, "A932", []string{"A932", "EXAMINE", "blurdybloop"}, state)
+	response := conn.GetWrittenData()
+
+	// Verify all REQUIRED responses per RFC 3501
+	if !strings.Contains(response, "* 17 EXISTS") {
+		t.Errorf("Expected 17 EXISTS. Got: %s", response)
+	}
+
+	if !strings.Contains(response, "* OK [UNSEEN 8]") {
+		t.Errorf("Expected UNSEEN 8. Got: %s", response)
+	}
+
+	if !strings.Contains(response, "* OK [UIDVALIDITY") {
+		t.Errorf("Expected UIDVALIDITY. Got: %s", response)
+	}
+
+	if !strings.Contains(response, "* OK [UIDNEXT") {
+		t.Errorf("Expected UIDNEXT. Got: %s", response)
+	}
+
+	if !strings.Contains(response, "* FLAGS") {
+		t.Errorf("Expected FLAGS. Got: %s", response)
+	}
+
+	// CRITICAL: EXAMINE must return empty PERMANENTFLAGS
+	if !strings.Contains(response, "* OK [PERMANENTFLAGS ()]") {
+		t.Errorf("Expected empty PERMANENTFLAGS for EXAMINE. Got: %s", response)
+	}
+
+	// Must complete with READ-ONLY
+	if !strings.Contains(response, "A932 OK [READ-ONLY] EXAMINE completed") {
+		t.Errorf("Expected READ-ONLY completion. Got: %s", response)
+	}
+
+	// Verify the mailbox is selected
+	if state.SelectedFolder != "blurdybloop" {
+		t.Errorf("Expected SelectedFolder to be 'blurdybloop', got: %s", state.SelectedFolder)
+	}
+}
+
+// TestExamineCommand_EmptyPermanentFlags tests that EXAMINE returns empty PERMANENTFLAGS
+func TestExamineCommand_EmptyPermanentFlags(t *testing.T) {
+	database := helpers.CreateTestDB(t)
+	defer database.Close()
+	helpers.CreateTestUserTable(t, database, "testuser")
+	helpers.InsertTestMail(t, database, "testuser", "Test Message", "sender@example.com", "recipient@example.com", "INBOX")
+
+	s := helpers.TestServerWithDB(database)
+	conn := helpers.NewMockTLSConn()
+	state := &models.ClientState{
+		Authenticated: true,
+		Username:      "testuser",
+	}
+
+	s.HandleExamine(conn, "A100", []string{"A100", "EXAMINE", "INBOX"}, state)
+	response := conn.GetWrittenData()
+
+	// EXAMINE must return empty PERMANENTFLAGS list
+	if !strings.Contains(response, "[PERMANENTFLAGS ()]") {
+		t.Errorf("EXAMINE must return empty PERMANENTFLAGS. Got: %s", response)
+	}
+
+	// Should NOT contain the full permanent flags list
+	if strings.Contains(response, "[PERMANENTFLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft \\*)]") {
+		t.Errorf("EXAMINE should not return modifiable PERMANENTFLAGS. Got: %s", response)
+	}
+}
+
+// TestSelectVsExamine_PermanentFlags tests the difference in PERMANENTFLAGS between SELECT and EXAMINE
+func TestSelectVsExamine_PermanentFlags(t *testing.T) {
+	database := helpers.CreateTestDB(t)
+	defer database.Close()
+	helpers.CreateTestUserTable(t, database, "testuser")
+	helpers.InsertTestMail(t, database, "testuser", "Test Message", "sender@example.com", "recipient@example.com", "INBOX")
+
+	s := helpers.TestServerWithDB(database)
+
+	// Test SELECT
+	connSelect := helpers.NewMockTLSConn()
+	stateSelect := &models.ClientState{
+		Authenticated: true,
+		Username:      "testuser",
+	}
+
+	s.HandleSelect(connSelect, "A101", []string{"A101", "SELECT", "INBOX"}, stateSelect)
+	selectResponse := connSelect.GetWrittenData()
+
+	// SELECT should have full PERMANENTFLAGS
+	if !strings.Contains(selectResponse, "[PERMANENTFLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft \\*)]") {
+		t.Errorf("SELECT should return full PERMANENTFLAGS. Got: %s", selectResponse)
+	}
+
+	// SELECT should be READ-WRITE
+	if !strings.Contains(selectResponse, "[READ-WRITE]") {
+		t.Errorf("SELECT should return READ-WRITE. Got: %s", selectResponse)
+	}
+
+	// Test EXAMINE
+	connExamine := helpers.NewMockTLSConn()
+	stateExamine := &models.ClientState{
+		Authenticated: true,
+		Username:      "testuser",
+	}
+
+	s.HandleExamine(connExamine, "A102", []string{"A102", "EXAMINE", "INBOX"}, stateExamine)
+	examineResponse := connExamine.GetWrittenData()
+
+	// EXAMINE should have empty PERMANENTFLAGS
+	if !strings.Contains(examineResponse, "[PERMANENTFLAGS ()]") {
+		t.Errorf("EXAMINE should return empty PERMANENTFLAGS. Got: %s", examineResponse)
+	}
+
+	// EXAMINE should be READ-ONLY
+	if !strings.Contains(examineResponse, "[READ-ONLY]") {
+		t.Errorf("EXAMINE should return READ-ONLY. Got: %s", examineResponse)
+	}
+}
+
+// TestExamineCommand_UnauthenticatedUser tests EXAMINE without authentication
+func TestExamineCommand_UnauthenticatedUser(t *testing.T) {
+	s, cleanup := helpers.SetupTestServer(t)
+	defer cleanup()
+
+	conn := helpers.NewMockTLSConn()
+	state := &models.ClientState{
+		Authenticated: false,
+	}
+
+	s.HandleExamine(conn, "A103", []string{"A103", "EXAMINE", "INBOX"}, state)
+	response := conn.GetWrittenData()
+
+	// Should get NO response
+	if !strings.Contains(response, "A103 NO Please authenticate first") {
+		t.Errorf("Expected authentication required error. Got: %s", response)
+	}
+}
+
+// TestExamineCommand_MissingMailboxName tests EXAMINE without mailbox name
+func TestExamineCommand_MissingMailboxName(t *testing.T) {
+	s, cleanup := helpers.SetupTestServer(t)
+	defer cleanup()
+
+	conn := helpers.NewMockTLSConn()
+	state := &models.ClientState{
+		Authenticated: true,
+		Username:      "testuser",
+	}
+
+	s.HandleExamine(conn, "A104", []string{"A104", "EXAMINE"}, state)
+	response := conn.GetWrittenData()
+
+	// Should get BAD response mentioning EXAMINE
+	if !strings.Contains(response, "A104 BAD EXAMINE requires folder name") {
+		t.Errorf("Expected BAD response for missing folder name. Got: %s", response)
+	}
+}
+
+// TestExamineCommand_ResponseOrder tests the response order matches RFC 3501 example
+func TestExamineCommand_ResponseOrder(t *testing.T) {
+	database := helpers.CreateTestDB(t)
+	defer database.Close()
+	helpers.CreateTestUserTable(t, database, "testuser")
+	helpers.InsertTestMail(t, database, "testuser", "Test Message", "sender@example.com", "recipient@example.com", "INBOX")
+
+	s := helpers.TestServerWithDB(database)
+	conn := helpers.NewMockTLSConn()
+	state := &models.ClientState{
+		Authenticated: true,
+		Username:      "testuser",
+	}
+
+	s.HandleExamine(conn, "A105", []string{"A105", "EXAMINE", "INBOX"}, state)
+	response := conn.GetWrittenData()
+
+	// Per RFC 3501 EXAMINE example, the order should be:
+	// EXISTS, RECENT, OK responses (UNSEEN, UIDVALIDITY, UIDNEXT), FLAGS, PERMANENTFLAGS, tagged OK
+
+	lines := strings.Split(response, "\n")
+	var existsLine, recentLine, flagsLine, permanentFlagsLine int
+
+	for i, line := range lines {
+		if strings.Contains(line, "EXISTS") {
+			existsLine = i
+		}
+		if strings.Contains(line, "RECENT") {
+			recentLine = i
+		}
+		if strings.Contains(line, "* FLAGS") {
+			flagsLine = i
+		}
+		if strings.Contains(line, "PERMANENTFLAGS") {
+			permanentFlagsLine = i
+		}
+	}
+
+	// EXISTS should come before RECENT
+	if existsLine >= recentLine {
+		t.Errorf("EXISTS should come before RECENT")
+	}
+
+	// FLAGS should come after EXISTS and RECENT for EXAMINE
+	if flagsLine != 0 && flagsLine < recentLine {
+		t.Errorf("For EXAMINE, FLAGS should come after EXISTS and RECENT")
+	}
+
+	// PERMANENTFLAGS should come after FLAGS
+	if permanentFlagsLine != 0 && permanentFlagsLine < flagsLine {
+		t.Errorf("PERMANENTFLAGS should come after FLAGS")
+	}
+}
