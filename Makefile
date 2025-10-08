@@ -9,10 +9,12 @@
 #   make test-authenticate - Run AUTHENTICATE command tests
 #   make test-login        - Run LOGIN command tests
 #   make test-starttls     - Run STARTTLS command tests
+#   make test-select       - Run SELECT command tests
+#   make test-examine      - Run EXAMINE command tests
 #   make test-commands     - Run all command tests
 #   make help              - Show all available targets
 
-.PHONY: test test-capability test-noop test-authenticate test-login test-starttls test-commands test-verbose test-coverage test-race clean
+.PHONY: test test-capability test-noop test-authenticate test-login test-starttls test-select test-examine test-commands test-verbose test-coverage test-race clean
 
 # Run all tests
 test:
@@ -50,7 +52,15 @@ test-login:
 test-starttls:
 	go test -tags=test -v ./test/server -run "TestStartTLS"
 
-# Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS)
+# Run only SELECT-related tests
+test-select:
+	go test -tags=test -v ./test/server -run "TestSelectCommand"
+
+# Run only EXAMINE-related tests
+test-examine:
+	go test -tags=test -v ./test/server -run "TestExamineCommand"
+
+# Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT)
 test-commands:
 	@echo "Running CAPABILITY tests..."
 	@go test -tags=test -v ./test/server -run "TestCapabilityCommand"
@@ -66,6 +76,10 @@ test-commands:
 	@go test -tags=test -v ./test/server -run "TestLoginCommand"
 	@echo "\nRunning STARTTLS tests..."
 	@go test -tags=test -v ./test/server -run "TestStartTLS"
+	@echo "\nRunning SELECT tests..."
+	@go test -tags=test -v ./test/server -run "TestSelectCommand"
+	@echo "\nRunning EXAMINE tests..."
+	@go test -tags=test -v ./test/server -run "TestExamineCommand"
 
 # Run tests with verbose output
 test-verbose:
@@ -135,7 +149,9 @@ help:
 	@echo "  test-authenticate      - Run AUTHENTICATE command tests only"
 	@echo "  test-login             - Run LOGIN command tests only"
 	@echo "  test-starttls          - Run STARTTLS command tests only"
-	@echo "  test-commands          - Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS)"
+	@echo "  test-select            - Run SELECT command tests only"
+	@echo "  test-examine           - Run EXAMINE command tests only"
+	@echo "  test-commands          - Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE)"
 	@echo "  test-verbose           - Run tests with verbose output"
 	@echo "  test-coverage          - Run tests with coverage report"
 	@echo "  test-race              - Run tests with race detection"

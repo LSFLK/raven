@@ -48,16 +48,37 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 		maxUID = 0
 	}
 
+	// Get the first unseen message sequence number (RFC 3501 requirement)
+	// We need to find the sequence number (position) of the first unseen message
+	var unseenSeqNum int
+	query = fmt.Sprintf(`
+		SELECT seq_num FROM (
+			SELECT ROW_NUMBER() OVER (ORDER BY id ASC) as seq_num, flags
+			FROM %s
+			WHERE folder = ?
+		) WHERE flags IS NULL OR flags NOT LIKE '%%\Seen%%'
+		ORDER BY seq_num ASC
+		LIMIT 1
+	`, tableName)
+	err = s.db.QueryRow(query, folder).Scan(&unseenSeqNum)
+	hasUnseen := (err == nil && unseenSeqNum > 0)
+
 	// Initialize state tracking for NOOP and other commands
 	state.LastMessageCount = count
 	state.LastRecentCount = recent
 
+	// Send REQUIRED untagged responses in the correct order per RFC 3501
+	s.sendResponse(conn, "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
 	s.sendResponse(conn, fmt.Sprintf("* %d EXISTS", count))
 	s.sendResponse(conn, fmt.Sprintf("* %d RECENT", recent))
-	s.sendResponse(conn, "* OK [UIDVALIDITY 1] UID validity status")
+	
+	// Send REQUIRED OK untagged responses
+	if hasUnseen {
+		s.sendResponse(conn, fmt.Sprintf("* OK [UNSEEN %d] Message %d is first unseen", unseenSeqNum, unseenSeqNum))
+	}
+	s.sendResponse(conn, "* OK [UIDVALIDITY 1] UIDs valid")
 	s.sendResponse(conn, fmt.Sprintf("* OK [UIDNEXT %d] Predicted next UID", maxUID+1))
-	s.sendResponse(conn, "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
-	s.sendResponse(conn, "* OK [PERMANENTFLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft \\*)] Flags permitted")
+	s.sendResponse(conn, "* OK [PERMANENTFLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft \\*)] Limited")
 
 	cmd := strings.ToUpper(parts[1])
 	if cmd == "SELECT" {
