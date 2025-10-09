@@ -14,6 +14,9 @@
 #   make test-create       - Run CREATE command tests
 #   make test-delete       - Run DELETE command tests
 #   make test-rename       - Run RENAME command tests
+#   make test-subscribe    - Run SUBSCRIBE command tests
+#   make test-unsubscribe  - Run UNSUBSCRIBE command tests
+#   make test-lsub         - Run LSUB command tests
 #   make test-commands     - Run all command tests
 #   make help              - Show all available targets
 
@@ -71,11 +74,23 @@ test-create:
 test-delete:
 	go test -tags=test -v ./test/server -run "TestDeleteCommand"
 
+# Run only SUBSCRIBE-related tests
+test-subscribe:
+	go test -tags=test -v ./test/server -run "TestSubscribeCommand"
+
+# Run only UNSUBSCRIBE-related tests
+test-unsubscribe:
+	go test -tags=test -v ./test/server -run "TestUnsubscribeCommand"
+
+# Run only LSUB-related tests
+test-lsub:
+	go test -tags=test -v ./test/server -run "TestLsubCommand"
+
 # Run only RENAME-related tests
 test-rename:
 	go test -tags=test -v ./test/server -run "TestRenameCommand"
 
-# Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + DELETE + RENAME)
+# Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB + RENAME)
 test-commands:
 	@echo "Running CAPABILITY tests..."
 	@go test -tags=test -v ./test/server -run "TestCapabilityCommand"
@@ -99,6 +114,12 @@ test-commands:
 	@go test -tags=test -v ./test/server -run "TestCreateCommand"
 	@echo "\nRunning DELETE tests..."
 	@go test -tags=test -v ./test/server -run "TestDeleteCommand"
+	@echo "\nRunning SUBSCRIBE tests..."
+	@go test -tags=test -v ./test/server -run "TestSubscribeCommand"
+	@echo "\nRunning UNSUBSCRIBE tests..."
+	@go test -tags=test -v ./test/server -run "TestUnsubscribeCommand"
+	@echo "\nRunning LSUB tests..."
+	@go test -tags=test -v ./test/server -run "TestLsubCommand"
 	@echo "\nRunning RENAME tests..."
 	@go test -tags=test -v ./test/server -run "TestRenameCommand"
 
@@ -174,7 +195,10 @@ help:
 	@echo "  test-examine           - Run EXAMINE command tests only"
 	@echo "  test-create            - Run CREATE command tests only"
 	@echo "  test-delete            - Run DELETE command tests only"
-	@echo "  test-commands          - Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + DELETE)"
+	@echo "  test-subscribe         - Run SUBSCRIBE command tests only"
+	@echo "  test-unsubscribe       - Run UNSUBSCRIBE command tests only"
+	@echo "  test-lsub              - Run LSUB command tests only"
+	@echo "  test-commands          - Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB)"
 	@echo "  test-verbose           - Run tests with verbose output"
 	@echo "  test-coverage          - Run tests with coverage report"
 	@echo "  test-race              - Run tests with race detection"

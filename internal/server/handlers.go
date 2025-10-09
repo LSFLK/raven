@@ -124,15 +124,24 @@ func (s *IMAPServer) handleLsub(conn net.Conn, tag string, parts []string, state
 		return
 	}
 
-	// For now, return all folders as subscribed (same as LIST)
-	// In a full implementation, you'd track subscriptions in the database
-	mailboxes, err := db.GetUserMailboxes(s.db, state.Username)
+	// Get subscribed mailboxes from database
+	subscriptions, err := db.GetUserSubscriptions(s.db, state.Username)
 	if err != nil {
-		// Fall back to default mailboxes if database query fails
-		mailboxes = []string{"INBOX", "Sent", "Drafts", "Trash"}
+		fmt.Printf("Failed to get subscriptions for user %s: %v\n", state.Username, err)
+		s.sendResponse(conn, fmt.Sprintf("%s NO LSUB failure: server error", tag))
+		return
 	}
 
-	for _, mailboxName := range mailboxes {
+	// If no subscriptions exist, subscribe to default mailboxes
+	if len(subscriptions) == 0 {
+		defaultMailboxes := []string{"INBOX", "Sent", "Drafts", "Trash"}
+		for _, mailbox := range defaultMailboxes {
+			db.SubscribeToMailbox(s.db, state.Username, mailbox)
+		}
+		subscriptions = defaultMailboxes
+	}
+
+	for _, mailboxName := range subscriptions {
 		attrs := "\\Unmarked"
 		
 		// Set appropriate attributes for special mailboxes
@@ -879,4 +888,99 @@ func (s *IMAPServer) authenticateUser(conn net.Conn, tag string, username string
 	} else {
 		s.sendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
 	}
+}
+
+func (s *IMAPServer) handleSubscribe(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	// SUBSCRIBE command format: tag SUBSCRIBE mailbox
+	if len(parts) < 3 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD SUBSCRIBE command requires a mailbox argument", tag))
+		return
+	}
+
+	mailboxName := parts[2]
+	
+	// Remove quotes if present
+	if len(mailboxName) >= 2 && mailboxName[0] == '"' && mailboxName[len(mailboxName)-1] == '"' {
+		mailboxName = mailboxName[1 : len(mailboxName)-1]
+	}
+
+	// Validate mailbox name
+	if mailboxName == "" {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid mailbox name", tag))
+		return
+	}
+
+	// Subscribe to the mailbox
+	err := db.SubscribeToMailbox(s.db, state.Username, mailboxName)
+	if err != nil {
+		fmt.Printf("Failed to subscribe to mailbox %s for user %s: %v\n", mailboxName, state.Username, err)
+		s.sendResponse(conn, fmt.Sprintf("%s NO SUBSCRIBE failure: server error", tag))
+		return
+	}
+
+	s.sendResponse(conn, fmt.Sprintf("%s OK SUBSCRIBE completed", tag))
+}
+
+// handleUnsubscribe handles the UNSUBSCRIBE command to remove a mailbox from the subscription list
+func (s *IMAPServer) handleUnsubscribe(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	// UNSUBSCRIBE command format: tag UNSUBSCRIBE mailbox
+	if len(parts) < 3 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD UNSUBSCRIBE command requires a mailbox argument", tag))
+		return
+	}
+
+	mailboxName := parts[2]
+	
+	// Remove quotes if present
+	if len(mailboxName) >= 2 && mailboxName[0] == '"' && mailboxName[len(mailboxName)-1] == '"' {
+		mailboxName = mailboxName[1 : len(mailboxName)-1]
+	}
+
+	// Validate mailbox name
+	if mailboxName == "" {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid mailbox name", tag))
+		return
+	}
+
+	// Unsubscribe from the mailbox
+	err := db.UnsubscribeFromMailbox(s.db, state.Username, mailboxName)
+	if err != nil {
+		fmt.Printf("Failed to unsubscribe from mailbox %s for user %s: %v\n", mailboxName, state.Username, err)
+		s.sendResponse(conn, fmt.Sprintf("%s NO UNSUBSCRIBE failure: server error", tag))
+		return
+	}
+
+	s.sendResponse(conn, fmt.Sprintf("%s OK UNSUBSCRIBE completed", tag))
+}
+
+// Exported handler methods for testing
+
+// HandleCapability exports the capability handler for testing
+func (s *IMAPServer) HandleCapability(conn net.Conn, tag string, state *models.ClientState) {
+	s.handleCapability(conn, tag, state)
+}
+
+// HandleSubscribe exports the subscribe handler for testing
+func (s *IMAPServer) HandleSubscribe(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	s.handleSubscribe(conn, tag, parts, state)
+}
+
+// HandleUnsubscribe exports the unsubscribe handler for testing
+func (s *IMAPServer) HandleUnsubscribe(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	s.handleUnsubscribe(conn, tag, parts, state)
+}
+
+// HandleLsub exports the lsub handler for testing
+func (s *IMAPServer) HandleLsub(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	s.handleLsub(conn, tag, parts, state)
 }
