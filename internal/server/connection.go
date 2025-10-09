@@ -46,6 +46,8 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 			s.handleLsub(conn, tag, parts, state)
 		case "CREATE":
 			s.handleCreate(conn, tag, parts, state)
+		case "DELETE":
+			s.handleDelete(conn, tag, parts, state)
 		case "SELECT", "EXAMINE":
 			s.handleSelect(conn, tag, parts, state)
 		case "FETCH":

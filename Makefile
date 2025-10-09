@@ -12,10 +12,11 @@
 #   make test-select       - Run SELECT command tests
 #   make test-examine      - Run EXAMINE command tests
 #   make test-create       - Run CREATE command tests
+#   make test-delete       - Run DELETE command tests
 #   make test-commands     - Run all command tests
 #   make help              - Show all available targets
 
-.PHONY: test test-capability test-noop test-authenticate test-login test-starttls test-select test-examine test-create test-commands test-verbose test-coverage test-race clean
+.PHONY: test test-capability test-noop test-authenticate test-login test-starttls test-select test-examine test-create test-delete test-commands test-verbose test-coverage test-race clean
 
 # Run all tests
 test:
@@ -65,7 +66,11 @@ test-examine:
 test-create:
 	go test -tags=test -v ./test/server -run "TestCreateCommand"
 
-# Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE)
+# Run only DELETE-related tests
+test-delete:
+	go test -tags=test -v ./test/server -run "TestDeleteCommand"
+
+# Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + DELETE)
 test-commands:
 	@echo "Running CAPABILITY tests..."
 	@go test -tags=test -v ./test/server -run "TestCapabilityCommand"
@@ -87,6 +92,8 @@ test-commands:
 	@go test -tags=test -v ./test/server -run "TestExamineCommand"
 	@echo "\nRunning CREATE tests..."
 	@go test -tags=test -v ./test/server -run "TestCreateCommand"
+	@echo "\nRunning DELETE tests..."
+	@go test -tags=test -v ./test/server -run "TestDeleteCommand"
 
 # Run tests with verbose output
 test-verbose:
@@ -159,7 +166,8 @@ help:
 	@echo "  test-select            - Run SELECT command tests only"
 	@echo "  test-examine           - Run EXAMINE command tests only"
 	@echo "  test-create            - Run CREATE command tests only"
-	@echo "  test-commands          - Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE)"
+	@echo "  test-delete            - Run DELETE command tests only"
+	@echo "  test-commands          - Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + DELETE)"
 	@echo "  test-verbose           - Run tests with verbose output"
 	@echo "  test-coverage          - Run tests with coverage report"
 	@echo "  test-race              - Run tests with race detection"
