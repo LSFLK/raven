@@ -64,3 +64,20 @@ Your `/certs` directory must contain:
 - `privkey.pem` - Private key
 
 These certificates are required for secure connections on port 993 and STARTTLS functionality.
+
+## ⚙️ Configuration File
+
+Raven requires a configuration file named `raven.yaml` located in `/etc/raven` inside the Docker container.
+
+### Example
+```yaml
+domain: <domain name>
+auth_server_url: <auth url>
+```
+
+## Fields
+
+| Key | Description |
+|-----|-------------|
+| `domain` | The mail domain used in the mail system. |
+| `auth_server_url` | The authentication API endpoint used to validate user credentials. |
