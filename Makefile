@@ -13,6 +13,7 @@
 #   make test-examine      - Run EXAMINE command tests
 #   make test-create       - Run CREATE command tests
 #   make test-delete       - Run DELETE command tests
+#   make test-rename       - Run RENAME command tests
 #   make test-commands     - Run all command tests
 #   make help              - Show all available targets
 
@@ -70,7 +71,11 @@ test-create:
 test-delete:
 	go test -tags=test -v ./test/server -run "TestDeleteCommand"
 
-# Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + DELETE)
+# Run only RENAME-related tests
+test-rename:
+	go test -tags=test -v ./test/server -run "TestRenameCommand"
+
+# Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + DELETE + RENAME)
 test-commands:
 	@echo "Running CAPABILITY tests..."
 	@go test -tags=test -v ./test/server -run "TestCapabilityCommand"
@@ -94,6 +99,8 @@ test-commands:
 	@go test -tags=test -v ./test/server -run "TestCreateCommand"
 	@echo "\nRunning DELETE tests..."
 	@go test -tags=test -v ./test/server -run "TestDeleteCommand"
+	@echo "\nRunning RENAME tests..."
+	@go test -tags=test -v ./test/server -run "TestRenameCommand"
 
 # Run tests with verbose output
 test-verbose:
