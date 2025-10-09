@@ -46,6 +46,11 @@ func (t *TestInterface) HandleDelete(conn net.Conn, tag string, parts []string, 
 	t.server.handleDelete(conn, tag, parts, state)
 }
 
+// HandleRename exposes the rename handler for testing
+func (t *TestInterface) HandleRename(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	t.server.handleRename(conn, tag, parts, state)
+}
+
 // HandleLogout exposes the logout handler for testing
 func (t *TestInterface) HandleLogout(conn net.Conn, tag string) {
 	t.server.handleLogout(conn, tag)

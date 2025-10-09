@@ -276,3 +276,239 @@ func DeleteMailbox(db *sql.DB, username, mailboxName string) error {
 
 	return nil
 }
+
+// RenameMailbox renames a mailbox for a user according to RFC 3501 rules
+func RenameMailbox(db *sql.DB, username, oldName, newName string) error {
+	// Validate mailbox names
+	if oldName == "" || newName == "" {
+		return fmt.Errorf("mailbox names cannot be empty")
+	}
+
+	// Handle INBOX renaming (special case)
+	if strings.ToUpper(oldName) == "INBOX" {
+		return renameInbox(db, username, newName)
+	}
+
+	// Cannot rename TO INBOX
+	if strings.ToUpper(newName) == "INBOX" {
+		return fmt.Errorf("cannot rename to INBOX")
+	}
+
+	// Check if source mailbox exists
+	exists, err := MailboxExists(db, username, oldName)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("source mailbox does not exist")
+	}
+
+	// Check if destination mailbox already exists
+	destExists, err := MailboxExists(db, username, newName)
+	if err != nil {
+		return err
+	}
+	if destExists {
+		return fmt.Errorf("destination mailbox already exists")
+	}
+
+	// Handle hierarchy creation for destination
+	if strings.Contains(newName, "/") {
+		err := createSuperiorHierarchy(db, username, newName)
+		if err != nil {
+			return fmt.Errorf("failed to create superior hierarchy: %v", err)
+		}
+	}
+
+	// Rename the mailbox and all its inferior hierarchical names
+	err = renameMailboxHierarchy(db, username, oldName, newName)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// renameInbox handles the special case of renaming INBOX
+func renameInbox(db *sql.DB, username, newName string) error {
+	// Check if destination mailbox already exists
+	destExists, err := MailboxExists(db, username, newName)
+	if err != nil {
+		return err
+	}
+	if destExists {
+		return fmt.Errorf("destination mailbox already exists")
+	}
+
+	// Handle hierarchy creation for destination
+	if strings.Contains(newName, "/") {
+		err := createSuperiorHierarchy(db, username, newName)
+		if err != nil {
+			return fmt.Errorf("failed to create superior hierarchy: %v", err)
+		}
+	}
+
+	// Create the destination mailbox
+	err = CreateMailbox(db, username, newName)
+	if err != nil {
+		return fmt.Errorf("failed to create destination mailbox: %v", err)
+	}
+
+	// Move all messages from INBOX to the new mailbox
+	tableName := GetUserTableName(username)
+	
+	// Check if user table exists
+	var tableExists int
+	err = db.QueryRow(`
+		SELECT COUNT(*) FROM sqlite_master 
+		WHERE type='table' AND name=?
+	`, tableName).Scan(&tableExists)
+	
+	if err != nil {
+		return fmt.Errorf("failed to check user table: %v", err)
+	}
+	
+	// Only move messages if user table exists
+	if tableExists > 0 {
+		_, err = db.Exec(fmt.Sprintf(
+			"UPDATE %s SET folder = ? WHERE folder = 'INBOX'", tableName,
+		), newName)
+		if err != nil {
+			return fmt.Errorf("failed to move messages: %v", err)
+		}
+	}
+
+	// INBOX itself remains empty but continues to exist
+	// (inferior hierarchical names of INBOX are unaffected)
+	
+	return nil
+}
+
+// renameMailboxHierarchy renames a mailbox and all its inferior hierarchical names
+func renameMailboxHierarchy(db *sql.DB, username, oldName, newName string) error {
+	// Start a transaction
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Get all mailboxes that need to be renamed (the mailbox itself and its inferiors)
+	var mailboxesToRename []struct {
+		oldMailbox string
+		newMailbox string
+	}
+
+	// Add the main mailbox
+	mailboxesToRename = append(mailboxesToRename, struct {
+		oldMailbox string
+		newMailbox string
+	}{oldName, newName})
+
+	// Get all inferior hierarchical names
+	rows, err := tx.Query(`
+		SELECT name FROM mailboxes 
+		WHERE username = ? AND name LIKE ? AND name != ?
+		ORDER BY name
+	`, username, oldName+"/%", oldName)
+
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var inferiorName string
+		if err := rows.Scan(&inferiorName); err != nil {
+			return err
+		}
+		
+		// Calculate new name by replacing the prefix
+		newInferiorName := newName + inferiorName[len(oldName):]
+		mailboxesToRename = append(mailboxesToRename, struct {
+			oldMailbox string
+			newMailbox string
+		}{inferiorName, newInferiorName})
+	}
+
+	// Rename all mailboxes in the database
+	for _, rename := range mailboxesToRename {
+		_, err = tx.Exec(`
+			UPDATE mailboxes 
+			SET name = ? 
+			WHERE username = ? AND name = ?
+		`, rename.newMailbox, username, rename.oldMailbox)
+		
+		if err != nil {
+			return err
+		}
+	}
+
+	// Update folder names in user's message table
+	tableName := GetUserTableName(username)
+	
+	// Check if user table exists
+	var tableExists int
+	err = tx.QueryRow(`
+		SELECT COUNT(*) FROM sqlite_master 
+		WHERE type='table' AND name=?
+	`, tableName).Scan(&tableExists)
+	
+	if err != nil {
+		return err
+	}
+	
+	// Only update messages if user table exists
+	if tableExists > 0 {
+		for _, rename := range mailboxesToRename {
+			_, err = tx.Exec(fmt.Sprintf(
+				"UPDATE %s SET folder = ? WHERE folder = ?", tableName,
+			), rename.newMailbox, rename.oldMailbox)
+			
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return tx.Commit()
+}
+
+// createSuperiorHierarchy creates any superior hierarchical names needed
+func createSuperiorHierarchy(db *sql.DB, username, mailboxName string) error {
+	if !strings.Contains(mailboxName, "/") {
+		return nil // No hierarchy to create
+	}
+
+	parts := strings.Split(mailboxName, "/")
+	currentPath := ""
+	
+	// Create each level of the hierarchy (except the final mailbox)
+	for i, part := range parts {
+		if i > 0 {
+			currentPath += "/"
+		}
+		currentPath += part
+		
+		// Skip if this is the final mailbox (caller will create it)
+		if i == len(parts)-1 {
+			break
+		}
+		
+		// Check if this intermediate mailbox exists
+		exists, err := MailboxExists(db, username, currentPath)
+		if err != nil {
+			return err
+		}
+		
+		if !exists {
+			// Create intermediate mailbox - ignore "already exists" errors
+			err = CreateMailbox(db, username, currentPath)
+			if err != nil && !strings.Contains(err.Error(), "already exists") {
+				return err
+			}
+		}
+	}
+	
+	return nil
+}

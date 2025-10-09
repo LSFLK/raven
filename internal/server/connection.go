@@ -48,6 +48,8 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 			s.handleCreate(conn, tag, parts, state)
 		case "DELETE":
 			s.handleDelete(conn, tag, parts, state)
+		case "RENAME":
+			s.handleRename(conn, tag, parts, state)
 		case "SELECT", "EXAMINE":
 			s.handleSelect(conn, tag, parts, state)
 		case "FETCH":
