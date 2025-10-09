@@ -10,8 +10,6 @@
 
 <!-- List key changes in bullet points. -->
 
-- ***
-
 ## ✅ Checklist (Email System)
 
 - [ ] Core IMAP commands tested (`LOGIN`, `CAPABILITY`, `LIST`, `SELECT`, `FETCH`, `LOGOUT`).
@@ -28,8 +26,7 @@
 
 <!-- Explain how reviewers can test your changes. -->
 
-1.
-2.
+To test the server, use the instructions in the [README](https://github.com/LSFLK/raven/blob/main/test/README.md) in the `test` directory.
 
 ---
 
