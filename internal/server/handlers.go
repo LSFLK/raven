@@ -12,6 +12,7 @@ import (
 
 	"go-imap/internal/models"
 	"go-imap/internal/conf"
+	"go-imap/internal/db"
 )
 
 func (s *IMAPServer) handleCapability(conn net.Conn, tag string, state *models.ClientState) {
@@ -92,19 +93,27 @@ func (s *IMAPServer) handleList(conn net.Conn, tag string, parts []string, state
 		return
 	}
 
-	folders := []struct{ name, attrs string }{
-		{"INBOX", ""},
-		{"Sent", ""},
-		{"Drafts", "\\Drafts"},
-		{"Trash", "\\Trash"},
+	// Get all mailboxes for the user
+	mailboxes, err := db.GetUserMailboxes(s.db, state.Username)
+	if err != nil {
+		// Fall back to default mailboxes if database query fails
+		mailboxes = []string{"INBOX", "Sent", "Drafts", "Trash"}
 	}
 
-	for _, folder := range folders {
-		attrs := folder.attrs
-		if attrs == "" {
-			attrs = "\\Unmarked"
+	for _, mailboxName := range mailboxes {
+		attrs := "\\Unmarked"
+		
+		// Set appropriate attributes for special mailboxes
+		switch mailboxName {
+		case "Drafts":
+			attrs = "\\Drafts"
+		case "Trash":
+			attrs = "\\Trash"
+		case "Sent":
+			attrs = "\\Sent"
 		}
-		s.sendResponse(conn, fmt.Sprintf("* LIST (%s) \"/\" \"%s\"", attrs, folder.name))
+		
+		s.sendResponse(conn, fmt.Sprintf("* LIST (%s) \"/\" \"%s\"", attrs, mailboxName))
 	}
 	s.sendResponse(conn, fmt.Sprintf("%s OK LIST completed", tag))
 }
@@ -117,21 +126,119 @@ func (s *IMAPServer) handleLsub(conn net.Conn, tag string, parts []string, state
 
 	// For now, return all folders as subscribed (same as LIST)
 	// In a full implementation, you'd track subscriptions in the database
-	folders := []struct{ name, attrs string }{
-		{"INBOX", ""},
-		{"Sent", ""},
-		{"Drafts", "\\Drafts"},
-		{"Trash", "\\Trash"},
+	mailboxes, err := db.GetUserMailboxes(s.db, state.Username)
+	if err != nil {
+		// Fall back to default mailboxes if database query fails
+		mailboxes = []string{"INBOX", "Sent", "Drafts", "Trash"}
 	}
 
-	for _, folder := range folders {
-		attrs := folder.attrs
-		if attrs == "" {
-			attrs = "\\Unmarked"
+	for _, mailboxName := range mailboxes {
+		attrs := "\\Unmarked"
+		
+		// Set appropriate attributes for special mailboxes
+		switch mailboxName {
+		case "Drafts":
+			attrs = "\\Drafts"
+		case "Trash":
+			attrs = "\\Trash"
+		case "Sent":
+			attrs = "\\Sent"
 		}
-		s.sendResponse(conn, fmt.Sprintf("* LSUB (%s) \"/\" \"%s\"", attrs, folder.name))
+		
+		s.sendResponse(conn, fmt.Sprintf("* LSUB (%s) \"/\" \"%s\"", attrs, mailboxName))
 	}
 	s.sendResponse(conn, fmt.Sprintf("%s OK LSUB completed", tag))
+}
+
+func (s *IMAPServer) handleCreate(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	if len(parts) < 3 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD CREATE requires mailbox name", tag))
+		return
+	}
+
+	// Parse mailbox name (could be quoted)
+	mailboxName := strings.Trim(parts[2], "\"")
+	
+	// Remove trailing hierarchy separator if present
+	// According to RFC 3501, the name created is without the trailing hierarchy delimiter
+	if strings.HasSuffix(mailboxName, "/") {
+		mailboxName = strings.TrimSuffix(mailboxName, "/")
+	}
+
+	// Validate mailbox name
+	if mailboxName == "" {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Cannot create mailbox with empty name", tag))
+		return
+	}
+
+	// Check if trying to create INBOX (case-insensitive)
+	if strings.ToUpper(mailboxName) == "INBOX" {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Cannot create INBOX - it already exists", tag))
+		return
+	}
+
+	// Ensure mailboxes table exists
+	if err := db.EnsureMailboxTable(s.db); err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Server error: cannot initialize mailbox storage", tag))
+		return
+	}
+
+	// Check if mailbox already exists
+	exists, err := db.MailboxExists(s.db, state.Username, mailboxName)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Server error: cannot check mailbox existence", tag))
+		return
+	}
+
+	if exists {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Mailbox already exists", tag))
+		return
+	}
+
+	// Handle hierarchy creation
+	// If the mailbox name contains hierarchy separators, create parent mailboxes if needed
+	if strings.Contains(mailboxName, "/") {
+		parts := strings.Split(mailboxName, "/")
+		currentPath := ""
+		
+		// Create each level of the hierarchy
+		for i, part := range parts {
+			if i > 0 {
+				currentPath += "/"
+			}
+			currentPath += part
+			
+			// Skip if this is the final mailbox (we'll create it below)
+			if i == len(parts)-1 {
+				break
+			}
+			
+			// Check if this intermediate mailbox exists
+			intermediateExists, checkErr := db.MailboxExists(s.db, state.Username, currentPath)
+			if checkErr == nil && !intermediateExists {
+				// Create intermediate mailbox - ignore errors as per RFC 3501
+				db.CreateMailbox(s.db, state.Username, currentPath)
+			}
+		}
+	}
+
+	// Create the target mailbox
+	err = db.CreateMailbox(s.db, state.Username, mailboxName)
+	if err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			s.sendResponse(conn, fmt.Sprintf("%s NO Mailbox already exists", tag))
+		} else {
+			s.sendResponse(conn, fmt.Sprintf("%s NO Create failure: %s", tag, err.Error()))
+		}
+		return
+	}
+
+	s.sendResponse(conn, fmt.Sprintf("%s OK CREATE completed", tag))
 }
 
 func (s *IMAPServer) handleLogout(conn net.Conn, tag string) {
@@ -322,15 +429,14 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 	// Parse folder name (could be quoted)
 	folder := strings.Trim(parts[2], "\"")
 
-	// Validate folder exists
-	validFolders := map[string]bool{
-		"INBOX":  true,
-		"Sent":   true,
-		"Drafts": true,
-		"Trash":  true,
+	// Validate folder exists using the database
+	exists, err := db.MailboxExists(s.db, state.Username, folder)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Server error checking folder", tag))
+		return
 	}
 	
-	if !validFolders[folder] {
+	if !exists {
 		s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Folder does not exist", tag))
 		return
 	}
@@ -423,7 +529,7 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 		"INSERT INTO %s (subject, sender, recipient, date_sent, raw_message, flags, folder) VALUES (?, ?, ?, ?, ?, ?, ?)",
 		tableName,
 	)
-	_, err := s.db.Exec(query, subject, sender, recipient, dateSent, rawMessage, flags, folder)
+	_, err = s.db.Exec(query, subject, sender, recipient, dateSent, rawMessage, flags, folder)
 
 	if err != nil {
 		log.Printf("Failed to insert message: %v", err)
