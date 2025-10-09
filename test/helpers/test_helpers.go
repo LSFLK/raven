@@ -121,6 +121,21 @@ func SetupTestServer(t *testing.T) (*server.TestInterface, func()) {
 		t.Fatalf("Failed to initialize test database schema: %v", err)
 	}
 
+	// Create mailboxes table
+	mailboxSchema := `
+	CREATE TABLE IF NOT EXISTS mailboxes (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		username TEXT NOT NULL,
+		name TEXT NOT NULL,
+		hierarchy_separator TEXT DEFAULT '/',
+		created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(username, name)
+	);
+	`
+	if _, err = db.Exec(mailboxSchema); err != nil {
+		t.Fatalf("Failed to create mailboxes table: %v", err)
+	}
+
 	// Create a test user table
 	testUserSchema := `
 	CREATE TABLE IF NOT EXISTS mails_testuser (

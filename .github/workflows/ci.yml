@@ -56,3 +56,6 @@ jobs:
 
       - name: Test EXAMINE command
         run: go test -tags=test -v ./test/server -run "TestExamineCommand"
+
+      - name: Test CREATE command
+        run: go test -tags=test -v ./test/server -run "TestCreateCommand"
