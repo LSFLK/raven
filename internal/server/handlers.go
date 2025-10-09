@@ -291,6 +291,51 @@ func (s *IMAPServer) handleDelete(conn net.Conn, tag string, parts []string, sta
 	s.sendResponse(conn, fmt.Sprintf("%s OK DELETE completed", tag))
 }
 
+func (s *IMAPServer) handleRename(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	if len(parts) < 4 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD RENAME requires existing and new mailbox names", tag))
+		return
+	}
+
+	// Parse mailbox names (could be quoted)
+	oldName := strings.Trim(parts[2], "\"")
+	newName := strings.Trim(parts[3], "\"")
+
+	// Validate mailbox names
+	if oldName == "" || newName == "" {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid mailbox names", tag))
+		return
+	}
+
+	// Ensure mailboxes table exists
+	if err := db.EnsureMailboxTable(s.db); err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Server error: cannot initialize mailbox storage", tag))
+		return
+	}
+
+	// Attempt to rename the mailbox
+	err := db.RenameMailbox(s.db, state.Username, oldName, newName)
+	if err != nil {
+		if strings.Contains(err.Error(), "source mailbox does not exist") {
+			s.sendResponse(conn, fmt.Sprintf("%s NO Source mailbox does not exist", tag))
+		} else if strings.Contains(err.Error(), "destination mailbox already exists") {
+			s.sendResponse(conn, fmt.Sprintf("%s NO Destination mailbox already exists", tag))
+		} else if strings.Contains(err.Error(), "cannot rename to INBOX") {
+			s.sendResponse(conn, fmt.Sprintf("%s NO Cannot rename to INBOX", tag))
+		} else {
+			s.sendResponse(conn, fmt.Sprintf("%s NO Rename failure: %s", tag, err.Error()))
+		}
+		return
+	}
+
+	s.sendResponse(conn, fmt.Sprintf("%s OK RENAME completed", tag))
+}
+
 func (s *IMAPServer) handleLogout(conn net.Conn, tag string) {
 	s.sendResponse(conn, "* BYE IMAP4rev1 Server logging out")
 	s.sendResponse(conn, fmt.Sprintf("%s OK LOGOUT completed", tag))
