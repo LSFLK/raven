@@ -36,6 +36,11 @@ func (t *TestInterface) HandleList(conn net.Conn, tag string, parts []string, st
 	t.server.handleList(conn, tag, parts, state)
 }
 
+// HandleCreate exposes the create handler for testing
+func (t *TestInterface) HandleCreate(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	t.server.handleCreate(conn, tag, parts, state)
+}
+
 // HandleLogout exposes the logout handler for testing
 func (t *TestInterface) HandleLogout(conn net.Conn, tag string) {
 	t.server.handleLogout(conn, tag)

@@ -1,6 +1,6 @@
-# Contributing to Silver Go IMAP
+# Contributing to Raven (Silver Go IMAP)
 
-Thank you for your interest in contributing to the Silver Go IMAP project! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to the Raven (Silver Go IMAP) project! This document provides guidelines and instructions for contributing.
 
 ## Table of Contents
 
@@ -20,12 +20,12 @@ This project adheres to a code of conduct that all contributors are expected to 
 1. **Fork the repository** on GitHub
 2. **Clone your fork** locally:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/Silver-IMAP.git
-   cd go-imap
+   git clone https://github.com/YOUR_USERNAME/raven.git
+   cd raven
    ```
 3. **Add the upstream repository**:
    ```bash
-   git remote add upstream https://github.com/Aravinda-HWK/Silver-IMAP.git
+   git remote add upstream https://github.com/LSFLK/raven.git
    ```
 
 ## How to Contribute

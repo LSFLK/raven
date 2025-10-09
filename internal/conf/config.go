@@ -15,10 +15,10 @@ func LoadConfig() (*Config, error) {
 
 	// Try multiple possible paths
 	configPaths := []string{
-		"/etc/goImap/goimap.yaml",
-		"./config/goimap.yaml",
-		"./goimap.yaml",
-		"config/goimap.yaml",
+		"/etc/raven/raven.yaml",
+		"./config/raven.yaml",
+		"./raven.yaml",
+		"config/raven.yaml",
 	}
 
 	var data []byte

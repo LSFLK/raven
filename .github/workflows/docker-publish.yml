@@ -28,13 +28,13 @@ jobs:
 
       - name: Build Docker image
         run: |
-          IMAGE_NAME=ghcr.io/aravinda-hwk/silver-mda
+          IMAGE_NAME=ghcr.io/lsflk/raven
           VERSION=${GITHUB_REF_NAME}
           docker build -t $IMAGE_NAME:latest -t $IMAGE_NAME:$VERSION .
 
       - name: Push Docker image
         run: |
-          IMAGE_NAME=ghcr.io/aravinda-hwk/silver-mda
+          IMAGE_NAME=ghcr.io/lsflk/raven
           VERSION=${GITHUB_REF_NAME}
           docker push $IMAGE_NAME:latest
           docker push $IMAGE_NAME:$VERSION
