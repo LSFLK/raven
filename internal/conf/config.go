@@ -15,10 +15,10 @@ func LoadConfig() (*Config, error) {
 
 	// Try multiple possible paths
 	configPaths := []string{
-		"/etc/kestrel/kestrel.yaml",
-		"./config/kestrel.yaml",
-		"./kestrel.yaml",
-		"config/kestrel.yaml",
+		"/etc/raven/raven.yaml",
+		"./config/raven.yaml",
+		"./raven.yaml",
+		"config/raven.yaml",
 	}
 
 	var data []byte
