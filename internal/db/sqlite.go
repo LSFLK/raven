@@ -224,10 +224,10 @@ func DeleteMailbox(db *sql.DB, username, mailboxName string) error {
 
 	// If mailbox has inferior hierarchical names
 	if count > 0 {
-		// Check if this mailbox has \Noselect attribute
-		// For now, we'll assume no \Noselect attributes exist in our implementation
-		// In a full implementation, you'd store attributes in the mailboxes table
-		return fmt.Errorf("name \"%s\" has inferior hierarchical names", mailboxName)
+		// RFC 3501: Mailboxes with \Noselect attribute can be deleted even if they have inferior names.
+		// However, our implementation does not support mailbox attributes (including \Noselect).
+		// Therefore, mailboxes with inferior hierarchical names cannot be deleted, regardless of attributes.
+		return fmt.Errorf("name \"%s\" has inferior hierarchical names (mailbox attributes such as \\Noselect are not supported)", mailboxName)
 	}
 
 	// Delete all messages from the mailbox first
