@@ -59,3 +59,6 @@ jobs:
 
       - name: Test CREATE command
         run: go test -tags=test -v ./test/server -run "TestCreateCommand"
+
+      - name: Test DELETE command
+        run: go test -tags=test -v ./test/server -run "TestDeleteCommand"

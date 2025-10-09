@@ -241,6 +241,56 @@ func (s *IMAPServer) handleCreate(conn net.Conn, tag string, parts []string, sta
 	s.sendResponse(conn, fmt.Sprintf("%s OK CREATE completed", tag))
 }
 
+func (s *IMAPServer) handleDelete(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	if len(parts) < 3 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD DELETE requires mailbox name", tag))
+		return
+	}
+
+	// Parse mailbox name (could be quoted)
+	mailboxName := strings.Trim(parts[2], "\"")
+
+	// Validate mailbox name
+	if mailboxName == "" {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid mailbox name", tag))
+		return
+	}
+
+	// Cannot delete INBOX (case-insensitive)
+	if strings.ToUpper(mailboxName) == "INBOX" {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Cannot delete INBOX", tag))
+		return
+	}
+
+	// Ensure mailboxes table exists
+	if err := db.EnsureMailboxTable(s.db); err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Server error: cannot initialize mailbox storage", tag))
+		return
+	}
+
+	// Attempt to delete the mailbox
+	err := db.DeleteMailbox(s.db, state.Username, mailboxName)
+	if err != nil {
+		if strings.Contains(err.Error(), "does not exist") {
+			s.sendResponse(conn, fmt.Sprintf("%s NO Mailbox does not exist", tag))
+		} else if strings.Contains(err.Error(), "has inferior hierarchical names") {
+			s.sendResponse(conn, fmt.Sprintf("%s NO Name \"%s\" has inferior hierarchical names", tag, mailboxName))
+		} else if strings.Contains(err.Error(), "cannot delete INBOX") {
+			s.sendResponse(conn, fmt.Sprintf("%s NO Cannot delete INBOX", tag))
+		} else {
+			s.sendResponse(conn, fmt.Sprintf("%s NO Delete failure: %s", tag, err.Error()))
+		}
+		return
+	}
+
+	s.sendResponse(conn, fmt.Sprintf("%s OK DELETE completed", tag))
+}
+
 func (s *IMAPServer) handleLogout(conn net.Conn, tag string) {
 	s.sendResponse(conn, "* BYE IMAP4rev1 Server logging out")
 	s.sendResponse(conn, fmt.Sprintf("%s OK LOGOUT completed", tag))

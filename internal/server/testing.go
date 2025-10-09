@@ -41,6 +41,11 @@ func (t *TestInterface) HandleCreate(conn net.Conn, tag string, parts []string, 
 	t.server.handleCreate(conn, tag, parts, state)
 }
 
+// HandleDelete exposes the delete handler for testing
+func (t *TestInterface) HandleDelete(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	t.server.handleDelete(conn, tag, parts, state)
+}
+
 // HandleLogout exposes the logout handler for testing
 func (t *TestInterface) HandleLogout(conn net.Conn, tag string) {
 	t.server.handleLogout(conn, tag)

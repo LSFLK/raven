@@ -189,3 +189,90 @@ func GetUserMailboxes(db *sql.DB, username string) ([]string, error) {
 
 	return mailboxes, nil
 }
+
+// DeleteMailbox deletes a mailbox for a user according to RFC 3501 rules
+func DeleteMailbox(db *sql.DB, username, mailboxName string) error {
+	// Validate mailbox name
+	if mailboxName == "" {
+		return fmt.Errorf("mailbox name cannot be empty")
+	}
+
+	// Cannot delete INBOX (case-insensitive)
+	if strings.ToUpper(mailboxName) == "INBOX" {
+		return fmt.Errorf("cannot delete INBOX")
+	}
+
+	// Check if mailbox exists
+	exists, err := MailboxExists(db, username, mailboxName)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("mailbox does not exist")
+	}
+
+	// Check for inferior hierarchical names
+	var count int
+	err = db.QueryRow(`
+		SELECT COUNT(*) FROM mailboxes 
+		WHERE username = ? AND name LIKE ? AND name != ?
+	`, username, mailboxName+"/%", mailboxName).Scan(&count)
+
+	if err != nil {
+		return err
+	}
+
+	// If mailbox has inferior hierarchical names
+	if count > 0 {
+		// Check if this mailbox has \Noselect attribute
+		// For now, we'll assume no \Noselect attributes exist in our implementation
+		// In a full implementation, you'd store attributes in the mailboxes table
+		return fmt.Errorf("name \"%s\" has inferior hierarchical names", mailboxName)
+	}
+
+	// Delete all messages from the mailbox first
+	tableName := GetUserTableName(username)
+	
+	// Check if user table exists first
+	var tableExists int
+	err = db.QueryRow(`
+		SELECT COUNT(*) FROM sqlite_master 
+		WHERE type='table' AND name=?
+	`, tableName).Scan(&tableExists)
+	
+	if err != nil {
+		return fmt.Errorf("failed to check user table: %v", err)
+	}
+	
+	// Only delete messages if user table exists
+	if tableExists > 0 {
+		_, err = db.Exec(fmt.Sprintf(
+			"DELETE FROM %s WHERE folder = ?", tableName,
+		), mailboxName)
+		if err != nil {
+			return fmt.Errorf("failed to delete messages: %v", err)
+		}
+	}
+
+	// Delete the mailbox record from mailboxes table
+	result, err := db.Exec(`
+		DELETE FROM mailboxes 
+		WHERE username = ? AND name = ?
+	`, username, mailboxName)
+
+	if err != nil {
+		return err
+	}
+
+	// Check if any rows were affected
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("mailbox does not exist")
+	}
+
+	return nil
+}
