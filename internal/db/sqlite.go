@@ -566,7 +566,23 @@ func UnsubscribeFromMailbox(db *sql.DB, username, mailboxName string) error {
 		return fmt.Errorf("username and mailbox name cannot be empty")
 	}
 
-	_, err := db.Exec(`
+	// First check if the subscription exists
+	var count int
+	err := db.QueryRow(`
+		SELECT COUNT(*) FROM subscriptions 
+		WHERE username = ? AND mailbox_name = ?
+	`, username, mailboxName).Scan(&count)
+	
+	if err != nil {
+		return fmt.Errorf("error checking subscription: %v", err)
+	}
+
+	if count == 0 {
+		return fmt.Errorf("subscription does not exist")
+	}
+
+	// Remove the subscription
+	_, err = db.Exec(`
 		DELETE FROM subscriptions 
 		WHERE username = ? AND mailbox_name = ?
 	`, username, mailboxName)

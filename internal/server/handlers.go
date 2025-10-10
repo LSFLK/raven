@@ -955,8 +955,12 @@ func (s *IMAPServer) handleUnsubscribe(conn net.Conn, tag string, parts []string
 	// Unsubscribe from the mailbox
 	err := db.UnsubscribeFromMailbox(s.db, state.Username, mailboxName)
 	if err != nil {
-		fmt.Printf("Failed to unsubscribe from mailbox %s for user %s: %v\n", mailboxName, state.Username, err)
-		s.sendResponse(conn, fmt.Sprintf("%s NO UNSUBSCRIBE failure: server error", tag))
+		if strings.Contains(err.Error(), "subscription does not exist") {
+			s.sendResponse(conn, fmt.Sprintf("%s NO UNSUBSCRIBE failure: can't unsubscribe that name", tag))
+		} else {
+			fmt.Printf("Failed to unsubscribe from mailbox %s for user %s: %v\n", mailboxName, state.Username, err)
+			s.sendResponse(conn, fmt.Sprintf("%s NO UNSUBSCRIBE failure: server error", tag))
+		}
 		return
 	}
 
