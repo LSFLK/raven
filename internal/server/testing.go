@@ -101,6 +101,21 @@ func (t *TestInterface) HandleStartTLS(conn net.Conn, tag string, parts []string
 	t.server.handleStartTLS(conn, tag, parts)
 }
 
+// HandleSubscribe exposes the subscribe handler for testing
+func (t *TestInterface) HandleSubscribe(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	t.server.handleSubscribe(conn, tag, parts, state)
+}
+
+// HandleUnsubscribe exposes the unsubscribe handler for testing
+func (t *TestInterface) HandleUnsubscribe(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	t.server.handleUnsubscribe(conn, tag, parts, state)
+}
+
+// HandleLsub exposes the lsub handler for testing
+func (t *TestInterface) HandleLsub(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	t.server.handleLsub(conn, tag, parts, state)
+}
+
 // SetTLSCertificates sets custom TLS certificate paths for testing
 func (t *TestInterface) SetTLSCertificates(certPath, keyPath string) {
 	t.server.SetTLSCertificates(certPath, keyPath)

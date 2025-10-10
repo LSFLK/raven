@@ -65,3 +65,12 @@ jobs:
 
       - name: Test RENAME command
         run: go test -tags=test -v ./test/server -run "TestRenameCommand"
+
+      - name: Test SUBSCRIBE command
+        run: go test -tags=test -v ./test/server -run "TestSubscribeCommand"
+
+      - name: Test UNSUBSCRIBE command
+        run: go test -tags=test -v ./test/server -run "TestUnsubscribeCommand"
+
+      - name: Test LSUB command
+        run: go test -tags=test -v ./test/server -run "TestLsubCommand"
