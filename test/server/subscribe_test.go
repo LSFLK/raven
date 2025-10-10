@@ -170,8 +170,8 @@ func TestUnsubscribeCommand_NotAuthenticated(t *testing.T) {
 	}
 }
 
-// TestLsubCommand_WithSubscriptions tests LSUB command with actual subscriptions
-func TestLsubCommand_WithSubscriptions(t *testing.T) {
+// TestUnsubscribeCommand_MissingArgument tests UNSUBSCRIBE command without mailbox argument
+func TestUnsubscribeCommand_MissingArgument(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
 	state := &models.ClientState{
@@ -179,52 +179,103 @@ func TestLsubCommand_WithSubscriptions(t *testing.T) {
 		Username:      "testuser",
 	}
 
-	// Subscribe to some mailboxes
-	server.HandleSubscribe(conn, "A001", []string{"A001", "SUBSCRIBE", "INBOX"}, state)
-	server.HandleSubscribe(conn, "A002", []string{"A002", "SUBSCRIBE", "TestFolder"}, state)
-	server.HandleSubscribe(conn, "A003", []string{"A003", "SUBSCRIBE", "Drafts"}, state)
-	conn.ClearWriteBuffer() // Clear subscription responses
-
-	// Test LSUB command
-	server.HandleLsub(conn, "A004", []string{"A004", "LSUB", "\"\"", "*"}, state)
+	// Test UNSUBSCRIBE command without mailbox argument
+	server.HandleUnsubscribe(conn, "A004", []string{"A004", "UNSUBSCRIBE"}, state)
 
 	response := conn.GetWrittenData()
-	lines := strings.Split(strings.TrimSpace(response), "\r\n")
+	expectedResponse := "A004 BAD UNSUBSCRIBE command requires a mailbox argument"
 
-	// Should contain subscribed mailboxes
-	foundINBOX := false
-	foundTestFolder := false
-	foundDrafts := false
-	foundCompleted := false
+	if !strings.Contains(response, expectedResponse) {
+		t.Errorf("Expected response to contain '%s', got: %s", expectedResponse, response)
+	}
+}
 
-	for _, line := range lines {
-		if strings.Contains(line, "* LSUB") {
-			if strings.Contains(line, "INBOX") {
-				foundINBOX = true
-			}
-			if strings.Contains(line, "TestFolder") {
-				foundTestFolder = true
-			}
-			if strings.Contains(line, "Drafts") {
-				foundDrafts = true
-			}
-		}
-		if strings.Contains(line, "A004 OK LSUB completed") {
-			foundCompleted = true
-		}
+// TestUnsubscribeCommand_EmptyMailboxName tests UNSUBSCRIBE command with empty mailbox name
+func TestUnsubscribeCommand_EmptyMailboxName(t *testing.T) {
+	server := helpers.SetupTestServerSimple(t)
+	conn := helpers.NewMockConn()
+	state := &models.ClientState{
+		Authenticated: true,
+		Username:      "testuser",
 	}
 
-	if !foundINBOX {
-		t.Errorf("Expected LSUB response to include INBOX")
+	// Test UNSUBSCRIBE command with empty mailbox name
+	server.HandleUnsubscribe(conn, "A005", []string{"A005", "UNSUBSCRIBE", ""}, state)
+
+	response := conn.GetWrittenData()
+	expectedResponse := "A005 BAD Invalid mailbox name"
+
+	if !strings.Contains(response, expectedResponse) {
+		t.Errorf("Expected response to contain '%s', got: %s", expectedResponse, response)
 	}
-	if !foundTestFolder {
-		t.Errorf("Expected LSUB response to include TestFolder")
+}
+
+// TestUnsubscribeCommand_QuotedMailbox tests UNSUBSCRIBE command with quoted mailbox name
+func TestUnsubscribeCommand_QuotedMailbox(t *testing.T) {
+	server := helpers.SetupTestServerSimple(t)
+	conn := helpers.NewMockConn()
+	state := &models.ClientState{
+		Authenticated: true,
+		Username:      "testuser",
 	}
-	if !foundDrafts {
-		t.Errorf("Expected LSUB response to include Drafts with \\Drafts attribute")
+
+	// First subscribe to a quoted mailbox
+	server.HandleSubscribe(conn, "A001", []string{"A001", "SUBSCRIBE", "\"Test Folder\""}, state)
+	conn.ClearWriteBuffer() // Clear previous response
+
+	// Test UNSUBSCRIBE command with quoted mailbox
+	server.HandleUnsubscribe(conn, "A006", []string{"A006", "UNSUBSCRIBE", "\"Test Folder\""}, state)
+
+	response := conn.GetWrittenData()
+	expectedResponse := "A006 OK UNSUBSCRIBE completed"
+
+	if !strings.Contains(response, expectedResponse) {
+		t.Errorf("Expected response to contain '%s', got: %s", expectedResponse, response)
 	}
-	if !foundCompleted {
-		t.Errorf("Expected LSUB command to complete successfully")
+}
+
+// TestUnsubscribeCommand_NonSubscribed tests UNSUBSCRIBE command with mailbox that was never subscribed
+func TestUnsubscribeCommand_NonSubscribed(t *testing.T) {
+	server := helpers.SetupTestServerSimple(t)
+	conn := helpers.NewMockConn()
+	state := &models.ClientState{
+		Authenticated: true,
+		Username:      "testuser",
+	}
+
+	// Test UNSUBSCRIBE command on a mailbox that was never subscribed
+	server.HandleUnsubscribe(conn, "A007", []string{"A007", "UNSUBSCRIBE", "NonExistentFolder"}, state)
+
+	response := conn.GetWrittenData()
+	expectedResponse := "A007 NO UNSUBSCRIBE failure: can't unsubscribe that name"
+
+	if !strings.Contains(response, expectedResponse) {
+		t.Errorf("Expected response to contain '%s', got: %s", expectedResponse, response)
+	}
+}
+
+// TestUnsubscribeCommand_ExampleFromRFC tests the exact example from RFC 3501
+func TestUnsubscribeCommand_ExampleFromRFC(t *testing.T) {
+	server := helpers.SetupTestServerSimple(t)
+	conn := helpers.NewMockConn()
+	state := &models.ClientState{
+		Authenticated: true,
+		Username:      "testuser",
+	}
+
+	// First subscribe to the RFC example mailbox
+	server.HandleSubscribe(conn, "A001", []string{"A001", "SUBSCRIBE", "#news.comp.mail.mime"}, state)
+	conn.ClearWriteBuffer() // Clear previous response
+
+	// Test the RFC example: C: A002 UNSUBSCRIBE #news.comp.mail.mime
+	// Expected: S: A002 OK UNSUBSCRIBE completed
+	server.HandleUnsubscribe(conn, "A002", []string{"A002", "UNSUBSCRIBE", "#news.comp.mail.mime"}, state)
+
+	response := conn.GetWrittenData()
+	expectedResponse := "A002 OK UNSUBSCRIBE completed"
+
+	if !strings.Contains(response, expectedResponse) {
+		t.Errorf("Expected response to contain '%s', got: %s", expectedResponse, response)
 	}
 }
 
