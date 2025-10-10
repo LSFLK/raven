@@ -136,6 +136,20 @@ func SetupTestServer(t *testing.T) (*server.TestInterface, func()) {
 		t.Fatalf("Failed to create mailboxes table: %v", err)
 	}
 
+	// Create subscriptions table
+	subscriptionSchema := `
+	CREATE TABLE IF NOT EXISTS subscriptions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		username TEXT NOT NULL,
+		mailbox_name TEXT NOT NULL,
+		subscribed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(username, mailbox_name)
+	);
+	`
+	if _, err = db.Exec(subscriptionSchema); err != nil {
+		t.Fatalf("Failed to create subscriptions table: %v", err)
+	}
+
 	// Create a test user table
 	testUserSchema := `
 	CREATE TABLE IF NOT EXISTS mails_testuser (

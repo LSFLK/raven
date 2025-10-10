@@ -30,6 +30,11 @@ func InitDB(file string) (*sql.DB, error) {
 		return nil, err
 	}
 
+	// Create subscriptions table
+	if err = CreateSubscriptionTable(db); err != nil {
+		return nil, err
+	}
+
 	return db, nil
 }
 
@@ -511,4 +516,105 @@ func createSuperiorHierarchy(db *sql.DB, username, mailboxName string) error {
 	}
 	
 	return nil
+}
+
+// CreateSubscriptionTable creates a table to track mailbox subscriptions for all users
+func CreateSubscriptionTable(db *sql.DB) error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS subscriptions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		username TEXT NOT NULL,
+		mailbox_name TEXT NOT NULL,
+		subscribed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(username, mailbox_name)
+	);
+	`
+
+	_, err := db.Exec(schema)
+	return err
+}
+
+// SubscribeToMailbox adds a mailbox to user's subscriptions
+func SubscribeToMailbox(db *sql.DB, username, mailboxName string) error {
+	// Validate inputs
+	if username == "" || mailboxName == "" {
+		return fmt.Errorf("username and mailbox name cannot be empty")
+	}
+
+	// Check if mailbox exists (optional per RFC but recommended)
+	exists, err := MailboxExists(db, username, mailboxName)
+	if err != nil {
+		return fmt.Errorf("error checking mailbox existence: %v", err)
+	}
+	if !exists {
+		// Per RFC, server MAY validate but MUST NOT unilaterally remove subscriptions
+		// We'll allow subscribing to non-existent mailboxes
+	}
+
+	// Insert subscription record
+	_, err = db.Exec(`
+		INSERT OR IGNORE INTO subscriptions (username, mailbox_name) 
+		VALUES (?, ?)
+	`, username, mailboxName)
+
+	return err
+}
+
+// UnsubscribeFromMailbox removes a mailbox from user's subscriptions
+func UnsubscribeFromMailbox(db *sql.DB, username, mailboxName string) error {
+	if username == "" || mailboxName == "" {
+		return fmt.Errorf("username and mailbox name cannot be empty")
+	}
+
+	_, err := db.Exec(`
+		DELETE FROM subscriptions 
+		WHERE username = ? AND mailbox_name = ?
+	`, username, mailboxName)
+
+	return err
+}
+
+// GetUserSubscriptions returns all subscribed mailboxes for a user
+func GetUserSubscriptions(db *sql.DB, username string) ([]string, error) {
+	if username == "" {
+		return nil, fmt.Errorf("username cannot be empty")
+	}
+
+	rows, err := db.Query(`
+		SELECT mailbox_name 
+		FROM subscriptions 
+		WHERE username = ?
+		ORDER BY mailbox_name
+	`, username)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var subscriptions []string
+	for rows.Next() {
+		var mailboxName string
+		if err := rows.Scan(&mailboxName); err != nil {
+			return nil, err
+		}
+		subscriptions = append(subscriptions, mailboxName)
+	}
+
+	return subscriptions, rows.Err()
+}
+
+// IsMailboxSubscribed checks if a user is subscribed to a specific mailbox
+func IsMailboxSubscribed(db *sql.DB, username, mailboxName string) (bool, error) {
+	if username == "" || mailboxName == "" {
+		return false, fmt.Errorf("username and mailbox name cannot be empty")
+	}
+
+	var count int
+	err := db.QueryRow(`
+		SELECT COUNT(*) 
+		FROM subscriptions 
+		WHERE username = ? AND mailbox_name = ?
+	`, username, mailboxName).Scan(&count)
+
+	return count > 0, err
 }

@@ -70,6 +70,10 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 			s.handleAppend(conn, tag, parts, line, state)
 		case "NOOP":
 			s.handleNoop(conn, tag, state)
+		case "SUBSCRIBE":
+			s.handleSubscribe(conn, tag, parts, state)
+		case "UNSUBSCRIBE":
+			s.handleUnsubscribe(conn, tag, parts, state)
 		case "LOGOUT":
 			s.handleLogout(conn, tag)
 			return
