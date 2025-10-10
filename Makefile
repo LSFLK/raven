@@ -12,6 +12,8 @@
 #   make test-select       - Run SELECT command tests
 #   make test-examine      - Run EXAMINE command tests
 #   make test-create       - Run CREATE command tests
+#   make test-list         - Run LIST command tests
+#   make test-list-extended - Run LIST extended tests (RFC3501, wildcards, etc.)
 #   make test-delete       - Run DELETE command tests
 #   make test-rename       - Run RENAME command tests
 #   make test-subscribe    - Run SUBSCRIBE command tests
@@ -20,7 +22,7 @@
 #   make test-commands     - Run all command tests
 #   make help              - Show all available targets
 
-.PHONY: test test-capability test-noop test-authenticate test-login test-starttls test-select test-examine test-create test-delete test-commands test-verbose test-coverage test-race clean
+.PHONY: test test-capability test-noop test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-commands test-verbose test-coverage test-race clean
 
 # Run all tests
 test:
@@ -70,6 +72,14 @@ test-examine:
 test-create:
 	go test -tags=test -v ./test/server -run "TestCreateCommand"
 
+# Run only LIST-related tests
+test-list:
+	go test -tags=test -v ./test/server -run "TestListCommand"
+
+# Run LIST extended tests (RFC3501, wildcards, hierarchy, etc.)
+test-list-extended:
+	go test -tags=test -v ./test/server -run "TestListCommand.*RFC3501|TestListCommand.*Wildcard|TestListCommand.*Hierarchy|TestListCommand.*Reference|TestListCommand.*Error|TestListCommand.*Special"
+
 # Run only DELETE-related tests
 test-delete:
 	go test -tags=test -v ./test/server -run "TestDeleteCommand"
@@ -90,7 +100,7 @@ test-lsub:
 test-rename:
 	go test -tags=test -v ./test/server -run "TestRenameCommand"
 
-# Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB + RENAME)
+# Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + LIST + LIST-EXTENDED + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB + RENAME)
 test-commands:
 	@echo "Running CAPABILITY tests..."
 	@go test -tags=test -v ./test/server -run "TestCapabilityCommand"
@@ -112,6 +122,10 @@ test-commands:
 	@go test -tags=test -v ./test/server -run "TestExamineCommand"
 	@echo "\nRunning CREATE tests..."
 	@go test -tags=test -v ./test/server -run "TestCreateCommand"
+	@echo "\nRunning LIST tests..."
+	@go test -tags=test -v ./test/server -run "TestListCommand"
+	@echo "\nRunning LIST extended tests..."
+	@go test -tags=test -v ./test/server -run "TestListCommand.*RFC3501|TestListCommand.*Wildcard|TestListCommand.*Hierarchy|TestListCommand.*Reference|TestListCommand.*Error|TestListCommand.*Special"
 	@echo "\nRunning DELETE tests..."
 	@go test -tags=test -v ./test/server -run "TestDeleteCommand"
 	@echo "\nRunning SUBSCRIBE tests..."
@@ -194,11 +208,13 @@ help:
 	@echo "  test-select            - Run SELECT command tests only"
 	@echo "  test-examine           - Run EXAMINE command tests only"
 	@echo "  test-create            - Run CREATE command tests only"
+	@echo "  test-list              - Run LIST command tests only"
+	@echo "  test-list-extended     - Run LIST extended tests (RFC3501, wildcards, hierarchy, etc.)"
 	@echo "  test-delete            - Run DELETE command tests only"
 	@echo "  test-subscribe         - Run SUBSCRIBE command tests only"
 	@echo "  test-unsubscribe       - Run UNSUBSCRIBE command tests only"
 	@echo "  test-lsub              - Run LSUB command tests only"
-	@echo "  test-commands          - Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB)"
+	@echo "  test-commands          - Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + LIST + LIST-EXTENDED + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB)"
 	@echo "  test-verbose           - Run tests with verbose output"
 	@echo "  test-coverage          - Run tests with coverage report"
 	@echo "  test-race              - Run tests with race detection"
