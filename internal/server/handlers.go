@@ -140,11 +140,34 @@ func (s *IMAPServer) handleLsub(conn net.Conn, tag string, parts []string, state
 		return
 	}
 
+	// Parse arguments according to RFC 3501
+	// LSUB requires reference name and mailbox name with possible wildcards
+	if len(parts) < 4 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD LSUB command requires reference and mailbox arguments", tag))
+		return
+	}
+
+	reference := s.parseQuotedString(parts[2])
+	mailboxPattern := s.parseQuotedString(parts[3])
+
+	// Handle special case: empty mailbox name to get hierarchy delimiter
+	if mailboxPattern == "" {
+		// Return hierarchy delimiter and root name
+		hierarchyDelimiter := "/"
+		rootName := reference
+		if reference == "" {
+			rootName = ""
+		}
+		s.sendResponse(conn, fmt.Sprintf("* LSUB (\\Noselect) \"%s\" \"%s\"", hierarchyDelimiter, rootName))
+		s.sendResponse(conn, fmt.Sprintf("%s OK LSUB completed", tag))
+		return
+	}
+
 	// Get subscribed mailboxes from database
 	subscriptions, err := db.GetUserSubscriptions(s.db, state.Username)
 	if err != nil {
 		fmt.Printf("Failed to get subscriptions for user %s: %v\n", state.Username, err)
-		s.sendResponse(conn, fmt.Sprintf("%s NO LSUB failure: server error", tag))
+		s.sendResponse(conn, fmt.Sprintf("%s NO LSUB failure: can't list that reference or name", tag))
 		return
 	}
 
@@ -157,22 +180,64 @@ func (s *IMAPServer) handleLsub(conn net.Conn, tag string, parts []string, state
 		subscriptions = defaultMailboxes
 	}
 
-	for _, mailboxName := range subscriptions {
-		attrs := "\\Unmarked"
-		
-		// Set appropriate attributes for special mailboxes
-		switch mailboxName {
-		case "Drafts":
-			attrs = "\\Drafts"
-		case "Trash":
-			attrs = "\\Trash"
-		case "Sent":
-			attrs = "\\Sent"
+	// Apply reference and pattern matching to subscriptions
+	matches := s.filterMailboxes(subscriptions, reference, mailboxPattern)
+
+	// RFC 3501 Special case: When using % wildcard, if "foo/bar" is subscribed
+	// but "foo" is not, we must return "foo" with \Noselect attribute
+	hierarchyDelimiter := "/"
+	impliedParents := make(map[string]bool)
+
+	// Collect all implied parent mailboxes when using % wildcard
+	if strings.Contains(mailboxPattern, "%") {
+		// Look at ALL subscriptions (not just matches) to find implied parents
+		for _, mailbox := range subscriptions {
+			// Check if this mailbox has hierarchy
+			if strings.Contains(mailbox, hierarchyDelimiter) {
+				mailboxParts := strings.Split(mailbox, hierarchyDelimiter)
+				// Build up parent paths
+				currentPath := ""
+				for i := 0; i < len(mailboxParts)-1; i++ {
+					if i > 0 {
+						currentPath += hierarchyDelimiter
+					}
+					currentPath += mailboxParts[i]
+
+					// If parent is not subscribed and matches the pattern, mark as implied
+					if !contains(subscriptions, currentPath) {
+						// Check if this implied parent matches the pattern
+						canonicalPattern := s.buildCanonicalPattern(reference, mailboxPattern, hierarchyDelimiter)
+						if s.matchesPattern(currentPath, canonicalPattern, hierarchyDelimiter) {
+							impliedParents[currentPath] = true
+						}
+					}
+				}
+			}
 		}
-		
+	}
+
+	// Send implied parents with \Noselect first
+	for parent := range impliedParents {
+		s.sendResponse(conn, fmt.Sprintf("* LSUB (\\Noselect) \"/\" \"%s\"", parent))
+	}
+
+	// Send actual subscribed mailboxes
+	for _, mailboxName := range matches {
+		attrs := s.getMailboxAttributes(mailboxName)
 		s.sendResponse(conn, fmt.Sprintf("* LSUB (%s) \"/\" \"%s\"", attrs, mailboxName))
 	}
+
 	s.sendResponse(conn, fmt.Sprintf("%s OK LSUB completed", tag))
+}
+
+// Helper function to check if a slice contains a string
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *IMAPServer) handleCreate(conn net.Conn, tag string, parts []string, state *models.ClientState) {
