@@ -93,28 +93,44 @@ func (s *IMAPServer) handleList(conn net.Conn, tag string, parts []string, state
 		return
 	}
 
+	// Parse arguments according to RFC 3501
+	if len(parts) < 4 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD LIST command requires reference and mailbox arguments", tag))
+		return
+	}
+
+	reference := s.parseQuotedString(parts[2])
+	mailboxPattern := s.parseQuotedString(parts[3])
+
+	// Handle special case: empty mailbox name to get hierarchy delimiter
+	if mailboxPattern == "" {
+		// Return hierarchy delimiter and root name
+		hierarchyDelimiter := "/"
+		rootName := reference
+		if reference == "" {
+			rootName = ""
+		}
+		s.sendResponse(conn, fmt.Sprintf("* LIST (\\Noselect) \"%s\" \"%s\"", hierarchyDelimiter, rootName))
+		s.sendResponse(conn, fmt.Sprintf("%s OK LIST completed", tag))
+		return
+	}
+
 	// Get all mailboxes for the user
 	mailboxes, err := db.GetUserMailboxes(s.db, state.Username)
 	if err != nil {
-		// Fall back to default mailboxes if database query fails
-		mailboxes = []string{"INBOX", "Sent", "Drafts", "Trash"}
+		s.sendResponse(conn, fmt.Sprintf("%s NO LIST failure: can't list mailboxes", tag))
+		return
 	}
 
-	for _, mailboxName := range mailboxes {
-		attrs := "\\Unmarked"
-		
-		// Set appropriate attributes for special mailboxes
-		switch mailboxName {
-		case "Drafts":
-			attrs = "\\Drafts"
-		case "Trash":
-			attrs = "\\Trash"
-		case "Sent":
-			attrs = "\\Sent"
-		}
-		
+	// Apply reference and pattern matching
+	matches := s.filterMailboxes(mailboxes, reference, mailboxPattern)
+
+	// Return matching mailboxes
+	for _, mailboxName := range matches {
+		attrs := s.getMailboxAttributes(mailboxName)
 		s.sendResponse(conn, fmt.Sprintf("* LIST (%s) \"/\" \"%s\"", attrs, mailboxName))
 	}
+
 	s.sendResponse(conn, fmt.Sprintf("%s OK LIST completed", tag))
 }
 
@@ -987,4 +1003,173 @@ func (s *IMAPServer) HandleUnsubscribe(conn net.Conn, tag string, parts []string
 // HandleLsub exports the lsub handler for testing
 func (s *IMAPServer) HandleLsub(conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	s.handleLsub(conn, tag, parts, state)
+}
+
+// parseQuotedString parses a quoted string argument, handling both quoted and unquoted strings
+func (s *IMAPServer) parseQuotedString(arg string) string {
+	if len(arg) == 0 {
+		return ""
+	}
+	
+	// Handle quoted strings
+	if arg[0] == '"' && len(arg) >= 2 && arg[len(arg)-1] == '"' {
+		return arg[1 : len(arg)-1]
+	}
+	
+	// Handle unquoted strings (including empty string represented as "")
+	if arg == `""` {
+		return ""
+	}
+	
+	return arg
+}
+
+// filterMailboxes applies reference and pattern matching according to RFC 3501
+func (s *IMAPServer) filterMailboxes(mailboxes []string, reference, pattern string) []string {
+	var matches []string
+	hierarchyDelimiter := "/"
+	
+	// Construct the canonical form by combining reference and pattern
+	canonicalPattern := s.buildCanonicalPattern(reference, pattern, hierarchyDelimiter)
+	
+	for _, mailbox := range mailboxes {
+		if s.matchesPattern(mailbox, canonicalPattern, hierarchyDelimiter) {
+			matches = append(matches, mailbox)
+		}
+	}
+	
+	// Always include INBOX if it matches the pattern (case-insensitive)
+	inboxPattern := strings.ToUpper(canonicalPattern)
+	if s.matchesPattern("INBOX", inboxPattern, hierarchyDelimiter) {
+		// Check if INBOX is already in the list
+		found := false
+		for _, match := range matches {
+			if strings.ToUpper(match) == "INBOX" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			matches = append(matches, "INBOX")
+		}
+	}
+	
+	return matches
+}
+
+// buildCanonicalPattern builds the canonical pattern from reference and mailbox pattern
+func (s *IMAPServer) buildCanonicalPattern(reference, pattern, delimiter string) string {
+	// If pattern starts with delimiter, it's absolute - ignore reference
+	if strings.HasPrefix(pattern, delimiter) {
+		return pattern
+	}
+	
+	// If reference is empty, use pattern as-is
+	if reference == "" {
+		return pattern
+	}
+	
+	// If reference doesn't end with delimiter and pattern doesn't start with delimiter,
+	// and reference is not empty, append delimiter
+	if !strings.HasSuffix(reference, delimiter) && !strings.HasPrefix(pattern, delimiter) {
+		return reference + delimiter + pattern
+	}
+	
+	// Otherwise, concatenate reference and pattern
+	return reference + pattern
+}
+
+// matchesPattern checks if a mailbox name matches a pattern with wildcards
+func (s *IMAPServer) matchesPattern(mailbox, pattern, delimiter string) bool {
+	return s.matchWildcard(mailbox, pattern, delimiter)
+}
+
+// matchWildcard implements wildcard matching for IMAP LIST patterns
+func (s *IMAPServer) matchWildcard(text, pattern, delimiter string) bool {
+	// Convert to case-insensitive for INBOX matching
+	if strings.ToUpper(text) == "INBOX" {
+		text = "INBOX"
+	}
+	if strings.ToUpper(pattern) == "INBOX" {
+		pattern = "INBOX"
+	}
+	
+	return s.doWildcardMatch(text, pattern, delimiter, 0, 0)
+}
+
+// doWildcardMatch performs recursive wildcard matching
+func (s *IMAPServer) doWildcardMatch(text, pattern, delimiter string, textPos, patternPos int) bool {
+	for patternPos < len(pattern) {
+		switch pattern[patternPos] {
+		case '*':
+			// * matches zero or more characters
+			patternPos++
+			if patternPos >= len(pattern) {
+				return true // * at end matches everything
+			}
+			
+			// Try matching * with zero characters first
+			if s.doWildcardMatch(text, pattern, delimiter, textPos, patternPos) {
+				return true
+			}
+			
+			// Try matching * with one or more characters
+			for textPos < len(text) {
+				textPos++
+				if s.doWildcardMatch(text, pattern, delimiter, textPos, patternPos) {
+					return true
+				}
+			}
+			return false
+			
+		case '%':
+			// % matches zero or more characters but not hierarchy delimiter
+			patternPos++
+			if patternPos >= len(pattern) {
+				// % at end - check if remaining text contains delimiter
+				return !strings.Contains(text[textPos:], delimiter)
+			}
+			
+			// Try matching % with zero characters first
+			if s.doWildcardMatch(text, pattern, delimiter, textPos, patternPos) {
+				return true
+			}
+			
+			// Try matching % with one or more characters (but not delimiter)
+			for textPos < len(text) && !strings.HasPrefix(text[textPos:], delimiter) {
+				textPos++
+				if s.doWildcardMatch(text, pattern, delimiter, textPos, patternPos) {
+					return true
+				}
+			}
+			return false
+			
+		default:
+			// Regular character - must match exactly
+			if textPos >= len(text) || text[textPos] != pattern[patternPos] {
+				return false
+			}
+			textPos++
+			patternPos++
+		}
+	}
+	
+	// Pattern consumed - text should also be consumed
+	return textPos >= len(text)
+}
+
+// getMailboxAttributes returns the appropriate attributes for a mailbox
+func (s *IMAPServer) getMailboxAttributes(mailboxName string) string {
+	switch mailboxName {
+	case "Drafts":
+		return "\\Drafts"
+	case "Trash":
+		return "\\Trash"
+	case "Sent":
+		return "\\Sent"
+	case "INBOX":
+		return "\\Unmarked"
+	default:
+		return "\\Unmarked"
+	}
 }

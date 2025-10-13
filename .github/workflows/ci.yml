@@ -60,6 +60,12 @@ jobs:
       - name: Test CREATE command
         run: go test -tags=test -v ./test/server -run "TestCreateCommand"
 
+      - name: Test LIST command
+        run: go test -tags=test -v ./test/server -run "TestListCommand"
+
+      - name: Test LIST extended command
+        run: go test -tags=test -v ./test/server -run "TestListCommand.*RFC3501|TestListCommand.*Wildcard|TestListCommand.*Hierarchy|TestListCommand.*Reference|TestListCommand.*Error|TestListCommand.*Special"
+
       - name: Test DELETE command
         run: go test -tags=test -v ./test/server -run "TestDeleteCommand"
 
