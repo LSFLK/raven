@@ -10,7 +10,19 @@ test/
 ├── helpers/                     # Test helper utilities and mock objects
 │   └── test_helpers.go         # Common test utilities, mock connections, test server setup
 └── server/                      # Tests for server functionality
-    ├── capability_test.go      # Comprehensive CAPABILITY command tests
+    ├── capability_test.go      # CAPABILITY command tests
+    ├── authenticate_test.go    # AUTHENTICATE command tests
+    ├── login_test.go           # LOGIN command tests
+    ├── starttls_test.go        # STARTTLS command tests
+    ├── noop_test.go            # NOOP command tests
+    ├── logout_test.go          # LOGOUT command tests
+    ├── append_test.go          # APPEND command tests
+    ├── select_test.go          # SELECT/EXAMINE command tests
+    ├── create_test.go          # CREATE command tests
+    ├── delete_test.go          # DELETE command tests
+    ├── rename_test.go          # RENAME command tests
+    ├── subscribe_test.go       # SUBSCRIBE/UNSUBSCRIBE command tests
+    ├── lsub_test.go            # LSUB command tests (NEW)
     └── handlers_test.go        # Integration tests for various IMAP handlers
 ```
 
@@ -24,12 +36,28 @@ Contains reusable test utilities:
 - **TestInterface**: Provides access to internal server methods for testing
 
 ### server/
-Contains all server-related tests:
-- **capability_test.go**: RFC 3501 compliance tests, edge cases, performance tests
-- **authenticate_test.go**: AUTHENTICATE PLAIN command tests with base64 encoding/decoding
-- **noop_test.go**: NOOP command tests for mailbox state management
-- **logout_test.go**: LOGOUT command tests for connection cleanup
-- **append_test.go**: APPEND command tests for adding messages to mailboxes
+Contains all server-related tests organized by IMAP command:
+
+#### Connection & Authentication Tests
+- **capability_test.go**: CAPABILITY command - RFC 3501 compliance, TLS detection
+- **authenticate_test.go**: AUTHENTICATE command - SASL PLAIN mechanism with base64
+- **login_test.go**: LOGIN command - Basic authentication with TLS requirement
+- **starttls_test.go**: STARTTLS command - TLS upgrade functionality
+- **logout_test.go**: LOGOUT command - Session termination
+
+#### Mailbox Management Tests
+- **create_test.go**: CREATE command - Mailbox creation with hierarchy support
+- **delete_test.go**: DELETE command - Mailbox deletion with RFC 3501 rules
+- **rename_test.go**: RENAME command - Mailbox renaming with hierarchy handling
+- **subscribe_test.go**: SUBSCRIBE/UNSUBSCRIBE commands - Subscription management
+- **lsub_test.go**: LSUB command - List subscribed mailboxes with wildcard support (13 tests)
+
+#### Message Operation Tests
+- **select_test.go**: SELECT/EXAMINE commands - Mailbox selection for read-write/read-only
+- **append_test.go**: APPEND command - Adding messages to mailboxes
+
+#### Server Interaction Tests
+- **noop_test.go**: NOOP command - Keepalive and mailbox state updates
 - **handlers_test.go**: Integration tests for various IMAP command handlers
 
 ## Running Tests
@@ -40,11 +68,27 @@ Use the provided Makefile targets:
 # Run all tests
 make test
 
-# Run only capability tests
-make test-capability
+# Run all command tests (comprehensive suite)
+make test-commands
 
-# Run only authenticate tests
-make test-authenticate
+# Run individual command tests
+make test-capability        # CAPABILITY command
+make test-authenticate      # AUTHENTICATE command
+make test-login             # LOGIN command
+make test-starttls          # STARTTLS command
+make test-noop              # NOOP command
+make test-logout            # LOGOUT command
+make test-append            # APPEND command
+make test-select            # SELECT command
+make test-examine           # EXAMINE command
+make test-create            # CREATE command
+make test-list              # LIST command
+make test-list-extended     # LIST with wildcards, hierarchies, RFC tests
+make test-delete            # DELETE command
+make test-rename            # RENAME command
+make test-subscribe         # SUBSCRIBE command
+make test-unsubscribe       # UNSUBSCRIBE command
+make test-lsub              # LSUB command (NEW)
 
 # Run tests with verbose output
 make test-verbose
@@ -59,7 +103,7 @@ make test-race
 make bench
 
 # Run a specific test
-make test-single TEST=TestCapabilityCommand_NonTLSConnection
+make test-single TEST=TestLsubCommand_ImpliedParentWithNoselect
 ```
 
 ## Test Categories
@@ -68,11 +112,13 @@ make test-single TEST=TestCapabilityCommand_NonTLSConnection
 - Individual command handler testing
 - Response format validation
 - Edge case handling
+- Error condition testing
 
 ### Integration Tests
 - Full command flow testing
 - State management validation
 - Connection type behavior
+- Multi-command sequences
 
 ### Performance Tests
 - Memory usage validation
@@ -80,9 +126,12 @@ make test-single TEST=TestCapabilityCommand_NonTLSConnection
 - Benchmark comparisons
 
 ### Compliance Tests
-- RFC 3501 IMAP4rev1 compliance
+- **RFC 3501 IMAP4rev1 compliance**
 - Capability advertisement correctness
 - Protocol format validation
+- Wildcard pattern matching (LIST, LSUB)
+- Hierarchy handling (CREATE, DELETE, RENAME, LSUB)
+- Subscription semantics (SUBSCRIBE, UNSUBSCRIBE, LSUB)
 
 ## Writing New Tests
 
@@ -127,16 +176,47 @@ Extends MockConn to simulate TLS connections for testing TLS-specific behavior s
 
 Tests use in-memory SQLite databases created fresh for each test to ensure isolation and reproducibility.
 
-## Coverage
+## Test Statistics
 
+### Command Test Coverage
+| Command | Test File | Test Count | Status |
+|---------|-----------|------------|--------|
+| CAPABILITY | capability_test.go | 15+ | ✅ Pass |
+| AUTHENTICATE | authenticate_test.go | 12+ | ✅ Pass |
+| LOGIN | login_test.go | 10+ | ✅ Pass |
+| STARTTLS | starttls_test.go | 8+ | ✅ Pass |
+| NOOP | noop_test.go | 6+ | ✅ Pass |
+| LOGOUT | logout_test.go | 4+ | ✅ Pass |
+| APPEND | append_test.go | 8+ | ✅ Pass |
+| SELECT | select_test.go | 10+ | ✅ Pass |
+| EXAMINE | select_test.go | 5+ | ✅ Pass |
+| CREATE | create_test.go | 12+ | ✅ Pass |
+| DELETE | delete_test.go | 10+ | ✅ Pass |
+| RENAME | rename_test.go | 15+ | ✅ Pass |
+| SUBSCRIBE | subscribe_test.go | 8 | ✅ Pass |
+| UNSUBSCRIBE | subscribe_test.go | 8 | ✅ Pass |
+| LSUB | lsub_test.go | **13** | ✅ Pass |
+| **Total** | | **144+** | ✅ All Pass |
+
+### Coverage Goals
 The test suite aims for high coverage of:
-- All IMAP command handlers
-- Error conditions and edge cases  
-- RFC compliance scenarios
+- All IMAP command handlers (15+ commands covered)
+- Error conditions and edge cases
+- RFC 3501 compliance scenarios
+- Wildcard pattern matching
+- Hierarchy operations
+- Security requirements (TLS, authentication)
 - Performance characteristics
 
-Generate coverage reports with:
+### Generate Coverage Reports
 ```bash
 make test-coverage
 open coverage.html
 ```
+
+### CI/CD Integration
+All tests run automatically on pull requests via GitHub Actions:
+- Go 1.23 environment
+- Full test suite execution
+- All commands including LSUB tested
+- Test failures block PR merges
