@@ -55,7 +55,7 @@ Contains all server-related tests organized by IMAP command:
 
 #### Message Operation Tests
 - **select_test.go**: SELECT/EXAMINE commands - Mailbox selection for read-write/read-only
-- **append_test.go**: APPEND command - Adding messages to mailboxes
+- **append_test.go**: APPEND command - Adding messages to mailboxes with RFC 3501 compliance (20 tests)
 
 #### Server Interaction Tests
 - **noop_test.go**: NOOP command - Keepalive and mailbox state updates
@@ -189,7 +189,7 @@ Tests use in-memory SQLite databases created fresh for each test to ensure isola
 | STARTTLS | starttls_test.go | 8+ | ✅ Pass |
 | NOOP | noop_test.go | 6+ | ✅ Pass |
 | LOGOUT | logout_test.go | 4+ | ✅ Pass |
-| APPEND | append_test.go | 8+ | ✅ Pass |
+| APPEND | append_test.go | **20** | ✅ Pass |
 | SELECT | select_test.go | 10+ | ✅ Pass |
 | EXAMINE | select_test.go | 5+ | ✅ Pass |
 | CREATE | create_test.go | 12+ | ✅ Pass |
@@ -198,8 +198,8 @@ Tests use in-memory SQLite databases created fresh for each test to ensure isola
 | SUBSCRIBE | subscribe_test.go | 8 | ✅ Pass |
 | UNSUBSCRIBE | subscribe_test.go | 8 | ✅ Pass |
 | LSUB | lsub_test.go | 13 | ✅ Pass |
-| STATUS | status_test.go | **19** | ✅ Pass |
-| **Total** | | **163+** | ✅ All Pass |
+| STATUS | status_test.go | 19 | ✅ Pass |
+| **Total** | | **175+** | ✅ All Pass |
 
 ### Coverage Goals
 The test suite aims for high coverage of:
