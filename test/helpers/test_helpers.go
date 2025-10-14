@@ -484,3 +484,11 @@ func CreateTLSConfig(t *testing.T) (*tls.Config, func()) {
 
 	return tlsConfig, cleanup
 }
+
+// CreateMailbox creates a mailbox for a user in the test database
+func CreateMailbox(t *testing.T, database *sql.DB, username, mailboxName string) {
+	err := db.CreateMailbox(database, username, mailboxName)
+	if err != nil {
+		t.Fatalf("Failed to create mailbox %s for user %s: %v", mailboxName, username, err)
+	}
+}
