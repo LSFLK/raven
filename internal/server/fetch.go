@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"go-imap/internal/db"
 	"go-imap/internal/models"
 )
 
@@ -454,22 +455,115 @@ func (s *IMAPServer) handleStatus(conn net.Conn, tag string, parts []string, sta
 	}
 
 	if len(parts) < 4 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD STATUS requires folder and items", tag))
+		s.sendResponse(conn, fmt.Sprintf("%s BAD STATUS requires mailbox name and status data items", tag))
 		return
 	}
 
-	folder := strings.Trim(parts[2], "\"")
+	// Parse mailbox name (could be quoted)
+	mailboxName := s.parseQuotedString(parts[2])
+
+	// Validate mailbox name
+	if mailboxName == "" {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid mailbox name", tag))
+		return
+	}
+
+	// Check if mailbox exists (use db.MailboxExists)
+	exists, err := db.MailboxExists(s.db, state.Username, mailboxName)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO STATUS failure: server error", tag))
+		return
+	}
+
+	if !exists {
+		s.sendResponse(conn, fmt.Sprintf("%s NO STATUS failure: no status for that name", tag))
+		return
+	}
+
+	// Parse status data items - they are enclosed in parentheses
+	// Example: STATUS mailbox (MESSAGES RECENT)
+	// Build the full items string from remaining parts
+	itemsStr := strings.Join(parts[3:], " ")
+
+	// Remove parentheses if present
+	itemsStr = strings.Trim(itemsStr, "()")
+	itemsStr = strings.TrimSpace(itemsStr)
+
+	if itemsStr == "" {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD STATUS requires status data items", tag))
+		return
+	}
+
+	// Split items by whitespace
+	requestedItems := strings.Fields(strings.ToUpper(itemsStr))
+
+	if len(requestedItems) == 0 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD STATUS requires status data items", tag))
+		return
+	}
+
+	// Query the database for mailbox statistics
 	tableName := s.getUserTableName(state.Username)
 
-	var count int
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ?", tableName)
-	s.db.QueryRow(query, folder).Scan(&count)
+	// Initialize status values
+	statusValues := make(map[string]int)
 
-	// Get the next UID (max ID + 1)
+	// Query total message count
+	var messageCount int
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ?", tableName)
+	err = s.db.QueryRow(query, mailboxName).Scan(&messageCount)
+	if err != nil {
+		messageCount = 0
+	}
+	statusValues["MESSAGES"] = messageCount
+
+	// Query recent count (messages without \Recent flag or messages without \Seen flag)
+	// RFC 3501: Messages with \Recent flag set
+	// For simplicity, we'll count messages without \Seen flag as recent
+	var recentCount int
+	query = fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ? AND (flags IS NULL OR flags = '' OR flags NOT LIKE '%%\\Seen%%')", tableName)
+	err = s.db.QueryRow(query, mailboxName).Scan(&recentCount)
+	if err != nil {
+		recentCount = 0
+	}
+	statusValues["RECENT"] = recentCount
+
+	// Query UIDNEXT (next unique identifier value)
 	var maxUID int
 	query = fmt.Sprintf("SELECT COALESCE(MAX(id), 0) FROM %s WHERE folder = ?", tableName)
-	s.db.QueryRow(query, folder).Scan(&maxUID)
+	err = s.db.QueryRow(query, mailboxName).Scan(&maxUID)
+	if err != nil {
+		maxUID = 0
+	}
+	statusValues["UIDNEXT"] = maxUID + 1
 
-	s.sendResponse(conn, fmt.Sprintf("* STATUS \"%s\" (MESSAGES %d RECENT 0 UIDNEXT %d UIDVALIDITY 1 UNSEEN 0)", folder, count, maxUID+1))
+	// UIDVALIDITY - use a constant value of 1 for simplicity
+	// In a production system, this should be stored per-mailbox
+	statusValues["UIDVALIDITY"] = 1
+
+	// Query UNSEEN count (messages without \Seen flag)
+	var unseenCount int
+	query = fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ? AND (flags IS NULL OR flags = '' OR flags NOT LIKE '%%\\Seen%%')", tableName)
+	err = s.db.QueryRow(query, mailboxName).Scan(&unseenCount)
+	if err != nil {
+		unseenCount = 0
+	}
+	statusValues["UNSEEN"] = unseenCount
+
+	// Build response with only requested items
+	var responseItems []string
+	for _, item := range requestedItems {
+		itemUpper := strings.ToUpper(item)
+		if value, ok := statusValues[itemUpper]; ok {
+			responseItems = append(responseItems, fmt.Sprintf("%s %d", itemUpper, value))
+		} else {
+			// Unknown status item - return BAD response
+			s.sendResponse(conn, fmt.Sprintf("%s BAD Unknown status data item: %s", tag, item))
+			return
+		}
+	}
+
+	// Send STATUS response
+	s.sendResponse(conn, fmt.Sprintf("* STATUS \"%s\" (%s)", mailboxName, strings.Join(responseItems, " ")))
 	s.sendResponse(conn, fmt.Sprintf("%s OK STATUS completed", tag))
 }

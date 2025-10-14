@@ -1070,6 +1070,11 @@ func (s *IMAPServer) HandleLsub(conn net.Conn, tag string, parts []string, state
 	s.handleLsub(conn, tag, parts, state)
 }
 
+// HandleStatus exports the status handler for testing
+func (s *IMAPServer) HandleStatus(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	s.handleStatus(conn, tag, parts, state)
+}
+
 // parseQuotedString parses a quoted string argument, handling both quoted and unquoted strings
 func (s *IMAPServer) parseQuotedString(arg string) string {
 	if len(arg) == 0 {
