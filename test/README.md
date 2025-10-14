@@ -51,6 +51,7 @@ Contains all server-related tests organized by IMAP command:
 - **rename_test.go**: RENAME command - Mailbox renaming with hierarchy handling
 - **subscribe_test.go**: SUBSCRIBE/UNSUBSCRIBE commands - Subscription management
 - **lsub_test.go**: LSUB command - List subscribed mailboxes with wildcard support (13 tests)
+- **status_test.go**: STATUS command - Get mailbox status information with all data items (19 tests)
 
 #### Message Operation Tests
 - **select_test.go**: SELECT/EXAMINE commands - Mailbox selection for read-write/read-only
@@ -88,7 +89,8 @@ make test-delete            # DELETE command
 make test-rename            # RENAME command
 make test-subscribe         # SUBSCRIBE command
 make test-unsubscribe       # UNSUBSCRIBE command
-make test-lsub              # LSUB command (NEW)
+make test-lsub              # LSUB command
+make test-status            # STATUS command (NEW)
 
 # Run tests with verbose output
 make test-verbose
@@ -195,8 +197,9 @@ Tests use in-memory SQLite databases created fresh for each test to ensure isola
 | RENAME | rename_test.go | 15+ | ✅ Pass |
 | SUBSCRIBE | subscribe_test.go | 8 | ✅ Pass |
 | UNSUBSCRIBE | subscribe_test.go | 8 | ✅ Pass |
-| LSUB | lsub_test.go | **13** | ✅ Pass |
-| **Total** | | **144+** | ✅ All Pass |
+| LSUB | lsub_test.go | 13 | ✅ Pass |
+| STATUS | status_test.go | **19** | ✅ Pass |
+| **Total** | | **163+** | ✅ All Pass |
 
 ### Coverage Goals
 The test suite aims for high coverage of:
@@ -218,5 +221,5 @@ open coverage.html
 All tests run automatically on pull requests via GitHub Actions:
 - Go 1.23 environment
 - Full test suite execution
-- All commands including LSUB tested
+- All commands including LSUB and STATUS tested
 - Test failures block PR merges

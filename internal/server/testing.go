@@ -116,9 +116,19 @@ func (t *TestInterface) HandleLsub(conn net.Conn, tag string, parts []string, st
 	t.server.handleLsub(conn, tag, parts, state)
 }
 
+// HandleStatus exposes the status handler for testing
+func (t *TestInterface) HandleStatus(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	t.server.handleStatus(conn, tag, parts, state)
+}
+
 // SetTLSCertificates sets custom TLS certificate paths for testing
 func (t *TestInterface) SetTLSCertificates(certPath, keyPath string) {
 	t.server.SetTLSCertificates(certPath, keyPath)
+}
+
+// GetDB exposes the database connection for testing
+func (t *TestInterface) GetDB() interface{} {
+	return t.server.db
 }
 
 // SendResponse exposes the sendResponse method for testing
