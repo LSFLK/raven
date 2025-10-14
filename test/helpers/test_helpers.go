@@ -200,7 +200,7 @@ func CreateTestDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
-	
+
 	// Create user_metadata table
 	metadataSchema := `
 	CREATE TABLE IF NOT EXISTS user_metadata (
@@ -211,7 +211,36 @@ func CreateTestDB(t *testing.T) *sql.DB {
 	if _, err = database.Exec(metadataSchema); err != nil {
 		t.Fatalf("Failed to initialize test database metadata schema: %v", err)
 	}
-	
+
+	// Create mailboxes table
+	mailboxSchema := `
+	CREATE TABLE IF NOT EXISTS mailboxes (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		username TEXT NOT NULL,
+		name TEXT NOT NULL,
+		hierarchy_separator TEXT DEFAULT '/',
+		created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(username, name)
+	);
+	`
+	if _, err = database.Exec(mailboxSchema); err != nil {
+		t.Fatalf("Failed to create mailboxes table: %v", err)
+	}
+
+	// Create subscriptions table
+	subscriptionSchema := `
+	CREATE TABLE IF NOT EXISTS subscriptions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		username TEXT NOT NULL,
+		mailbox_name TEXT NOT NULL,
+		subscribed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(username, mailbox_name)
+	);
+	`
+	if _, err = database.Exec(subscriptionSchema); err != nil {
+		t.Fatalf("Failed to create subscriptions table: %v", err)
+	}
+
 	return database
 }
 
