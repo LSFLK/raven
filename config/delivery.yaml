@@ -1,0 +1,53 @@
+# Raven Delivery Service Configuration
+# This file configures the LMTP delivery service
+
+lmtp:
+  # UNIX socket path for LMTP (recommended for local delivery)
+  # unix_socket: "/var/run/raven/lmtp.sock"
+
+  # TCP address for LMTP (optional, useful for remote delivery)
+  # For Docker: bind to all interfaces so Postfix can connect
+  tcp_address: "0.0.0.0:24"
+
+  # Maximum message size in bytes (50MB default)
+  max_size: 52428800
+
+  # Connection timeout in seconds
+  timeout: 300
+
+  # Server hostname presented in LHLO response
+  hostname: "localhost"
+
+  # Maximum recipients per transaction
+  max_recipients: 100
+
+database:
+  # Path to SQLite database (shared with IMAP server)
+  path: "data/mails.db"
+
+delivery:
+  # Default folder for delivered messages
+  default_folder: "INBOX"
+
+  # Enable quota checking
+  quota_enabled: false
+
+  # Quota limit in bytes (1GB default)
+  quota_limit: 1073741824
+
+  # Allowed recipient domains (empty = accept all)
+  # Uncomment and configure to restrict delivery domains
+  # allowed_domains:
+  #   - "example.com"
+  #   - "mail.example.com"
+
+  # Reject messages for unknown users
+  # Set to true to validate recipients against database
+  reject_unknown_user: false
+
+logging:
+  # Log level: debug, info, warn, error
+  level: "debug"
+
+  # Log format: text, json
+  format: "text"
