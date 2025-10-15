@@ -1,7 +1,2 @@
-# Ignore configuration and data directories
-config
-data
-certs
-
 # Ignore the trunk directory
 .trunk
