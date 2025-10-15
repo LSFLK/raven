@@ -83,3 +83,61 @@ jobs:
 
       - name: Test STATUS command
         run: go test -tags=test -v ./test/server -run "TestStatusCommand"
+
+  test-delivery:
+    name: Test Delivery Service
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: Test Delivery Configuration
+        run: go test -tags=test -v ./test/delivery -run "TestDefaultConfig|TestLoadConfig|TestConfigValidation"
+
+      - name: Test Email Parser
+        run: go test -tags=test -v ./test/delivery -run "TestParseMessage|TestValidateMessage|TestExtractEnvelopeRecipient|TestReadDataCommand"
+
+      - name: Test Email Address Extraction
+        run: go test -tags=test -v ./test/delivery -run "TestExtractLocalPart|TestExtractDomain"
+
+      - name: Run All Delivery Tests
+        run: go test -tags=test -v ./test/delivery
+
+  build-delivery:
+    name: Build Delivery Service
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: Build IMAP Server
+        run: go build -v ./cmd/server
+
+      - name: Build Delivery Service
+        run: go build -v ./cmd/delivery
+
+      - name: Verify binaries
+        run: |
+          ls -lh server
+          ls -lh delivery
+          ./delivery -h
