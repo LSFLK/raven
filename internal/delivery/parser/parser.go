@@ -3,14 +3,19 @@ package parser
 import (
 	"bufio"
 	"bytes"
+	"database/sql"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/mail"
 	"strings"
 	"time"
+
+	"go-imap/internal/db"
 )
 
-// Message represents a parsed email message
+// Message represents a parsed email message (simple format for LMTP)
 type Message struct {
 	From        string
 	To          []string
@@ -23,7 +28,37 @@ type Message struct {
 	Size        int64
 }
 
-// ParseMessage parses an email message from a reader
+// ParsedMessage represents a parsed email message with full MIME structure
+type ParsedMessage struct {
+	MessageID   int64
+	Subject     string
+	From        []mail.Address
+	To          []mail.Address
+	Cc          []mail.Address
+	Bcc         []mail.Address
+	Date        time.Time
+	InReplyTo   string
+	References  string
+	Parts       []MessagePart
+	RawMessage  string
+	SizeBytes   int64
+}
+
+// MessagePart represents a single MIME part
+type MessagePart struct {
+	PartNumber              int
+	ParentPartID            sql.NullInt64
+	ContentType             string
+	ContentDisposition      string
+	ContentTransferEncoding string
+	Charset                 string
+	Filename                string
+	BlobID                  sql.NullInt64
+	TextContent             string
+	SizeBytes               int64
+}
+
+// ParseMessage parses an email message from a reader (simple format for LMTP)
 func ParseMessage(r io.Reader) (*Message, error) {
 	// Read entire message
 	var buf bytes.Buffer
@@ -104,6 +139,499 @@ func ParseMessage(r io.Reader) (*Message, error) {
 // ParseMessageFromBytes parses an email message from bytes
 func ParseMessageFromBytes(data []byte) (*Message, error) {
 	return ParseMessage(bytes.NewReader(data))
+}
+
+// ParseMIMEMessage parses a raw MIME message into structured components for database storage
+func ParseMIMEMessage(rawMessage string) (*ParsedMessage, error) {
+	parsed := &ParsedMessage{
+		RawMessage: rawMessage,
+		SizeBytes:  int64(len(rawMessage)),
+	}
+
+	// Parse the email using net/mail
+	msg, err := mail.ReadMessage(strings.NewReader(rawMessage))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse message: %v", err)
+	}
+
+	// Extract headers
+	parsed.Subject = msg.Header.Get("Subject")
+	parsed.InReplyTo = msg.Header.Get("In-Reply-To")
+	parsed.References = msg.Header.Get("References")
+
+	// Parse date
+	dateStr := msg.Header.Get("Date")
+	if dateStr != "" {
+		parsed.Date, _ = mail.ParseDate(dateStr)
+	}
+	if parsed.Date.IsZero() {
+		parsed.Date = time.Now()
+	}
+
+	// Parse addresses
+	if fromList, err := mail.ParseAddressList(msg.Header.Get("From")); err == nil && fromList != nil {
+		for _, addr := range fromList {
+			if addr != nil {
+				parsed.From = append(parsed.From, *addr)
+			}
+		}
+	}
+	if toList, err := mail.ParseAddressList(msg.Header.Get("To")); err == nil && toList != nil {
+		for _, addr := range toList {
+			if addr != nil {
+				parsed.To = append(parsed.To, *addr)
+			}
+		}
+	}
+	if ccList, err := mail.ParseAddressList(msg.Header.Get("Cc")); err == nil && ccList != nil {
+		for _, addr := range ccList {
+			if addr != nil {
+				parsed.Cc = append(parsed.Cc, *addr)
+			}
+		}
+	}
+	if bccList, err := mail.ParseAddressList(msg.Header.Get("Bcc")); err == nil && bccList != nil {
+		for _, addr := range bccList {
+			if addr != nil {
+				parsed.Bcc = append(parsed.Bcc, *addr)
+			}
+		}
+	}
+
+	// Parse MIME parts
+	contentType := msg.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "text/plain; charset=us-ascii"
+	}
+
+	mediaType, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		mediaType = "text/plain"
+		params = map[string]string{"charset": "us-ascii"}
+	}
+
+	// Handle multipart messages
+	if strings.HasPrefix(mediaType, "multipart/") {
+		boundary := params["boundary"]
+		if boundary != "" {
+			parsed.Parts, err = parseMultipart(msg.Body, boundary, 0, sql.NullInt64{})
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse multipart: %v", err)
+			}
+		}
+	} else {
+		// Single part message
+		bodyBytes, err := io.ReadAll(msg.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read body: %v", err)
+		}
+
+		charset := params["charset"]
+		if charset == "" {
+			charset = "us-ascii"
+		}
+
+		encoding := msg.Header.Get("Content-Transfer-Encoding")
+
+		part := MessagePart{
+			PartNumber:              1,
+			ContentType:             mediaType,
+			ContentTransferEncoding: encoding,
+			Charset:                 charset,
+			TextContent:             string(bodyBytes),
+			SizeBytes:               int64(len(bodyBytes)),
+		}
+
+		parsed.Parts = append(parsed.Parts, part)
+	}
+
+	return parsed, nil
+}
+
+// parseMultipart recursively parses multipart MIME messages
+func parseMultipart(body io.Reader, boundary string, depth int, parentPartID sql.NullInt64) ([]MessagePart, error) {
+	var parts []MessagePart
+	partNumber := 1
+
+	mr := multipart.NewReader(body, boundary)
+	for {
+		p, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return parts, err
+		}
+
+		// Read part content
+		content, err := io.ReadAll(p)
+		if err != nil {
+			continue
+		}
+
+		// Parse content type
+		contentType := p.Header.Get("Content-Type")
+		if contentType == "" {
+			contentType = "text/plain; charset=us-ascii"
+		}
+
+		mediaType, params, err := mime.ParseMediaType(contentType)
+		if err != nil {
+			mediaType = "text/plain"
+			params = map[string]string{"charset": "us-ascii"}
+		}
+
+		charset := params["charset"]
+		encoding := p.Header.Get("Content-Transfer-Encoding")
+		disposition := p.Header.Get("Content-Disposition")
+		filename := p.FileName()
+
+		part := MessagePart{
+			PartNumber:              partNumber,
+			ParentPartID:            parentPartID,
+			ContentType:             mediaType,
+			ContentDisposition:      disposition,
+			ContentTransferEncoding: encoding,
+			Charset:                 charset,
+			Filename:                filename,
+			TextContent:             string(content),
+			SizeBytes:               int64(len(content)),
+		}
+
+		// If this is a multipart, recursively parse it
+		if strings.HasPrefix(mediaType, "multipart/") && params["boundary"] != "" {
+			// This part is a container, store it but don't store content
+			part.TextContent = ""
+			parts = append(parts, part)
+
+			// Parse sub-parts (depth-first)
+			subParts, err := parseMultipart(bytes.NewReader(content), params["boundary"], depth+1, sql.NullInt64{Valid: true, Int64: int64(partNumber)})
+			if err == nil {
+				parts = append(parts, subParts...)
+			}
+		} else {
+			parts = append(parts, part)
+		}
+
+		partNumber++
+	}
+
+	return parts, nil
+}
+
+// StoreMessage stores a parsed message in the database
+func StoreMessage(database *sql.DB, parsed *ParsedMessage) (int64, error) {
+	// Create message record
+	messageID, err := db.CreateMessage(database, parsed.Subject, parsed.InReplyTo, parsed.References, parsed.Date, parsed.SizeBytes)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create message: %v", err)
+	}
+
+	parsed.MessageID = messageID
+
+	// Store addresses
+	if err := storeAddresses(database, messageID, "from", parsed.From); err != nil {
+		return 0, fmt.Errorf("failed to store from addresses: %v", err)
+	}
+	if err := storeAddresses(database, messageID, "to", parsed.To); err != nil {
+		return 0, fmt.Errorf("failed to store to addresses: %v", err)
+	}
+	if err := storeAddresses(database, messageID, "cc", parsed.Cc); err != nil {
+		return 0, fmt.Errorf("failed to store cc addresses: %v", err)
+	}
+	if err := storeAddresses(database, messageID, "bcc", parsed.Bcc); err != nil {
+		return 0, fmt.Errorf("failed to store bcc addresses: %v", err)
+	}
+
+	// Store message parts
+	for _, part := range parsed.Parts {
+		var blobID sql.NullInt64
+
+		// Store large content or attachments in blobs
+		if len(part.TextContent) > 1024 || part.Filename != "" {
+			id, err := db.StoreBlob(database, part.TextContent)
+			if err == nil {
+				blobID = sql.NullInt64{Valid: true, Int64: id}
+				// Clear text content since it's in blob
+				part.TextContent = ""
+			}
+		}
+
+		_, err := db.AddMessagePart(
+			database,
+			messageID,
+			part.PartNumber,
+			part.ParentPartID,
+			part.ContentType,
+			part.ContentDisposition,
+			part.ContentTransferEncoding,
+			part.Charset,
+			part.Filename,
+			blobID,
+			part.TextContent,
+			part.SizeBytes,
+		)
+		if err != nil {
+			return 0, fmt.Errorf("failed to store message part: %v", err)
+		}
+	}
+
+	return messageID, nil
+}
+
+// storeAddresses stores email addresses in the database
+func storeAddresses(database *sql.DB, messageID int64, addressType string, addresses []mail.Address) error {
+	for i, addr := range addresses {
+		err := db.AddAddress(database, messageID, addressType, addr.Name, addr.Address, i)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ReconstructMessage reconstructs the raw message from database parts
+func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
+	// Get message parts
+	parts, err := db.GetMessageParts(database, messageID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get message parts: %v", err)
+	}
+
+	if len(parts) == 0 {
+		return "", fmt.Errorf("no message parts found")
+	}
+
+	// Get addresses
+	fromAddrs, _ := db.GetMessageAddresses(database, messageID, "from")
+	toAddrs, _ := db.GetMessageAddresses(database, messageID, "to")
+	ccAddrs, _ := db.GetMessageAddresses(database, messageID, "cc")
+
+	// Get message metadata
+	var subject string
+	var date time.Time
+	err = database.QueryRow("SELECT subject, date FROM messages WHERE id = ?", messageID).Scan(&subject, &date)
+	if err != nil {
+		return "", fmt.Errorf("failed to get message metadata: %v", err)
+	}
+
+	// Build message headers
+	var buf bytes.Buffer
+
+	if len(fromAddrs) > 0 {
+		buf.WriteString(fmt.Sprintf("From: %s\r\n", strings.Join(fromAddrs, ", ")))
+	}
+	if len(toAddrs) > 0 {
+		buf.WriteString(fmt.Sprintf("To: %s\r\n", strings.Join(toAddrs, ", ")))
+	}
+	if len(ccAddrs) > 0 {
+		buf.WriteString(fmt.Sprintf("Cc: %s\r\n", strings.Join(ccAddrs, ", ")))
+	}
+
+	buf.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
+	buf.WriteString(fmt.Sprintf("Date: %s\r\n", date.Format(time.RFC1123Z)))
+
+	// For simple single-part messages
+	if len(parts) == 1 {
+		part := parts[0]
+		contentType := part["content_type"].(string)
+		if charset, ok := part["charset"].(string); ok && charset != "" {
+			buf.WriteString(fmt.Sprintf("Content-Type: %s; charset=%s\r\n", contentType, charset))
+		} else {
+			buf.WriteString(fmt.Sprintf("Content-Type: %s\r\n", contentType))
+		}
+
+		if encoding, ok := part["content_transfer_encoding"].(string); ok && encoding != "" {
+			buf.WriteString(fmt.Sprintf("Content-Transfer-Encoding: %s\r\n", encoding))
+		}
+
+		buf.WriteString("\r\n")
+
+		// Get content from blob or text_content
+		if blobID, ok := part["blob_id"].(int64); ok {
+			content, err := db.GetBlob(database, blobID)
+			if err == nil {
+				buf.WriteString(content)
+			}
+		} else if textContent, ok := part["text_content"].(string); ok {
+			buf.WriteString(textContent)
+		}
+	} else {
+		// Multipart message handling
+		// Separate text parts from attachments
+		var textParts []map[string]interface{}
+		var attachments []map[string]interface{}
+
+		for _, part := range parts {
+			contentType := part["content_type"].(string)
+			disposition := ""
+			if d, ok := part["content_disposition"].(string); ok {
+				disposition = d
+			}
+
+			// Classify as attachment or text part
+			isAttachment := false
+			if disposition == "attachment" || disposition == "inline" {
+				isAttachment = true
+			} else if !strings.HasPrefix(contentType, "text/") {
+				// Non-text types are likely attachments (images, etc.)
+				isAttachment = true
+			}
+
+			if isAttachment {
+				attachments = append(attachments, part)
+			} else {
+				textParts = append(textParts, part)
+			}
+		}
+
+		// Determine if we have attachments
+		hasAttachments := len(attachments) > 0
+
+		// Check if we have both text/plain and text/html
+		hasPlain := false
+		hasHTML := false
+		var htmlPart, plainPart map[string]interface{}
+
+		for _, part := range textParts {
+			contentType := part["content_type"].(string)
+			if contentType == "text/plain" {
+				hasPlain = true
+				plainPart = part
+			} else if contentType == "text/html" {
+				hasHTML = true
+				htmlPart = part
+			}
+		}
+
+		// Build the message structure
+		if hasAttachments {
+			// multipart/mixed with attachments
+			buf.WriteString("Content-Type: multipart/mixed; boundary=\"boundary-mixed\"\r\n")
+			buf.WriteString("\r\n")
+
+			// First part: the message body
+			if hasPlain && hasHTML {
+				// multipart/alternative for text versions
+				buf.WriteString("--boundary-mixed\r\n")
+				buf.WriteString("Content-Type: multipart/alternative; boundary=\"boundary-alt\"\r\n")
+				buf.WriteString("\r\n")
+
+				// Plain text version
+				buf.WriteString("--boundary-alt\r\n")
+				writePartHeaders(&buf, plainPart)
+				writePartContent(&buf, database, plainPart)
+
+				// HTML version
+				buf.WriteString("--boundary-alt\r\n")
+				writePartHeaders(&buf, htmlPart)
+				writePartContent(&buf, database, htmlPart)
+
+				buf.WriteString("--boundary-alt--\r\n")
+			} else if hasHTML {
+				// HTML only
+				buf.WriteString("--boundary-mixed\r\n")
+				writePartHeaders(&buf, htmlPart)
+				writePartContent(&buf, database, htmlPart)
+			} else if hasPlain {
+				// Plain text only
+				buf.WriteString("--boundary-mixed\r\n")
+				writePartHeaders(&buf, plainPart)
+				writePartContent(&buf, database, plainPart)
+			}
+
+			// Attachments
+			for _, attachment := range attachments {
+				buf.WriteString("--boundary-mixed\r\n")
+				writePartHeaders(&buf, attachment)
+				writePartContent(&buf, database, attachment)
+			}
+
+			buf.WriteString("--boundary-mixed--\r\n")
+		} else if hasPlain && hasHTML {
+			// multipart/alternative (no attachments)
+			buf.WriteString("Content-Type: multipart/alternative; boundary=\"boundary-alt\"\r\n")
+			buf.WriteString("\r\n")
+
+			// Plain text version
+			buf.WriteString("--boundary-alt\r\n")
+			writePartHeaders(&buf, plainPart)
+			writePartContent(&buf, database, plainPart)
+
+			// HTML version
+			buf.WriteString("--boundary-alt\r\n")
+			writePartHeaders(&buf, htmlPart)
+			writePartContent(&buf, database, htmlPart)
+
+			buf.WriteString("--boundary-alt--\r\n")
+		} else if len(textParts) == 1 {
+			// Single text part, no multipart needed
+			writePartHeaders(&buf, textParts[0])
+			writePartContent(&buf, database, textParts[0])
+		} else {
+			// Fallback: multipart/mixed for all parts
+			buf.WriteString("Content-Type: multipart/mixed; boundary=\"boundary-mixed\"\r\n")
+			buf.WriteString("\r\n")
+
+			for _, part := range parts {
+				buf.WriteString("--boundary-mixed\r\n")
+				writePartHeaders(&buf, part)
+				writePartContent(&buf, database, part)
+			}
+
+			buf.WriteString("--boundary-mixed--\r\n")
+		}
+	}
+
+	return buf.String(), nil
+}
+
+// writePartHeaders writes the MIME headers for a message part
+func writePartHeaders(buf *bytes.Buffer, part map[string]interface{}) {
+	contentType := part["content_type"].(string)
+
+	// Write Content-Type with charset if available
+	if charset, ok := part["charset"].(string); ok && charset != "" {
+		buf.WriteString(fmt.Sprintf("Content-Type: %s; charset=%s", contentType, charset))
+	} else {
+		buf.WriteString(fmt.Sprintf("Content-Type: %s", contentType))
+	}
+
+	// Add filename to Content-Type if present (for attachments)
+	if filename, ok := part["filename"].(string); ok && filename != "" {
+		buf.WriteString(fmt.Sprintf("; name=\"%s\"", filename))
+	}
+	buf.WriteString("\r\n")
+
+	// Write Content-Transfer-Encoding
+	if encoding, ok := part["content_transfer_encoding"].(string); ok && encoding != "" {
+		buf.WriteString(fmt.Sprintf("Content-Transfer-Encoding: %s\r\n", encoding))
+	}
+
+	// Write Content-Disposition if present
+	if disposition, ok := part["content_disposition"].(string); ok && disposition != "" {
+		buf.WriteString(fmt.Sprintf("Content-Disposition: %s", disposition))
+		if filename, ok := part["filename"].(string); ok && filename != "" {
+			buf.WriteString(fmt.Sprintf("; filename=\"%s\"", filename))
+		}
+		buf.WriteString("\r\n")
+	}
+
+	buf.WriteString("\r\n")
+}
+
+// writePartContent writes the content of a message part
+func writePartContent(buf *bytes.Buffer, database *sql.DB, part map[string]interface{}) {
+	// Get content from blob or text_content
+	if blobID, ok := part["blob_id"].(int64); ok {
+		content, err := db.GetBlob(database, blobID)
+		if err == nil {
+			buf.WriteString(content)
+		}
+	} else if textContent, ok := part["text_content"].(string); ok {
+		buf.WriteString(textContent)
+	}
+	buf.WriteString("\r\n")
 }
 
 // extractRecipients extracts all recipient addresses from To, Cc, and Bcc headers
