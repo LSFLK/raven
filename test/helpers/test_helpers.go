@@ -1,3 +1,6 @@
+//go:build test
+// +build test
+
 package helpers
 
 import (
@@ -21,7 +24,10 @@ import (
 	"time"
 
 	"go-imap/internal/db"
+	"go-imap/internal/delivery/parser"
+	"go-imap/internal/models"
 	"go-imap/internal/server"
+
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -103,80 +109,29 @@ type MockConnInterface interface {
 var _ MockConnInterface = (*MockConn)(nil)
 var _ MockConnInterface = (*MockTLSConn)(nil)
 
-// SetupTestServer creates a test IMAP server with in-memory database
+// SetupTestServer creates a test IMAP server with in-memory database using new schema
 func SetupTestServer(t *testing.T) (*server.TestInterface, func()) {
-	db, err := sql.Open("sqlite3", ":memory:")
+	// Create a temporary database file (we need a file for InitDB to work)
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	// Initialize database with new normalized schema
+	database, err := db.InitDB(dbPath)
 	if err != nil {
-		t.Fatalf("Failed to create test database: %v", err)
+		t.Fatalf("Failed to initialize test database: %v", err)
 	}
 
-	// Initialize database schema with metadata table
-	schema := `
-	CREATE TABLE IF NOT EXISTS user_metadata (
-		username TEXT PRIMARY KEY,
-		created_at TEXT DEFAULT CURRENT_TIMESTAMP
-	);
-	`
-	if _, err = db.Exec(schema); err != nil {
-		t.Fatalf("Failed to initialize test database schema: %v", err)
-	}
+	imapServer := server.NewIMAPServer(database)
+	testInterface := server.NewTestInterface(imapServer)
 
-	// Create mailboxes table
-	mailboxSchema := `
-	CREATE TABLE IF NOT EXISTS mailboxes (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		username TEXT NOT NULL,
-		name TEXT NOT NULL,
-		hierarchy_separator TEXT DEFAULT '/',
-		created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-		UNIQUE(username, name)
-	);
-	`
-	if _, err = db.Exec(mailboxSchema); err != nil {
-		t.Fatalf("Failed to create mailboxes table: %v", err)
-	}
-
-	// Create subscriptions table
-	subscriptionSchema := `
-	CREATE TABLE IF NOT EXISTS subscriptions (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		username TEXT NOT NULL,
-		mailbox_name TEXT NOT NULL,
-		subscribed_at TEXT DEFAULT CURRENT_TIMESTAMP,
-		UNIQUE(username, mailbox_name)
-	);
-	`
-	if _, err = db.Exec(subscriptionSchema); err != nil {
-		t.Fatalf("Failed to create subscriptions table: %v", err)
-	}
-
-	// Create a test user table
-	testUserSchema := `
-	CREATE TABLE IF NOT EXISTS mails_testuser (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		subject TEXT,
-		sender TEXT,
-		recipient TEXT,
-		date_sent TEXT,
-		raw_message TEXT,
-		flags TEXT,
-		folder TEXT DEFAULT 'INBOX'
-	);
-	`
-	if _, err = db.Exec(testUserSchema); err != nil {
-		t.Fatalf("Failed to create test user table: %v", err)
-	}
-
-	imapServer := server.NewIMAPServer(db)
-	
 	// Generate test certificates for STARTTLS
 	certPath, keyPath, certCleanup := GenerateTestCertificates(t)
-	testInterface := server.NewTestInterface(imapServer)
 	testInterface.SetTLSCertificates(certPath, keyPath)
-	
+
 	cleanup := func() {
 		certCleanup()
-		db.Close()
+		database.Close()
+		// Temp dir cleanup is handled by t.TempDir()
 	}
 	return testInterface, cleanup
 }
@@ -189,81 +144,124 @@ func SetupTestServerSimple(t *testing.T) *server.TestInterface {
 }
 
 // TestServerWithDB creates a test server with a specific database
-func TestServerWithDB(db *sql.DB) *server.TestInterface {
-	imapServer := server.NewIMAPServer(db)
+func TestServerWithDB(database *sql.DB) *server.TestInterface {
+	imapServer := server.NewIMAPServer(database)
 	return server.NewTestInterface(imapServer)
 }
 
-// CreateTestDB creates an in-memory SQLite database for testing
+// CreateTestDB creates an in-memory SQLite database for testing with new schema
 func CreateTestDB(t *testing.T) *sql.DB {
-	database, err := sql.Open("sqlite3", ":memory:")
+	// Create a temporary database file
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	// Initialize database with new normalized schema
+	database, err := db.InitDB(dbPath)
 	if err != nil {
-		t.Fatalf("Failed to create test database: %v", err)
-	}
-
-	// Create user_metadata table
-	metadataSchema := `
-	CREATE TABLE IF NOT EXISTS user_metadata (
-		username TEXT PRIMARY KEY,
-		created_at TEXT DEFAULT CURRENT_TIMESTAMP
-	);
-	`
-	if _, err = database.Exec(metadataSchema); err != nil {
-		t.Fatalf("Failed to initialize test database metadata schema: %v", err)
-	}
-
-	// Create mailboxes table
-	mailboxSchema := `
-	CREATE TABLE IF NOT EXISTS mailboxes (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		username TEXT NOT NULL,
-		name TEXT NOT NULL,
-		hierarchy_separator TEXT DEFAULT '/',
-		created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-		UNIQUE(username, name)
-	);
-	`
-	if _, err = database.Exec(mailboxSchema); err != nil {
-		t.Fatalf("Failed to create mailboxes table: %v", err)
-	}
-
-	// Create subscriptions table
-	subscriptionSchema := `
-	CREATE TABLE IF NOT EXISTS subscriptions (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		username TEXT NOT NULL,
-		mailbox_name TEXT NOT NULL,
-		subscribed_at TEXT DEFAULT CURRENT_TIMESTAMP,
-		UNIQUE(username, mailbox_name)
-	);
-	`
-	if _, err = database.Exec(subscriptionSchema); err != nil {
-		t.Fatalf("Failed to create subscriptions table: %v", err)
+		t.Fatalf("Failed to initialize test database: %v", err)
 	}
 
 	return database
 }
 
-// CreateTestUserTable creates a table for a test user
-func CreateTestUserTable(t *testing.T, database *sql.DB, username string) {
-	err := db.CreateUserTable(database, username)
-	if err != nil {
-		t.Fatalf("Failed to create user table for %s: %v", username, err)
+// CreateTestUser creates a test user with default mailboxes in the new schema
+func CreateTestUser(t *testing.T, database *sql.DB, username string) (userID int64) {
+	domain := "localhost"
+	if strings.Contains(username, "@") {
+		parts := strings.Split(username, "@")
+		username = parts[0]
+		domain = parts[1]
 	}
+
+	// Create domain
+	domainID, err := db.GetOrCreateDomain(database, domain)
+	if err != nil {
+		t.Fatalf("Failed to create domain: %v", err)
+	}
+
+	// Create user
+	userID, err = db.GetOrCreateUser(database, username, domainID)
+	if err != nil {
+		t.Fatalf("Failed to create user %s: %v", username, err)
+	}
+
+	// Create default mailboxes
+	defaultMailboxes := []struct {
+		name       string
+		specialUse string
+	}{
+		{"INBOX", "\\Inbox"},
+		{"Sent", "\\Sent"},
+		{"Drafts", "\\Drafts"},
+		{"Trash", "\\Trash"},
+	}
+
+	for _, mbx := range defaultMailboxes {
+		_, err := db.CreateMailbox(database, userID, mbx.name, mbx.specialUse)
+		if err != nil && !strings.Contains(err.Error(), "already exists") {
+			t.Fatalf("Failed to create mailbox %s: %v", mbx.name, err)
+		}
+	}
+
+	return userID
 }
 
-// InsertTestMail inserts a test mail into a user's table
-func InsertTestMail(t *testing.T, database *sql.DB, username, subject, sender, recipient, folder string) {
-	tableName := db.GetUserTableName(username)
-	query := fmt.Sprintf(
-		"INSERT INTO %s (subject, sender, recipient, date_sent, raw_message, flags, folder) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		tableName,
-	)
-	rawMessage := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\nTest message body", sender, recipient, subject)
-	_, err := database.Exec(query, subject, sender, recipient, "01-Jan-2024 12:00:00 +0000", rawMessage, "", folder)
-	if err != nil {
-		t.Fatalf("Failed to insert test mail: %v", err)
+// CreateTestUserTable creates a user with mailboxes (compatibility function)
+func CreateTestUserTable(t *testing.T, database *sql.DB, username string) {
+	CreateTestUser(t, database, username)
+}
+
+// InsertTestMail inserts a test mail into a user's mailbox using new schema
+func InsertTestMail(t *testing.T, database *sql.DB, username, subject, sender, recipient, folder string) int64 {
+	// Get user
+	domain := "localhost"
+	if strings.Contains(username, "@") {
+		parts := strings.Split(username, "@")
+		username = parts[0]
+		domain = parts[1]
 	}
+
+	domainID, err := db.GetOrCreateDomain(database, domain)
+	if err != nil {
+		t.Fatalf("Failed to get domain: %v", err)
+	}
+
+	userID, err := db.GetOrCreateUser(database, username, domainID)
+	if err != nil {
+		t.Fatalf("Failed to get user: %v", err)
+	}
+
+	// Get or create mailbox
+	mailboxID, err := db.GetMailboxByName(database, userID, folder)
+	if err != nil {
+		mailboxID, err = db.CreateMailbox(database, userID, folder, "")
+		if err != nil {
+			t.Fatalf("Failed to create mailbox: %v", err)
+		}
+	}
+
+	// Create raw message
+	rawMessage := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\n\r\nTest message body",
+		sender, recipient, subject, time.Now().Format(time.RFC1123Z))
+
+	// Parse and store message
+	parsed, err := parser.ParseMIMEMessage(rawMessage)
+	if err != nil {
+		t.Fatalf("Failed to parse test message: %v", err)
+	}
+
+	messageID, err := parser.StoreMessage(database, parsed)
+	if err != nil {
+		t.Fatalf("Failed to store test message: %v", err)
+	}
+
+	// Add message to mailbox
+	err = db.AddMessageToMailbox(database, messageID, mailboxID, "", time.Now())
+	if err != nil {
+		t.Fatalf("Failed to add message to mailbox: %v", err)
+	}
+
+	return messageID
 }
 
 // TestConn is a bidirectional pipe connection for testing
@@ -283,7 +281,7 @@ func NewTestConn() *TestConn {
 	// Create two pipes for bidirectional communication
 	serverRead, clientWrite := io.Pipe()
 	clientRead, serverWrite := io.Pipe()
-	
+
 	return &TestConn{
 		reader:      serverRead,
 		writer:      serverWrite,
@@ -321,11 +319,11 @@ func (t *TestConn) Read(b []byte) (int, error) {
 	t.mu.Lock()
 	timeout := t.readTimeout
 	t.mu.Unlock()
-	
+
 	if timeout {
 		return 0, io.EOF
 	}
-	
+
 	return t.reader.Read(b)
 }
 
@@ -338,11 +336,11 @@ func (t *TestConn) Write(b []byte) (int, error) {
 func (t *TestConn) Close() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	
+
 	if t.closed {
 		return nil
 	}
-	
+
 	t.closed = true
 	t.reader.Close()
 	t.writer.Close()
@@ -485,10 +483,99 @@ func CreateTLSConfig(t *testing.T) (*tls.Config, func()) {
 	return tlsConfig, cleanup
 }
 
-// CreateMailbox creates a mailbox for a user in the test database
+// CreateMailbox creates a mailbox for a user in the test database (new schema)
 func CreateMailbox(t *testing.T, database *sql.DB, username, mailboxName string) {
-	err := db.CreateMailbox(database, username, mailboxName)
+	domain := "localhost"
+	if strings.Contains(username, "@") {
+		parts := strings.Split(username, "@")
+		username = parts[0]
+		domain = parts[1]
+	}
+
+	domainID, err := db.GetOrCreateDomain(database, domain)
 	if err != nil {
+		t.Fatalf("Failed to get domain: %v", err)
+	}
+
+	userID, err := db.GetOrCreateUser(database, username, domainID)
+	if err != nil {
+		t.Fatalf("Failed to get user: %v", err)
+	}
+
+	_, err = db.CreateMailbox(database, userID, mailboxName, "")
+	if err != nil && !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("Failed to create mailbox %s for user %s: %v", mailboxName, username, err)
+	}
+}
+
+// SubscribeToMailbox subscribes a user to a mailbox (compatibility wrapper for new schema)
+func SubscribeToMailbox(t *testing.T, database *sql.DB, username, mailboxName string) {
+	domain := "localhost"
+	if strings.Contains(username, "@") {
+		parts := strings.Split(username, "@")
+		username = parts[0]
+		domain = parts[1]
+	}
+
+	domainID, err := db.GetOrCreateDomain(database, domain)
+	if err != nil {
+		t.Fatalf("Failed to get domain: %v", err)
+	}
+
+	userID, err := db.GetOrCreateUser(database, username, domainID)
+	if err != nil {
+		t.Fatalf("Failed to get user: %v", err)
+	}
+
+	err = db.SubscribeToMailbox(database, userID, mailboxName)
+	if err != nil {
+		t.Fatalf("Failed to subscribe to mailbox %s for user %s: %v", mailboxName, username, err)
+	}
+}
+
+// GetUserID returns the user ID for a username (helper for tests)
+func GetUserID(t *testing.T, database *sql.DB, username string) int64 {
+	domain := "localhost"
+	if strings.Contains(username, "@") {
+		parts := strings.Split(username, "@")
+		username = parts[0]
+		domain = parts[1]
+	}
+
+	domainID, err := db.GetOrCreateDomain(database, domain)
+	if err != nil {
+		t.Fatalf("Failed to get domain: %v", err)
+	}
+
+	userID, err := db.GetOrCreateUser(database, username, domainID)
+	if err != nil {
+		t.Fatalf("Failed to get user: %v", err)
+	}
+
+	return userID
+}
+
+// SetupAuthenticatedState creates an authenticated state with proper user setup in database
+func SetupAuthenticatedState(t *testing.T, server *server.TestInterface, username string) *models.ClientState {
+	database := server.GetDB().(*sql.DB)
+	userID := CreateTestUser(t, database, username)
+
+	domain := "localhost"
+	if strings.Contains(username, "@") {
+		parts := strings.Split(username, "@")
+		username = parts[0]
+		domain = parts[1]
+	}
+
+	domainID, err := db.GetOrCreateDomain(database, domain)
+	if err != nil {
+		t.Fatalf("Failed to get domain: %v", err)
+	}
+
+	return &models.ClientState{
+		Authenticated: true,
+		Username:      username,
+		UserID:        userID,
+		DomainID:      domainID,
 	}
 }

@@ -1,4 +1,7 @@
-package server
+//go:build test
+// +build test
+
+package server_test
 
 import (
 	"fmt"
@@ -16,10 +19,7 @@ func TestSelectCommand_BasicFlow(t *testing.T) {
 	defer cleanup()
 
 	conn := helpers.NewMockTLSConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, s, "testuser")
 
 	// Insert test messages
 	database := helpers.CreateTestDB(t)
@@ -72,30 +72,22 @@ func TestSelectCommand_BasicFlow(t *testing.T) {
 func TestSelectCommand_WithUnseenMessages(t *testing.T) {
 	database := helpers.CreateTestDB(t)
 	defer database.Close()
-	helpers.CreateTestUserTable(t, database, "testuser")
+	helpers.CreateTestUser(t, database, "testuser")
 
-	// Insert test messages with different flags
-	tableName := db.GetUserTableName("testuser")
+	// Insert test messages using helpers
+	messageID1 := helpers.InsertTestMail(t, database, "testuser", "Seen Message", "sender@example.com", "recipient@example.com", "INBOX")
+	helpers.InsertTestMail(t, database, "testuser", "First Unseen", "sender@example.com", "recipient@example.com", "INBOX")
+	helpers.InsertTestMail(t, database, "testuser", "Second Unseen", "sender@example.com", "recipient@example.com", "INBOX")
 	
-	// Message 1: Seen
-	query := fmt.Sprintf(
-		"INSERT INTO %s (subject, sender, recipient, date_sent, raw_message, flags, folder) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		tableName,
-	)
-	database.Exec(query, "Seen Message", "sender@example.com", "recipient@example.com", "01-Jan-2024 12:00:00 +0000", "From: sender@example.com\r\nSubject: Seen Message\r\n\r\nBody", "\\Seen", "INBOX")
-	
-	// Message 2: Unseen (first unseen)
-	database.Exec(query, "First Unseen", "sender@example.com", "recipient@example.com", "01-Jan-2024 12:01:00 +0000", "From: sender@example.com\r\nSubject: First Unseen\r\n\r\nBody", "", "INBOX")
-	
-	// Message 3: Unseen
-	database.Exec(query, "Second Unseen", "sender@example.com", "recipient@example.com", "01-Jan-2024 12:02:00 +0000", "From: sender@example.com\r\nSubject: Second Unseen\r\n\r\nBody", "", "INBOX")
+	// Set first message as seen
+	_, err := database.Exec("UPDATE message_mailbox SET flags = ? WHERE message_id = ?", "\\Seen", messageID1)
+	if err != nil {
+		t.Fatalf("Failed to set message as seen: %v", err)
+	}
 
 	s := helpers.TestServerWithDB(database)
 	conn := helpers.NewMockTLSConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, s, "testuser")
 
 	s.HandleSelect(conn, "A002", []string{"A002", "SELECT", "INBOX"}, state)
 
@@ -120,10 +112,7 @@ func TestSelectCommand_EmptyMailbox(t *testing.T) {
 
 	s := helpers.TestServerWithDB(database)
 	conn := helpers.NewMockTLSConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, s, "testuser")
 
 	s.HandleSelect(conn, "A003", []string{"A003", "SELECT", "INBOX"}, state)
 
@@ -182,10 +171,7 @@ func TestSelectCommand_MissingMailboxName(t *testing.T) {
 	defer cleanup()
 
 	conn := helpers.NewMockTLSConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, s, "testuser")
 
 	s.HandleSelect(conn, "A005", []string{"A005", "SELECT"}, state)
 
@@ -201,22 +187,18 @@ func TestSelectCommand_MissingMailboxName(t *testing.T) {
 func TestSelectCommand_QuotedMailboxName(t *testing.T) {
 	database := helpers.CreateTestDB(t)
 	defer database.Close()
-	helpers.CreateTestUserTable(t, database, "testuser")
+	userID := helpers.CreateTestUser(t, database, "testuser")
 
-	// Insert a message into a folder with spaces
-	tableName := db.GetUserTableName("testuser")
-	query := fmt.Sprintf(
-		"INSERT INTO %s (subject, sender, recipient, date_sent, raw_message, flags, folder) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		tableName,
-	)
-	database.Exec(query, "Test", "sender@example.com", "recipient@example.com", "01-Jan-2024 12:00:00 +0000", "From: sender@example.com\r\nSubject: Test\r\n\r\nBody", "", "Sent Items")
+	// Create a mailbox with spaces and insert a message
+	_, err := db.CreateMailbox(database, userID, "Sent Items", "")
+	if err != nil {
+		t.Fatalf("Failed to create mailbox: %v", err)
+	}
+	helpers.InsertTestMail(t, database, "testuser", "Test", "sender@example.com", "recipient@example.com", "Sent Items")
 
 	s := helpers.TestServerWithDB(database)
 	conn := helpers.NewMockTLSConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, s, "testuser")
 
 	s.HandleSelect(conn, "A006", []string{"A006", "SELECT", "\"Sent Items\""}, state)
 
@@ -242,24 +224,16 @@ func TestSelectCommand_QuotedMailboxName(t *testing.T) {
 func TestSelectCommand_SwitchingMailboxes(t *testing.T) {
 	database := helpers.CreateTestDB(t)
 	defer database.Close()
-	helpers.CreateTestUserTable(t, database, "testuser")
+	helpers.CreateTestUser(t, database, "testuser")
 
-	// Insert messages into different folders
-	tableName := db.GetUserTableName("testuser")
-	query := fmt.Sprintf(
-		"INSERT INTO %s (subject, sender, recipient, date_sent, raw_message, flags, folder) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		tableName,
-	)
-	database.Exec(query, "Inbox Msg", "sender@example.com", "recipient@example.com", "01-Jan-2024 12:00:00 +0000", "From: sender@example.com\r\nSubject: Inbox Msg\r\n\r\nBody", "", "INBOX")
-	database.Exec(query, "Draft Msg 1", "sender@example.com", "recipient@example.com", "01-Jan-2024 12:01:00 +0000", "From: sender@example.com\r\nSubject: Draft Msg 1\r\n\r\nBody", "", "Drafts")
-	database.Exec(query, "Draft Msg 2", "sender@example.com", "recipient@example.com", "01-Jan-2024 12:02:00 +0000", "From: sender@example.com\r\nSubject: Draft Msg 2\r\n\r\nBody", "", "Drafts")
+	// Insert messages into different folders using helpers
+	helpers.InsertTestMail(t, database, "testuser", "Inbox Msg", "sender@example.com", "recipient@example.com", "INBOX")
+	helpers.InsertTestMail(t, database, "testuser", "Draft Msg 1", "sender@example.com", "recipient@example.com", "Drafts")
+	helpers.InsertTestMail(t, database, "testuser", "Draft Msg 2", "sender@example.com", "recipient@example.com", "Drafts")
 
 	s := helpers.TestServerWithDB(database)
 	conn := helpers.NewMockTLSConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, s, "testuser")
 
 	// First, select INBOX
 	s.HandleSelect(conn, "A007", []string{"A007", "SELECT", "INBOX"}, state)
@@ -292,21 +266,19 @@ func TestSelectCommand_StateTracking(t *testing.T) {
 	helpers.CreateTestUserTable(t, database, "testuser")
 
 	// Insert messages with different flags
-	tableName := db.GetUserTableName("testuser")
-	query := fmt.Sprintf(
-		"INSERT INTO %s (subject, sender, recipient, date_sent, raw_message, flags, folder) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		tableName,
-	)
-	database.Exec(query, "Seen Msg", "sender@example.com", "recipient@example.com", "01-Jan-2024 12:00:00 +0000", "From: sender@example.com\r\nSubject: Seen Msg\r\n\r\nBody", "\\Seen", "INBOX")
-	database.Exec(query, "Unseen Msg 1", "sender@example.com", "recipient@example.com", "01-Jan-2024 12:01:00 +0000", "From: sender@example.com\r\nSubject: Unseen Msg 1\r\n\r\nBody", "", "INBOX")
-	database.Exec(query, "Unseen Msg 2", "sender@example.com", "recipient@example.com", "01-Jan-2024 12:02:00 +0000", "From: sender@example.com\r\nSubject: Unseen Msg 2\r\n\r\nBody", "", "INBOX")
+	messageID1 := helpers.InsertTestMail(t, database, "testuser", "Seen Msg", "sender@example.com", "recipient@example.com", "INBOX")
+	helpers.InsertTestMail(t, database, "testuser", "Unseen Msg 1", "sender@example.com", "recipient@example.com", "INBOX")
+	helpers.InsertTestMail(t, database, "testuser", "Unseen Msg 2", "sender@example.com", "recipient@example.com", "INBOX")
+	
+	// Set first message as seen
+	_, err := database.Exec("UPDATE message_mailbox SET flags = ? WHERE message_id = ?", "\\Seen", messageID1)
+	if err != nil {
+		t.Fatalf("Failed to set message as seen: %v", err)
+	}
 
 	s := helpers.TestServerWithDB(database)
 	conn := helpers.NewMockTLSConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, s, "testuser")
 
 	s.HandleSelect(conn, "A009", []string{"A009", "SELECT", "INBOX"}, state)
 
@@ -323,24 +295,16 @@ func TestSelectCommand_StateTracking(t *testing.T) {
 func TestSelectCommand_UIDNext(t *testing.T) {
 	database := helpers.CreateTestDB(t)
 	defer database.Close()
-	helpers.CreateTestUserTable(t, database, "testuser")
+	helpers.CreateTestUser(t, database, "testuser")
 
-	// Insert messages to establish UIDs
-	tableName := db.GetUserTableName("testuser")
-	query := fmt.Sprintf(
-		"INSERT INTO %s (subject, sender, recipient, date_sent, raw_message, flags, folder) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		tableName,
-	)
-	database.Exec(query, "Msg 1", "sender@example.com", "recipient@example.com", "01-Jan-2024 12:00:00 +0000", "From: sender@example.com\r\nSubject: Msg 1\r\n\r\nBody", "", "INBOX")
-	database.Exec(query, "Msg 2", "sender@example.com", "recipient@example.com", "01-Jan-2024 12:01:00 +0000", "From: sender@example.com\r\nSubject: Msg 2\r\n\r\nBody", "", "INBOX")
-	database.Exec(query, "Msg 3", "sender@example.com", "recipient@example.com", "01-Jan-2024 12:02:00 +0000", "From: sender@example.com\r\nSubject: Msg 3\r\n\r\nBody", "", "INBOX")
+	// Insert messages to establish UIDs using helpers
+	helpers.InsertTestMail(t, database, "testuser", "Msg 1", "sender@example.com", "recipient@example.com", "INBOX")
+	helpers.InsertTestMail(t, database, "testuser", "Msg 2", "sender@example.com", "recipient@example.com", "INBOX")
+	helpers.InsertTestMail(t, database, "testuser", "Msg 3", "sender@example.com", "recipient@example.com", "INBOX")
 
 	s := helpers.TestServerWithDB(database)
 	conn := helpers.NewMockTLSConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, s, "testuser")
 
 	s.HandleSelect(conn, "A010", []string{"A010", "SELECT", "INBOX"}, state)
 	response := conn.GetWrittenData()
@@ -360,10 +324,7 @@ func TestExamineCommand_ReadOnly(t *testing.T) {
 
 	s := helpers.TestServerWithDB(database)
 	conn := helpers.NewMockTLSConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, s, "testuser")
 
 	// EXAMINE should use same handler but return READ-ONLY
 	s.HandleExamine(conn, "A011", []string{"A011", "EXAMINE", "INBOX"}, state)
@@ -391,31 +352,28 @@ func TestSelectCommand_RFC3501_Example(t *testing.T) {
 
 	// Create a scenario similar to RFC 3501 example:
 	// 172 messages total, message 12 is first unseen, 1 recent
-	tableName := db.GetUserTableName("testuser")
-	query := fmt.Sprintf(
-		"INSERT INTO %s (subject, sender, recipient, date_sent, raw_message, flags, folder) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		tableName,
-	)
 
 	// Insert 11 seen messages
 	for i := 1; i <= 11; i++ {
-		database.Exec(query, fmt.Sprintf("Msg %d", i), "sender@example.com", "recipient@example.com", "01-Jan-2024 12:00:00 +0000", fmt.Sprintf("From: sender@example.com\r\nSubject: Msg %d\r\n\r\nBody", i), "\\Seen", "INBOX")
+		messageID := helpers.InsertTestMail(t, database, "testuser", fmt.Sprintf("Msg %d", i), "sender@example.com", "recipient@example.com", "INBOX")
+		// Set as seen
+		_, err := database.Exec("UPDATE message_mailbox SET flags = ? WHERE message_id = ?", "\\Seen", messageID)
+		if err != nil {
+			t.Fatalf("Failed to set message %d as seen: %v", i, err)
+		}
 	}
 
 	// Insert message 12 - first unseen
-	database.Exec(query, "Msg 12", "sender@example.com", "recipient@example.com", "01-Jan-2024 12:00:00 +0000", "From: sender@example.com\r\nSubject: Msg 12\r\n\r\nBody", "", "INBOX")
+	helpers.InsertTestMail(t, database, "testuser", "Msg 12", "sender@example.com", "recipient@example.com", "INBOX")
 
 	// Insert remaining unseen messages
 	for i := 13; i <= 20; i++ {
-		database.Exec(query, fmt.Sprintf("Msg %d", i), "sender@example.com", "recipient@example.com", "01-Jan-2024 12:00:00 +0000", fmt.Sprintf("From: sender@example.com\r\nSubject: Msg %d\r\n\r\nBody", i), "", "INBOX")
+		helpers.InsertTestMail(t, database, "testuser", fmt.Sprintf("Msg %d", i), "sender@example.com", "recipient@example.com", "INBOX")
 	}
 
 	s := helpers.TestServerWithDB(database)
 	conn := helpers.NewMockTLSConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, s, "testuser")
 
 	s.HandleSelect(conn, "A142", []string{"A142", "SELECT", "INBOX"}, state)
 	response := conn.GetWrittenData()
@@ -451,20 +409,22 @@ func TestSelectCommand_AllMessagesSeen(t *testing.T) {
 	helpers.CreateTestUserTable(t, database, "testuser")
 
 	// Insert only seen messages
-	tableName := db.GetUserTableName("testuser")
-	query := fmt.Sprintf(
-		"INSERT INTO %s (subject, sender, recipient, date_sent, raw_message, flags, folder) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		tableName,
-	)
-	database.Exec(query, "Seen 1", "sender@example.com", "recipient@example.com", "01-Jan-2024 12:00:00 +0000", "From: sender@example.com\r\nSubject: Seen 1\r\n\r\nBody", "\\Seen", "INBOX")
-	database.Exec(query, "Seen 2", "sender@example.com", "recipient@example.com", "01-Jan-2024 12:01:00 +0000", "From: sender@example.com\r\nSubject: Seen 2\r\n\r\nBody", "\\Seen", "INBOX")
+	messageID1 := helpers.InsertTestMail(t, database, "testuser", "Seen 1", "sender@example.com", "recipient@example.com", "INBOX")
+	messageID2 := helpers.InsertTestMail(t, database, "testuser", "Seen 2", "sender@example.com", "recipient@example.com", "INBOX")
+	
+	// Set both messages as seen
+	_, err := database.Exec("UPDATE message_mailbox SET flags = ? WHERE message_id = ?", "\\Seen", messageID1)
+	if err != nil {
+		t.Fatalf("Failed to set message 1 as seen: %v", err)
+	}
+	_, err = database.Exec("UPDATE message_mailbox SET flags = ? WHERE message_id = ?", "\\Seen", messageID2)
+	if err != nil {
+		t.Fatalf("Failed to set message 2 as seen: %v", err)
+	}
 
 	s := helpers.TestServerWithDB(database)
 	conn := helpers.NewMockTLSConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, s, "testuser")
 
 	s.HandleSelect(conn, "A012", []string{"A012", "SELECT", "INBOX"}, state)
 	response := conn.GetWrittenData()
@@ -489,34 +449,36 @@ func TestSelectCommand_AllMessagesSeen(t *testing.T) {
 func TestExamineCommand_RFC3501_Compliance(t *testing.T) {
 	database := helpers.CreateTestDB(t)
 	defer database.Close()
-	helpers.CreateTestUserTable(t, database, "testuser")
+	userID := helpers.CreateTestUser(t, database, "testuser")
+
+	// Create the blurdybloop mailbox
+	_, err := db.CreateMailbox(database, userID, "blurdybloop", "")
+	if err != nil {
+		t.Fatalf("Failed to create blurdybloop mailbox: %v", err)
+	}
 
 	// Create a mailbox with messages similar to RFC 3501 example
-	tableName := db.GetUserTableName("testuser")
-	query := fmt.Sprintf(
-		"INSERT INTO %s (subject, sender, recipient, date_sent, raw_message, flags, folder) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		tableName,
-	)
-
 	// Insert 7 seen messages
 	for i := 1; i <= 7; i++ {
-		database.Exec(query, fmt.Sprintf("Msg %d", i), "sender@example.com", "recipient@example.com", "01-Jan-2024 12:00:00 +0000", fmt.Sprintf("From: sender@example.com\r\nSubject: Msg %d\r\n\r\nBody", i), "\\Seen", "blurdybloop")
+		messageID := helpers.InsertTestMail(t, database, "testuser", fmt.Sprintf("Msg %d", i), "sender@example.com", "recipient@example.com", "blurdybloop")
+		// Set as seen
+		_, err := database.Exec("UPDATE message_mailbox SET flags = ? WHERE message_id = ?", "\\Seen", messageID)
+		if err != nil {
+			t.Fatalf("Failed to set message %d as seen: %v", i, err)
+		}
 	}
 
 	// Insert message 8 - first unseen
-	database.Exec(query, "Msg 8", "sender@example.com", "recipient@example.com", "01-Jan-2024 12:00:00 +0000", "From: sender@example.com\r\nSubject: Msg 8\r\n\r\nBody", "", "blurdybloop")
+	helpers.InsertTestMail(t, database, "testuser", "Msg 8", "sender@example.com", "recipient@example.com", "blurdybloop")
 
 	// Insert remaining unseen messages (9-17)
 	for i := 9; i <= 17; i++ {
-		database.Exec(query, fmt.Sprintf("Msg %d", i), "sender@example.com", "recipient@example.com", "01-Jan-2024 12:00:00 +0000", fmt.Sprintf("From: sender@example.com\r\nSubject: Msg %d\r\n\r\nBody", i), "", "blurdybloop")
+		helpers.InsertTestMail(t, database, "testuser", fmt.Sprintf("Msg %d", i), "sender@example.com", "recipient@example.com", "blurdybloop")
 	}
 
 	s := helpers.TestServerWithDB(database)
 	conn := helpers.NewMockTLSConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, s, "testuser")
 
 	s.HandleExamine(conn, "A932", []string{"A932", "EXAMINE", "blurdybloop"}, state)
 	response := conn.GetWrittenData()
@@ -567,10 +529,7 @@ func TestExamineCommand_EmptyPermanentFlags(t *testing.T) {
 
 	s := helpers.TestServerWithDB(database)
 	conn := helpers.NewMockTLSConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, s, "testuser")
 
 	s.HandleExamine(conn, "A100", []string{"A100", "EXAMINE", "INBOX"}, state)
 	response := conn.GetWrittenData()
@@ -590,17 +549,14 @@ func TestExamineCommand_EmptyPermanentFlags(t *testing.T) {
 func TestSelectVsExamine_PermanentFlags(t *testing.T) {
 	database := helpers.CreateTestDB(t)
 	defer database.Close()
-	helpers.CreateTestUserTable(t, database, "testuser")
+	userID := helpers.CreateTestUser(t, database, "testuser")
 	helpers.InsertTestMail(t, database, "testuser", "Test Message", "sender@example.com", "recipient@example.com", "INBOX")
 
 	s := helpers.TestServerWithDB(database)
 
 	// Test SELECT
 	connSelect := helpers.NewMockTLSConn()
-	stateSelect := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	stateSelect := helpers.SetupAuthenticatedState(t, s, "testuser")
 
 	s.HandleSelect(connSelect, "A101", []string{"A101", "SELECT", "INBOX"}, stateSelect)
 	selectResponse := connSelect.GetWrittenData()
@@ -620,6 +576,7 @@ func TestSelectVsExamine_PermanentFlags(t *testing.T) {
 	stateExamine := &models.ClientState{
 		Authenticated: true,
 		Username:      "testuser",
+		UserID:        userID,
 	}
 
 	s.HandleExamine(connExamine, "A102", []string{"A102", "EXAMINE", "INBOX"}, stateExamine)
@@ -661,10 +618,7 @@ func TestExamineCommand_MissingMailboxName(t *testing.T) {
 	defer cleanup()
 
 	conn := helpers.NewMockTLSConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, s, "testuser")
 
 	s.HandleExamine(conn, "A104", []string{"A104", "EXAMINE"}, state)
 	response := conn.GetWrittenData()
@@ -684,10 +638,7 @@ func TestExamineCommand_ResponseOrder(t *testing.T) {
 
 	s := helpers.TestServerWithDB(database)
 	conn := helpers.NewMockTLSConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, s, "testuser")
 
 	s.HandleExamine(conn, "A105", []string{"A105", "EXAMINE", "INBOX"}, state)
 	response := conn.GetWrittenData()

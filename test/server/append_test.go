@@ -4,6 +4,7 @@
 package server
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 	"testing"
@@ -14,15 +15,9 @@ import (
 
 // TestAppendCommand_Basic tests basic APPEND functionality
 func TestAppendCommand_Basic(t *testing.T) {
-	db := helpers.CreateTestDB(t)
-	helpers.CreateTestUserTable(t, db, "testuser")
-	server := helpers.TestServerWithDB(db)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Simulate APPEND command with a simple message
 	message := "From: sender@example.com\r\nTo: recipient@example.com\r\nSubject: Test Message\r\n\r\nThis is a test message body.\r\n"
@@ -55,15 +50,9 @@ func TestAppendCommand_Basic(t *testing.T) {
 
 // TestAppendCommand_WithFlags tests APPEND with flags
 func TestAppendCommand_WithFlags(t *testing.T) {
-	db := helpers.CreateTestDB(t)
-	helpers.CreateTestUserTable(t, db, "testuser")
-	server := helpers.TestServerWithDB(db)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	message := "From: sender@example.com\r\nTo: recipient@example.com\r\nSubject: Test\r\n\r\nBody\r\n"
 	appendCmd := fmt.Sprintf("A002 APPEND Sent (\\Seen) {%d}", len(message))
@@ -111,10 +100,7 @@ func TestAppendCommand_InvalidFolder(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
 
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	message := "Test message"
 	appendCmd := fmt.Sprintf("A004 APPEND NonExistent {%d}", len(message))
@@ -135,15 +121,9 @@ func TestAppendCommand_InvalidFolder(t *testing.T) {
 
 // TestAppendCommand_ToINBOX tests APPEND to INBOX folder
 func TestAppendCommand_ToINBOX(t *testing.T) {
-	db := helpers.CreateTestDB(t)
-	helpers.CreateTestUserTable(t, db, "testuser")
-	server := helpers.TestServerWithDB(db)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	message := "From: sender@example.com\r\nTo: recipient@example.com\r\nSubject: INBOX Test\r\n\r\nINBOX test message.\r\n"
 	appendCmd := fmt.Sprintf("A005 APPEND INBOX {%d}", len(message))
@@ -162,15 +142,9 @@ func TestAppendCommand_ToINBOX(t *testing.T) {
 
 // TestAppendCommand_ToDrafts tests APPEND to Drafts folder
 func TestAppendCommand_ToDrafts(t *testing.T) {
-	db := helpers.CreateTestDB(t)
-	helpers.CreateTestUserTable(t, db, "testuser")
-	server := helpers.TestServerWithDB(db)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	message := "From: sender@example.com\r\nSubject: Draft\r\n\r\nDraft message.\r\n"
 	appendCmd := fmt.Sprintf("A006 APPEND Drafts (\\Draft) {%d}", len(message))
@@ -192,10 +166,7 @@ func TestAppendCommand_MissingSize(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
 
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	appendCmd := "A007 APPEND Sent"
 	parts := strings.Fields(appendCmd)
@@ -211,18 +182,13 @@ func TestAppendCommand_MissingSize(t *testing.T) {
 
 // TestAppendCommand_RFC3501Example tests the exact example from RFC 3501
 func TestAppendCommand_RFC3501Example(t *testing.T) {
-	db := helpers.CreateTestDB(t)
-	helpers.CreateTestUserTable(t, db, "testuser")
-	server := helpers.TestServerWithDB(db)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Create the saved-messages mailbox first (as per RFC example)
-	helpers.CreateMailbox(t, db, "testuser", "saved-messages")
+	database := server.GetDB().(*sql.DB)
+	helpers.CreateMailbox(t, database, "testuser", "saved-messages")
 
 	// RFC 3501 example message
 	message := "Date: Mon, 7 Feb 1994 21:52:25 -0800 (PST)\r\n" +
@@ -259,15 +225,9 @@ func TestAppendCommand_RFC3501Example(t *testing.T) {
 
 // TestAppendCommand_MultipleFlags tests APPEND with multiple flags
 func TestAppendCommand_MultipleFlags(t *testing.T) {
-	db := helpers.CreateTestDB(t)
-	helpers.CreateTestUserTable(t, db, "testuser")
-	server := helpers.TestServerWithDB(db)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	message := "From: test@example.com\r\nSubject: Test\r\n\r\nBody\r\n"
 	appendCmd := fmt.Sprintf("A008 APPEND INBOX (\\Seen \\Flagged) {%d}", len(message))
@@ -286,15 +246,9 @@ func TestAppendCommand_MultipleFlags(t *testing.T) {
 
 // TestAppendCommand_EmptyMessage tests APPEND with empty message
 func TestAppendCommand_EmptyMessage(t *testing.T) {
-	db := helpers.CreateTestDB(t)
-	helpers.CreateTestUserTable(t, db, "testuser")
-	server := helpers.TestServerWithDB(db)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	message := ""
 	appendCmd := fmt.Sprintf("A009 APPEND INBOX {%d}", len(message))
@@ -314,15 +268,9 @@ func TestAppendCommand_EmptyMessage(t *testing.T) {
 
 // TestAppendCommand_LargeMessage tests APPEND with a large message
 func TestAppendCommand_LargeMessage(t *testing.T) {
-	db := helpers.CreateTestDB(t)
-	helpers.CreateTestUserTable(t, db, "testuser")
-	server := helpers.TestServerWithDB(db)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Create a 1MB message
 	messageSize := 1024 * 1024
@@ -348,10 +296,7 @@ func TestAppendCommand_InvalidSize(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
 
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	appendCmd := "A011 APPEND INBOX {-1}"
 	parts := strings.Fields(appendCmd)
@@ -370,10 +315,7 @@ func TestAppendCommand_ExcessiveSize(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
 
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Try to append a message larger than 50MB limit
 	appendCmd := "A012 APPEND INBOX {52428801}" // 50MB + 1 byte
@@ -394,15 +336,9 @@ func TestAppendCommand_ExcessiveSize(t *testing.T) {
 
 // TestAppendCommand_QuotedMailboxName tests APPEND to a quoted mailbox name
 func TestAppendCommand_QuotedMailboxName(t *testing.T) {
-	db := helpers.CreateTestDB(t)
-	helpers.CreateTestUserTable(t, db, "testuser")
-	server := helpers.TestServerWithDB(db)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	message := "From: test@example.com\r\nSubject: Test\r\n\r\nBody\r\n"
 	appendCmd := fmt.Sprintf("A013 APPEND \"Sent\" {%d}", len(message))
@@ -421,15 +357,9 @@ func TestAppendCommand_QuotedMailboxName(t *testing.T) {
 
 // TestAppendCommand_WithoutFlags tests APPEND without optional flags
 func TestAppendCommand_WithoutFlags(t *testing.T) {
-	db := helpers.CreateTestDB(t)
-	helpers.CreateTestUserTable(t, db, "testuser")
-	server := helpers.TestServerWithDB(db)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	message := "From: test@example.com\r\nSubject: No Flags\r\n\r\nMessage without flags\r\n"
 	appendCmd := fmt.Sprintf("A014 APPEND INBOX {%d}", len(message))
@@ -451,10 +381,7 @@ func TestAppendCommand_MissingMailboxName(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
 
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	appendCmd := "A015 APPEND"
 	parts := strings.Fields(appendCmd)
@@ -474,15 +401,9 @@ func TestAppendCommand_MissingMailboxName(t *testing.T) {
 
 // TestAppendCommand_8BitCharacters tests APPEND with 8-bit characters
 func TestAppendCommand_8BitCharacters(t *testing.T) {
-	db := helpers.CreateTestDB(t)
-	helpers.CreateTestUserTable(t, db, "testuser")
-	server := helpers.TestServerWithDB(db)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Message with UTF-8 characters (8-bit)
 	message := "From: test@example.com\r\nSubject: Tëst Mëssägë\r\n\r\nBody with 8-bit: café, naïve, résumé\r\n"
@@ -506,15 +427,9 @@ func TestAppendCommand_AllDefaultMailboxes(t *testing.T) {
 
 	for _, mailbox := range defaultMailboxes {
 		t.Run(mailbox, func(t *testing.T) {
-			db := helpers.CreateTestDB(t)
-			helpers.CreateTestUserTable(t, db, "testuser")
-			server := helpers.TestServerWithDB(db)
+			server := helpers.SetupTestServerSimple(t)
 			conn := helpers.NewMockConn()
-
-			state := &models.ClientState{
-				Authenticated: true,
-				Username:      "testuser",
-			}
+			state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 			message := fmt.Sprintf("From: test@example.com\r\nSubject: Test to %s\r\n\r\nBody\r\n", mailbox)
 			appendCmd := fmt.Sprintf("A017 APPEND %s {%d}", mailbox, len(message))
@@ -535,15 +450,9 @@ func TestAppendCommand_AllDefaultMailboxes(t *testing.T) {
 
 // TestAppendCommand_ReturnsAppendUID tests that APPEND returns APPENDUID
 func TestAppendCommand_ReturnsAppendUID(t *testing.T) {
-	db := helpers.CreateTestDB(t)
-	helpers.CreateTestUserTable(t, db, "testuser")
-	server := helpers.TestServerWithDB(db)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	message := "From: test@example.com\r\nSubject: UID Test\r\n\r\nBody\r\n"
 	appendCmd := fmt.Sprintf("A018 APPEND INBOX {%d}", len(message))
@@ -566,15 +475,9 @@ func TestAppendCommand_ReturnsAppendUID(t *testing.T) {
 
 // TestAppendCommand_MessageParsing tests that message headers are parsed correctly
 func TestAppendCommand_MessageParsing(t *testing.T) {
-	db := helpers.CreateTestDB(t)
-	helpers.CreateTestUserTable(t, db, "testuser")
-	server := helpers.TestServerWithDB(db)
+	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Message with all important headers
 	message := "Date: Mon, 7 Feb 1994 21:52:25 -0800 (PST)\r\n" +

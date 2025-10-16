@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"go-imap/internal/db"
 	"go-imap/internal/models"
 	"go-imap/test/helpers"
 )
@@ -16,10 +15,7 @@ import (
 func TestLsubCommand_BasicUsage(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Subscribe to some mailboxes first
 	server.HandleSubscribe(conn, "S1", []string{"S1", "SUBSCRIBE", "INBOX"}, state)
@@ -70,10 +66,7 @@ func TestLsubCommand_NotAuthenticated(t *testing.T) {
 func TestLsubCommand_MissingArguments(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Test with only one argument
 	server.HandleLsub(conn, "A001", []string{"A001", "LSUB", `""`}, state)
@@ -88,10 +81,7 @@ func TestLsubCommand_MissingArguments(t *testing.T) {
 func TestLsubCommand_EmptyPattern(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// LSUB "" "" should return hierarchy delimiter
 	server.HandleLsub(conn, "A001", []string{"A001", "LSUB", `""`, `""`}, state)
@@ -111,10 +101,7 @@ func TestLsubCommand_EmptyPattern(t *testing.T) {
 func TestLsubCommand_PercentWildcard(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Subscribe to mailboxes at different hierarchy levels
 	server.HandleSubscribe(conn, "S1", []string{"S1", "SUBSCRIBE", "INBOX"}, state)
@@ -142,14 +129,11 @@ func TestLsubCommand_ImpliedParentWithNoselect(t *testing.T) {
 	testDB := helpers.CreateTestDB(t)
 	server := helpers.TestServerWithDB(testDB)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Subscribe to "Work/Projects" but NOT to "Work"
 	// This creates an implied parent "Work" that should be returned with \Noselect
-	db.SubscribeToMailbox(testDB, "testuser", "Work/Projects")
+	helpers.SubscribeToMailbox(t, testDB, "testuser", "Work/Projects")
 
 	// Test LSUB with % wildcard at root level
 	server.HandleLsub(conn, "A001", []string{"A001", "LSUB", `""`, "%"}, state)
@@ -176,14 +160,11 @@ func TestLsubCommand_HierarchyWithPercent(t *testing.T) {
 	testDB := helpers.CreateTestDB(t)
 	server := helpers.TestServerWithDB(testDB)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Subscribe to hierarchical mailboxes
-	db.SubscribeToMailbox(testDB, "testuser", "Work/Projects/2024")
-	db.SubscribeToMailbox(testDB, "testuser", "Work/Tasks")
+	helpers.SubscribeToMailbox(t, testDB, "testuser", "Work/Projects/2024")
+	helpers.SubscribeToMailbox(t, testDB, "testuser", "Work/Tasks")
 
 	// Test LSUB with "Work/%" pattern (should match Work's immediate children)
 	server.HandleLsub(conn, "A001", []string{"A001", "LSUB", `""`, "Work/%"}, state)
@@ -215,15 +196,12 @@ func TestLsubCommand_StarWildcard(t *testing.T) {
 	testDB := helpers.CreateTestDB(t)
 	server := helpers.TestServerWithDB(testDB)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Subscribe to hierarchical mailboxes
-	db.SubscribeToMailbox(testDB, "testuser", "Work")
-	db.SubscribeToMailbox(testDB, "testuser", "Work/Projects")
-	db.SubscribeToMailbox(testDB, "testuser", "Work/Projects/2024")
+	helpers.SubscribeToMailbox(t, testDB, "testuser", "Work")
+	helpers.SubscribeToMailbox(t, testDB, "testuser", "Work/Projects")
+	helpers.SubscribeToMailbox(t, testDB, "testuser", "Work/Projects/2024")
 
 	// Test LSUB with * wildcard (should match all levels)
 	server.HandleLsub(conn, "A001", []string{"A001", "LSUB", `""`, "*"}, state)
@@ -251,15 +229,12 @@ func TestLsubCommand_ReferenceAndPattern(t *testing.T) {
 	testDB := helpers.CreateTestDB(t)
 	server := helpers.TestServerWithDB(testDB)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Subscribe to hierarchical mailboxes
-	db.SubscribeToMailbox(testDB, "testuser", "Work/Projects")
-	db.SubscribeToMailbox(testDB, "testuser", "Work/Tasks")
-	db.SubscribeToMailbox(testDB, "testuser", "Personal/Projects")
+	helpers.SubscribeToMailbox(t, testDB, "testuser", "Work/Projects")
+	helpers.SubscribeToMailbox(t, testDB, "testuser", "Work/Tasks")
+	helpers.SubscribeToMailbox(t, testDB, "testuser", "Personal/Projects")
 
 	// Test LSUB with reference "Work/" and pattern "*"
 	server.HandleLsub(conn, "A001", []string{"A001", "LSUB", `"Work/"`, "*"}, state)
@@ -290,15 +265,12 @@ func TestLsubCommand_NonExistentMailboxSubscription(t *testing.T) {
 	testDB := helpers.CreateTestDB(t)
 	server := helpers.TestServerWithDB(testDB)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Subscribe to a mailbox that doesn't exist
 	// RFC 3501: "The server MUST NOT unilaterally remove an existing mailbox name
 	// from the subscription list even if a mailbox by that name no longer exists."
-	db.SubscribeToMailbox(testDB, "testuser", "DeletedMailbox")
+	helpers.SubscribeToMailbox(t, testDB, "testuser", "DeletedMailbox")
 
 	// Test LSUB
 	server.HandleLsub(conn, "A001", []string{"A001", "LSUB", `""`, "*"}, state)
@@ -320,15 +292,12 @@ func TestLsubCommand_SpecificPattern(t *testing.T) {
 	testDB := helpers.CreateTestDB(t)
 	server := helpers.TestServerWithDB(testDB)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Subscribe to multiple mailboxes
-	db.SubscribeToMailbox(testDB, "testuser", "INBOX")
-	db.SubscribeToMailbox(testDB, "testuser", "Sent")
-	db.SubscribeToMailbox(testDB, "testuser", "Drafts")
+	helpers.SubscribeToMailbox(t, testDB, "testuser", "INBOX")
+	helpers.SubscribeToMailbox(t, testDB, "testuser", "Sent")
+	helpers.SubscribeToMailbox(t, testDB, "testuser", "Drafts")
 
 	// Test LSUB with specific mailbox name (no wildcards)
 	server.HandleLsub(conn, "A001", []string{"A001", "LSUB", `""`, "Sent"}, state)
@@ -355,13 +324,10 @@ func TestLsubCommand_CaseInsensitiveINBOX(t *testing.T) {
 	testDB := helpers.CreateTestDB(t)
 	server := helpers.TestServerWithDB(testDB)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Subscribe to INBOX
-	db.SubscribeToMailbox(testDB, "testuser", "INBOX")
+	helpers.SubscribeToMailbox(t, testDB, "testuser", "INBOX")
 
 	// Test LSUB with lowercase "inbox"
 	server.HandleLsub(conn, "A001", []string{"A001", "LSUB", `""`, "inbox"}, state)
@@ -383,10 +349,7 @@ func TestLsubCommand_EmptySubscriptionList(t *testing.T) {
 	testDB := helpers.CreateTestDB(t)
 	server := helpers.TestServerWithDB(testDB)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "newuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "newuser")
 
 	// Don't subscribe to anything - but default mailboxes should auto-subscribe
 	server.HandleLsub(conn, "A001", []string{"A001", "LSUB", `""`, "*"}, state)

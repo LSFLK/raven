@@ -140,3 +140,8 @@ func (t *TestInterface) SendResponse(conn net.Conn, response string) {
 func HandleClientExported(server *TestInterface, conn net.Conn) {
 	handleClient(server.server, conn, &models.ClientState{})
 }
+
+// GetServer returns the underlying IMAPServer for compatibility
+func (t *TestInterface) GetServer() *IMAPServer {
+	return t.server
+}

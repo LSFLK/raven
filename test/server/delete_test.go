@@ -29,10 +29,7 @@ func TestDeleteCommand_Unauthenticated(t *testing.T) {
 func TestDeleteCommand_InvalidArguments(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Test DELETE command without mailbox name
 	server.HandleDelete(conn, "A001", []string{"A001", "DELETE"}, state)
@@ -47,10 +44,7 @@ func TestDeleteCommand_InvalidArguments(t *testing.T) {
 func TestDeleteCommand_DeleteINBOX(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Test deleting INBOX (should fail)
 	server.HandleDelete(conn, "A001", []string{"A001", "DELETE", "INBOX"}, state)
@@ -65,10 +59,7 @@ func TestDeleteCommand_DeleteINBOX(t *testing.T) {
 func TestDeleteCommand_DeleteINBOXCaseInsensitive(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Test deleting inbox (lowercase - should fail)
 	server.HandleDelete(conn, "A001", []string{"A001", "DELETE", "inbox"}, state)
@@ -83,10 +74,7 @@ func TestDeleteCommand_DeleteINBOXCaseInsensitive(t *testing.T) {
 func TestDeleteCommand_EmptyMailboxName(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Test deleting mailbox with empty name
 	server.HandleDelete(conn, "A001", []string{"A001", "DELETE", "\"\""}, state)
@@ -101,10 +89,7 @@ func TestDeleteCommand_EmptyMailboxName(t *testing.T) {
 func TestDeleteCommand_NonExistentMailbox(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Test deleting a non-existent mailbox
 	server.HandleDelete(conn, "A001", []string{"A001", "DELETE", "NonExistent"}, state)
@@ -119,10 +104,7 @@ func TestDeleteCommand_NonExistentMailbox(t *testing.T) {
 func TestDeleteCommand_ValidMailbox(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// First create a mailbox
 	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "TestDelete"}, state)
@@ -146,10 +128,7 @@ func TestDeleteCommand_ValidMailbox(t *testing.T) {
 func TestDeleteCommand_QuotedMailboxName(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Create a mailbox with quoted name
 	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "\"My Projects\""}, state)
@@ -173,10 +152,7 @@ func TestDeleteCommand_QuotedMailboxName(t *testing.T) {
 func TestDeleteCommand_HierarchicalMailboxWithInferior(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Create parent and child mailboxes
 	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "Projects"}, state)
@@ -196,10 +172,7 @@ func TestDeleteCommand_HierarchicalMailboxWithInferior(t *testing.T) {
 func TestDeleteCommand_HierarchicalMailboxChild(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Create parent and child mailboxes
 	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "Projects"}, state)
@@ -219,10 +192,7 @@ func TestDeleteCommand_HierarchicalMailboxChild(t *testing.T) {
 func TestDeleteCommand_RFCExample(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Create mailboxes as per RFC example
 	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "blurdybloop"}, state)
@@ -276,10 +246,7 @@ func TestDeleteCommand_MultipleUsers(t *testing.T) {
 	conn := helpers.NewMockConn()
 
 	// User 1 creates and deletes a mailbox
-	state1 := &models.ClientState{
-		Authenticated: true,
-		Username:      "user1",
-	}
+	state1 := helpers.SetupAuthenticatedState(t, server, "user1")
 
 	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "UserSpecific"}, state1)
 	conn.ClearWriteBuffer()
@@ -293,10 +260,7 @@ func TestDeleteCommand_MultipleUsers(t *testing.T) {
 	conn.ClearWriteBuffer()
 
 	// User 2 should not be affected - trying to delete same named mailbox should fail
-	state2 := &models.ClientState{
-		Authenticated: true,
-		Username:      "user2",
-	}
+	state2 := helpers.SetupAuthenticatedState(t, server, "user2")
 
 	server.HandleDelete(conn, "A003", []string{"A003", "DELETE", "UserSpecific"}, state2)
 	response2 := conn.GetWrittenData()
@@ -309,10 +273,7 @@ func TestDeleteCommand_MultipleUsers(t *testing.T) {
 func TestDeleteCommand_ListVerification(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Create a mailbox
 	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "ToBeDeleted"}, state)
@@ -350,10 +311,7 @@ func TestDeleteCommand_ListVerification(t *testing.T) {
 func TestDeleteCommand_DefaultMailboxes(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Default mailboxes that should not be deletable (except INBOX which has special handling)
 	defaultMailboxes := []string{"Sent", "Drafts", "Trash"}
@@ -363,11 +321,9 @@ func TestDeleteCommand_DefaultMailboxes(t *testing.T) {
 		server.HandleDelete(conn, "A001", []string{"A001", "DELETE", mailbox}, state)
 		response := conn.GetWrittenData()
 		
-		// These are system mailboxes, they should exist and should fail to delete
-		// However, since our current implementation treats them as virtual defaults,
-		// they may not exist in the mailboxes table, so we expect "does not exist"
-		if !strings.Contains(response, "A001 NO Mailbox does not exist") {
-			t.Errorf("Expected mailbox does not exist for default mailbox %s, got: %s", mailbox, response)
+		// These are system mailboxes, they should be protected from deletion
+		if !strings.Contains(response, "A001 NO") {
+			t.Errorf("Expected NO response (protected default mailbox) for %s, got: %s", mailbox, response)
 		}
 	}
 }

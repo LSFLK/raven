@@ -29,10 +29,7 @@ func TestRenameCommand_Unauthenticated(t *testing.T) {
 func TestRenameCommand_InvalidArguments(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Test RENAME command without enough arguments
 	server.HandleRename(conn, "A001", []string{"A001", "RENAME", "oldbox"}, state)
@@ -47,10 +44,7 @@ func TestRenameCommand_InvalidArguments(t *testing.T) {
 func TestRenameCommand_EmptyMailboxNames(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Test RENAME command with empty old name
 	server.HandleRename(conn, "A001", []string{"A001", "RENAME", "\"\"", "newbox"}, state)
@@ -74,10 +68,7 @@ func TestRenameCommand_EmptyMailboxNames(t *testing.T) {
 func TestRenameCommand_NonExistentMailbox(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Test renaming a non-existent mailbox
 	server.HandleRename(conn, "A001", []string{"A001", "RENAME", "NonExistent", "NewName"}, state)
@@ -92,10 +83,7 @@ func TestRenameCommand_NonExistentMailbox(t *testing.T) {
 func TestRenameCommand_RenameToExistingMailbox(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Create source and destination mailboxes
 	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "SourceBox"}, state)
@@ -117,10 +105,7 @@ func TestRenameCommand_RenameToExistingMailbox(t *testing.T) {
 func TestRenameCommand_RenameToINBOX(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Create a source mailbox
 	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "SourceBox"}, state)
@@ -141,10 +126,7 @@ func TestRenameCommand_RenameToINBOX(t *testing.T) {
 func TestRenameCommand_RenameINBOX(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Rename INBOX to a new name
 	server.HandleRename(conn, "A001", []string{"A001", "RENAME", "INBOX", "old-mail"}, state)
@@ -173,10 +155,7 @@ func TestRenameCommand_RenameINBOX(t *testing.T) {
 func TestRenameCommand_ValidRename(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Create a source mailbox
 	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "OldName"}, state)
@@ -210,10 +189,7 @@ func TestRenameCommand_ValidRename(t *testing.T) {
 func TestRenameCommand_HierarchicalRename(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Create hierarchical mailboxes
 	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "foo"}, state)
@@ -261,10 +237,7 @@ func TestRenameCommand_HierarchicalRename(t *testing.T) {
 func TestRenameCommand_CreateSuperiorHierarchy(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Create a simple mailbox
 	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "simple"}, state)
@@ -309,10 +282,7 @@ func TestRenameCommand_CreateSuperiorHierarchy(t *testing.T) {
 func TestRenameCommand_QuotedNames(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Create a mailbox with quoted name
 	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "\"My Old Box\""}, state)
@@ -342,10 +312,7 @@ func TestRenameCommand_QuotedNames(t *testing.T) {
 func TestRenameCommand_CaseInsensitiveINBOX(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Rename inbox (lowercase) to a new name
 	server.HandleRename(conn, "A001", []string{"A001", "RENAME", "inbox", "old-inbox"}, state)
@@ -369,10 +336,7 @@ func TestRenameCommand_CaseInsensitiveINBOX(t *testing.T) {
 func TestRenameCommand_Multiple(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Create multiple mailboxes
 	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "Box1"}, state)
@@ -419,10 +383,7 @@ func TestRenameCommand_Multiple(t *testing.T) {
 func TestRenameCommand_ErrorRecovery(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Create a mailbox
 	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "TestBox"}, state)
