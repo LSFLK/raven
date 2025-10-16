@@ -25,6 +25,18 @@
 
 .PHONY: test test-capability test-noop test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-commands test-verbose test-coverage test-race clean
 
+# Build delivery service
+build-delivery:
+	go build -o bin/raven-delivery ./cmd/delivery
+
+# Run delivery service
+run-delivery:
+	go run ./cmd/delivery
+
+# Test delivery service
+test-delivery:
+	go test -tags=test -v ./test/delivery
+
 # Run all tests
 test:
 	go test -tags=test ./...
@@ -203,8 +215,13 @@ ci: deps check
 help:
 	@echo "Available targets:"
 	@echo ""
+	@echo "Build & Run:"
+	@echo "  build-delivery         - Build delivery service binary"
+	@echo "  run-delivery           - Run delivery service"
+	@echo ""
 	@echo "Testing:"
 	@echo "  test                   - Run all tests"
+	@echo "  test-delivery          - Run delivery service tests"
 	@echo "  test-capability        - Run CAPABILITY command tests only"
 	@echo "  test-noop              - Run NOOP command tests only"
 	@echo "  test-logout            - Run LOGOUT command tests only"
