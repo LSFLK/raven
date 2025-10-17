@@ -443,6 +443,15 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 	s.sendResponse(conn, fmt.Sprintf("%s OK FETCH completed", tag))
 }
 
+// messageInfo holds metadata about a message for search operations
+type messageInfo struct {
+	messageID    int64
+	uid          int64
+	flags        string
+	internalDate time.Time
+	seqNum       int
+}
+
 func (s *IMAPServer) handleSearch(conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	if !state.Authenticated {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
@@ -454,26 +463,685 @@ func (s *IMAPServer) handleSearch(conn net.Conn, tag string, parts []string, sta
 		return
 	}
 
-	// Query message_mailbox using new schema
-	query := `SELECT ROW_NUMBER() OVER (ORDER BY uid ASC) as seq
-	          FROM message_mailbox
-	          WHERE mailbox_id = ?`
+	// Parse search criteria
+	if len(parts) < 3 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD SEARCH requires search criteria", tag))
+		return
+	}
+
+	// Check for CHARSET specification
+	searchStart := 2
+	charset := "US-ASCII"
+	if len(parts) > 3 && strings.ToUpper(parts[2]) == "CHARSET" {
+		charset = strings.ToUpper(parts[3])
+		searchStart = 4
+
+		// RFC 3501: US-ASCII MUST be supported, other charsets MAY be supported
+		if charset != "US-ASCII" && charset != "UTF-8" {
+			// Return tagged NO with BADCHARSET response code
+			s.sendResponse(conn, fmt.Sprintf("%s NO [BADCHARSET (US-ASCII UTF-8)] Charset not supported", tag))
+			return
+		}
+	}
+
+	if searchStart >= len(parts) {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD SEARCH requires search criteria", tag))
+		return
+	}
+
+	// Get all messages in the mailbox with their metadata
+	query := `
+		SELECT mm.message_id, mm.uid, mm.flags, mm.internal_date,
+		       ROW_NUMBER() OVER (ORDER BY mm.uid ASC) as seq_num
+		FROM message_mailbox mm
+		WHERE mm.mailbox_id = ?
+		ORDER BY mm.uid ASC
+	`
 	rows, err := s.db.Query(query, state.SelectedMailboxID)
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Search failed", tag))
+		s.sendResponse(conn, fmt.Sprintf("%s NO Search failed: %v", tag, err))
 		return
 	}
 	defer rows.Close()
 
-	var results []string
+	// Build list of messages with metadata
+	var messages []messageInfo
+
 	for rows.Next() {
-		var seq int
-		rows.Scan(&seq)
-		results = append(results, strconv.Itoa(seq))
+		var msg messageInfo
+		var flagsStr sql.NullString
+		var internalDate sql.NullTime
+		if err := rows.Scan(&msg.messageID, &msg.uid, &flagsStr, &internalDate, &msg.seqNum); err != nil {
+			continue
+		}
+		if flagsStr.Valid {
+			msg.flags = flagsStr.String
+		}
+		if internalDate.Valid {
+			msg.internalDate = internalDate.Time
+		}
+		messages = append(messages, msg)
 	}
 
-	s.sendResponse(conn, fmt.Sprintf("* SEARCH %s", strings.Join(results, " ")))
+	// Parse and evaluate search criteria
+	criteria := strings.Join(parts[searchStart:], " ")
+	matchingSeqNums := s.evaluateSearchCriteria(messages, criteria, charset)
+
+	// Build response
+	if len(matchingSeqNums) > 0 {
+		var results []string
+		for _, seq := range matchingSeqNums {
+			results = append(results, strconv.Itoa(seq))
+		}
+		s.sendResponse(conn, fmt.Sprintf("* SEARCH %s", strings.Join(results, " ")))
+	} else {
+		s.sendResponse(conn, "* SEARCH")
+	}
 	s.sendResponse(conn, fmt.Sprintf("%s OK SEARCH completed", tag))
+}
+
+// evaluateSearchCriteria evaluates search criteria against messages
+func (s *IMAPServer) evaluateSearchCriteria(messages []messageInfo, criteria string, charset string) []int {
+	var matchingSeqNums []int
+
+	// Default to ALL if no criteria specified
+	if strings.TrimSpace(criteria) == "" {
+		criteria = "ALL"
+	}
+
+	// Parse criteria into tokens
+	tokens := s.parseSearchTokens(criteria)
+
+	// Evaluate each message
+	for _, msg := range messages {
+		if s.matchesSearchCriteria(msg, tokens, charset) {
+			matchingSeqNums = append(matchingSeqNums, msg.seqNum)
+		}
+	}
+
+	return matchingSeqNums
+}
+
+// parseSearchTokens tokenizes search criteria
+func (s *IMAPServer) parseSearchTokens(criteria string) []string {
+	var tokens []string
+	var current strings.Builder
+	inQuotes := false
+	inParens := 0
+
+	for i := 0; i < len(criteria); i++ {
+		ch := criteria[i]
+
+		switch ch {
+		case '"':
+			inQuotes = !inQuotes
+			current.WriteByte(ch)
+		case '(':
+			if !inQuotes {
+				inParens++
+			}
+			current.WriteByte(ch)
+		case ')':
+			if !inQuotes {
+				inParens--
+			}
+			current.WriteByte(ch)
+		case ' ', '\t':
+			if inQuotes || inParens > 0 {
+				current.WriteByte(ch)
+			} else if current.Len() > 0 {
+				tokens = append(tokens, current.String())
+				current.Reset()
+			}
+		default:
+			current.WriteByte(ch)
+		}
+	}
+
+	if current.Len() > 0 {
+		tokens = append(tokens, current.String())
+	}
+
+	return tokens
+}
+
+// matchesSearchCriteria checks if a message matches the search criteria
+func (s *IMAPServer) matchesSearchCriteria(msg messageInfo, tokens []string, charset string) bool {
+	// Default to ALL - match everything
+	if len(tokens) == 0 {
+		return true
+	}
+
+	// Process tokens (AND logic by default)
+	return s.evaluateTokens(msg, tokens, charset)
+}
+
+// evaluateTokens evaluates a list of search tokens
+func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset string) bool {
+	i := 0
+	for i < len(tokens) {
+		token := strings.ToUpper(tokens[i])
+
+		// Handle sequence set (numbers and ranges)
+		if s.isSequenceSet(token) {
+			if !s.matchesSequenceSet(msg.seqNum, token) {
+				return false
+			}
+			i++
+			continue
+		}
+
+		switch token {
+		case "ALL":
+			// Matches all messages
+			i++
+
+		case "ANSWERED":
+			if !strings.Contains(msg.flags, "\\Answered") {
+				return false
+			}
+			i++
+
+		case "DELETED":
+			if !strings.Contains(msg.flags, "\\Deleted") {
+				return false
+			}
+			i++
+
+		case "DRAFT":
+			if !strings.Contains(msg.flags, "\\Draft") {
+				return false
+			}
+			i++
+
+		case "FLAGGED":
+			if !strings.Contains(msg.flags, "\\Flagged") {
+				return false
+			}
+			i++
+
+		case "NEW":
+			// NEW = RECENT UNSEEN
+			if !strings.Contains(msg.flags, "\\Recent") || strings.Contains(msg.flags, "\\Seen") {
+				return false
+			}
+			i++
+
+		case "OLD":
+			// OLD = NOT RECENT
+			if strings.Contains(msg.flags, "\\Recent") {
+				return false
+			}
+			i++
+
+		case "RECENT":
+			if !strings.Contains(msg.flags, "\\Recent") {
+				return false
+			}
+			i++
+
+		case "SEEN":
+			if !strings.Contains(msg.flags, "\\Seen") {
+				return false
+			}
+			i++
+
+		case "UNANSWERED":
+			if strings.Contains(msg.flags, "\\Answered") {
+				return false
+			}
+			i++
+
+		case "UNDELETED":
+			if strings.Contains(msg.flags, "\\Deleted") {
+				return false
+			}
+			i++
+
+		case "UNDRAFT":
+			if strings.Contains(msg.flags, "\\Draft") {
+				return false
+			}
+			i++
+
+		case "UNFLAGGED":
+			if strings.Contains(msg.flags, "\\Flagged") {
+				return false
+			}
+			i++
+
+		case "UNSEEN":
+			if strings.Contains(msg.flags, "\\Seen") {
+				return false
+			}
+			i++
+
+		case "NOT":
+			// NOT <search-key>
+			if i+1 >= len(tokens) {
+				return false
+			}
+			i++
+			// Evaluate next token and negate result
+			nextTokens := []string{tokens[i]}
+			// Handle NOT with arguments (e.g., NOT FROM "Smith")
+			if i+1 < len(tokens) && s.requiresArgument(strings.ToUpper(tokens[i])) {
+				i++
+				nextTokens = append(nextTokens, tokens[i])
+			}
+			if s.evaluateTokens(msg, nextTokens, charset) {
+				return false
+			}
+			i++
+
+		case "OR":
+			// OR <search-key1> <search-key2>
+			if i+2 >= len(tokens) {
+				return false
+			}
+			i++
+			key1Tokens := []string{tokens[i]}
+			if i+1 < len(tokens) && s.requiresArgument(strings.ToUpper(tokens[i])) {
+				i++
+				key1Tokens = append(key1Tokens, tokens[i])
+			}
+			i++
+			key2Tokens := []string{tokens[i]}
+			if i+1 < len(tokens) && s.requiresArgument(strings.ToUpper(tokens[i])) {
+				i++
+				key2Tokens = append(key2Tokens, tokens[i])
+			}
+			if !s.evaluateTokens(msg, key1Tokens, charset) && !s.evaluateTokens(msg, key2Tokens, charset) {
+				return false
+			}
+			i++
+
+		case "BCC", "CC", "FROM", "SUBJECT", "TO", "BODY", "TEXT":
+			// These require a string argument
+			if i+1 >= len(tokens) {
+				return false
+			}
+			i++
+			searchStr := s.unquote(tokens[i])
+			if !s.matchesHeaderOrBody(msg, token, searchStr, charset) {
+				return false
+			}
+			i++
+
+		case "HEADER":
+			// HEADER <field-name> <string>
+			if i+2 >= len(tokens) {
+				return false
+			}
+			i++
+			fieldName := s.unquote(tokens[i])
+			i++
+			searchStr := s.unquote(tokens[i])
+			if !s.matchesHeader(msg, fieldName, searchStr, charset) {
+				return false
+			}
+			i++
+
+		case "KEYWORD":
+			// KEYWORD <flag>
+			if i+1 >= len(tokens) {
+				return false
+			}
+			i++
+			keyword := s.unquote(tokens[i])
+			if !strings.Contains(msg.flags, keyword) {
+				return false
+			}
+			i++
+
+		case "UNKEYWORD":
+			// UNKEYWORD <flag>
+			if i+1 >= len(tokens) {
+				return false
+			}
+			i++
+			keyword := s.unquote(tokens[i])
+			if strings.Contains(msg.flags, keyword) {
+				return false
+			}
+			i++
+
+		case "LARGER":
+			// LARGER <n>
+			if i+1 >= len(tokens) {
+				return false
+			}
+			i++
+			size, err := strconv.Atoi(tokens[i])
+			if err != nil || !s.matchesSize(msg, size, true) {
+				return false
+			}
+			i++
+
+		case "SMALLER":
+			// SMALLER <n>
+			if i+1 >= len(tokens) {
+				return false
+			}
+			i++
+			size, err := strconv.Atoi(tokens[i])
+			if err != nil || !s.matchesSize(msg, size, false) {
+				return false
+			}
+			i++
+
+		case "UID":
+			// UID <sequence set>
+			if i+1 >= len(tokens) {
+				return false
+			}
+			i++
+			if !s.matchesUIDSet(int(msg.uid), tokens[i]) {
+				return false
+			}
+			i++
+
+		case "BEFORE", "ON", "SINCE":
+			// Date-based searches on internal date
+			if i+1 >= len(tokens) {
+				return false
+			}
+			i++
+			dateStr := s.unquote(tokens[i])
+			if !s.matchesDate(msg.internalDate, dateStr, token) {
+				return false
+			}
+			i++
+
+		case "SENTBEFORE", "SENTON", "SENTSINCE":
+			// Date-based searches on Date: header
+			if i+1 >= len(tokens) {
+				return false
+			}
+			i++
+			dateStr := s.unquote(tokens[i])
+			if !s.matchesSentDate(msg, dateStr, token) {
+				return false
+			}
+			i++
+
+		default:
+			// Unknown search key - skip it
+			i++
+		}
+	}
+
+	return true
+}
+
+// Helper functions for search criteria evaluation
+
+func (s *IMAPServer) isSequenceSet(token string) bool {
+	// Check if token looks like a sequence number or range (e.g., "1", "2:4", "1:*", "*")
+	if token == "*" {
+		return true
+	}
+	for _, ch := range token {
+		if ch != ':' && ch != '*' && (ch < '0' || ch > '9') {
+			return false
+		}
+	}
+	return len(token) > 0 && (token[0] >= '0' && token[0] <= '9' || token[0] == '*')
+}
+
+func (s *IMAPServer) matchesSequenceSet(seqNum int, set string) bool {
+	// Handle single number
+	if !strings.Contains(set, ":") && set != "*" {
+		num, err := strconv.Atoi(set)
+		return err == nil && num == seqNum
+	}
+
+	// Handle * (highest sequence number) - for now, just return true
+	if set == "*" {
+		return true
+	}
+
+	// Handle range
+	parts := strings.Split(set, ":")
+	if len(parts) != 2 {
+		return false
+	}
+
+	start, end := 0, 0
+	if parts[0] == "*" {
+		start = seqNum // Will match if seqNum is the highest
+	} else {
+		start, _ = strconv.Atoi(parts[0])
+	}
+
+	if parts[1] == "*" {
+		end = 999999 // Effectively infinity
+	} else {
+		end, _ = strconv.Atoi(parts[1])
+	}
+
+	return seqNum >= start && seqNum <= end
+}
+
+func (s *IMAPServer) matchesUIDSet(uid int, set string) bool {
+	// Similar to sequence set but for UIDs
+	return s.matchesSequenceSet(uid, set)
+}
+
+func (s *IMAPServer) matchesHeaderOrBody(msg messageInfo, field string, searchStr string, charset string) bool {
+	// Reconstruct message to search in headers/body
+	rawMsg, err := parser.ReconstructMessage(s.db, msg.messageID)
+	if err != nil {
+		return false
+	}
+
+	searchStrUpper := strings.ToUpper(searchStr)
+
+	switch field {
+	case "FROM":
+		return s.headerContains(rawMsg, "From", searchStrUpper)
+	case "TO":
+		return s.headerContains(rawMsg, "To", searchStrUpper)
+	case "CC":
+		return s.headerContains(rawMsg, "Cc", searchStrUpper)
+	case "BCC":
+		return s.headerContains(rawMsg, "Bcc", searchStrUpper)
+	case "SUBJECT":
+		return s.headerContains(rawMsg, "Subject", searchStrUpper)
+	case "BODY":
+		// Search only in message body
+		headerEnd := strings.Index(rawMsg, "\r\n\r\n")
+		if headerEnd == -1 {
+			headerEnd = strings.Index(rawMsg, "\n\n")
+		}
+		if headerEnd != -1 {
+			body := rawMsg[headerEnd:]
+			return strings.Contains(strings.ToUpper(body), searchStrUpper)
+		}
+		return false
+	case "TEXT":
+		// Search in entire message (headers + body)
+		return strings.Contains(strings.ToUpper(rawMsg), searchStrUpper)
+	}
+
+	return false
+}
+
+func (s *IMAPServer) matchesHeader(msg messageInfo, fieldName string, searchStr string, charset string) bool {
+	rawMsg, err := parser.ReconstructMessage(s.db, msg.messageID)
+	if err != nil {
+		return false
+	}
+
+	// Special case: empty search string matches any message with that header
+	if searchStr == "" {
+		return s.hasHeader(rawMsg, fieldName)
+	}
+
+	return s.headerContains(rawMsg, fieldName, strings.ToUpper(searchStr))
+}
+
+func (s *IMAPServer) hasHeader(rawMsg string, fieldName string) bool {
+	lines := strings.Split(rawMsg, "\n")
+	fieldNameUpper := strings.ToUpper(fieldName)
+
+	for _, line := range lines {
+		line = strings.TrimRight(line, "\r")
+		if line == "" {
+			break // End of headers
+		}
+		if strings.HasPrefix(strings.ToUpper(line), fieldNameUpper+":") {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *IMAPServer) headerContains(rawMsg string, fieldName string, searchStr string) bool {
+	lines := strings.Split(rawMsg, "\n")
+	fieldNameUpper := strings.ToUpper(fieldName)
+	searchStrUpper := strings.ToUpper(searchStr)
+
+	inTargetHeader := false
+	var headerValue strings.Builder
+
+	for _, line := range lines {
+		line = strings.TrimRight(line, "\r")
+		if line == "" {
+			break // End of headers
+		}
+
+		// Check if this is a continuation line (starts with space or tab)
+		if len(line) > 0 && (line[0] == ' ' || line[0] == '\t') {
+			if inTargetHeader {
+				headerValue.WriteString(" ")
+				headerValue.WriteString(strings.TrimSpace(line))
+			}
+			continue
+		}
+
+		// New header line
+		if strings.HasPrefix(strings.ToUpper(line), fieldNameUpper+":") {
+			inTargetHeader = true
+			colonIdx := strings.Index(line, ":")
+			if colonIdx != -1 {
+				headerValue.WriteString(strings.TrimSpace(line[colonIdx+1:]))
+			}
+		} else {
+			inTargetHeader = false
+		}
+	}
+
+	return strings.Contains(strings.ToUpper(headerValue.String()), searchStrUpper)
+}
+
+func (s *IMAPServer) matchesSize(msg messageInfo, size int, larger bool) bool {
+	rawMsg, err := parser.ReconstructMessage(s.db, msg.messageID)
+	if err != nil {
+		return false
+	}
+
+	msgSize := len(rawMsg)
+	if larger {
+		return msgSize > size
+	}
+	return msgSize < size
+}
+
+func (s *IMAPServer) matchesDate(internalDate time.Time, dateStr string, comparison string) bool {
+	// Parse RFC 3501 date format: "1-Feb-1994" or "01-Feb-1994"
+	targetDate, err := s.parseIMAPDate(dateStr)
+	if err != nil {
+		return false
+	}
+
+	// Compare dates (disregarding time and timezone)
+	msgDate := time.Date(internalDate.Year(), internalDate.Month(), internalDate.Day(), 0, 0, 0, 0, time.UTC)
+	targetDate = time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 0, 0, 0, 0, time.UTC)
+
+	switch comparison {
+	case "BEFORE":
+		return msgDate.Before(targetDate)
+	case "ON":
+		return msgDate.Equal(targetDate)
+	case "SINCE":
+		return msgDate.Equal(targetDate) || msgDate.After(targetDate)
+	}
+
+	return false
+}
+
+func (s *IMAPServer) matchesSentDate(msg messageInfo, dateStr string, comparison string) bool {
+	// Get Date: header from message
+	rawMsg, err := parser.ReconstructMessage(s.db, msg.messageID)
+	if err != nil {
+		return false
+	}
+
+	lines := strings.Split(rawMsg, "\n")
+	var dateHeader string
+
+	for _, line := range lines {
+		line = strings.TrimRight(line, "\r")
+		if line == "" {
+			break
+		}
+		if strings.HasPrefix(strings.ToUpper(line), "DATE:") {
+			colonIdx := strings.Index(line, ":")
+			if colonIdx != -1 {
+				dateHeader = strings.TrimSpace(line[colonIdx+1:])
+			}
+			break
+		}
+	}
+
+	if dateHeader == "" {
+		return false
+	}
+
+	// Parse the Date: header (RFC 2822 format)
+	sentDate, err := time.Parse(time.RFC1123Z, dateHeader)
+	if err != nil {
+		// Try RFC1123
+		sentDate, err = time.Parse(time.RFC1123, dateHeader)
+		if err != nil {
+			return false
+		}
+	}
+
+	// Use the date matching logic
+	comparisonType := strings.TrimPrefix(comparison, "SENT")
+	return s.matchesDate(sentDate, dateStr, comparisonType)
+}
+
+func (s *IMAPServer) parseIMAPDate(dateStr string) (time.Time, error) {
+	// RFC 3501 date format: "1-Feb-1994" or "01-Feb-1994"
+	// Try both formats
+	t, err := time.Parse("2-Jan-2006", dateStr)
+	if err != nil {
+		t, err = time.Parse("02-Jan-2006", dateStr)
+	}
+	return t, err
+}
+
+func (s *IMAPServer) unquote(str string) string {
+	str = strings.TrimSpace(str)
+	if len(str) >= 2 && str[0] == '"' && str[len(str)-1] == '"' {
+		return str[1 : len(str)-1]
+	}
+	return str
+}
+
+func (s *IMAPServer) requiresArgument(token string) bool {
+	switch token {
+	case "BCC", "CC", "FROM", "SUBJECT", "TO", "BODY", "TEXT",
+		"KEYWORD", "UNKEYWORD", "LARGER", "SMALLER", "UID",
+		"BEFORE", "ON", "SINCE", "SENTBEFORE", "SENTON", "SENTSINCE":
+		return true
+	case "HEADER":
+		return true // Actually requires 2 arguments, but handle separately
+	}
+	return false
 }
 
 func (s *IMAPServer) handleStatus(conn net.Conn, tag string, parts []string, state *models.ClientState) {

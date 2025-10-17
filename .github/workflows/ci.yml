@@ -93,6 +93,9 @@ jobs:
       - name: Test STATUS command
         run: go test -tags=test -v ./test/server -run "TestStatusCommand"
 
+      - name: Test SEARCH command
+        run: go test -tags=test -v ./test/server -run "TestSearchCommand"
+
   test-delivery:
     name: Test Delivery Service
     runs-on: ubuntu-latest
