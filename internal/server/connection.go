@@ -74,6 +74,8 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 			s.handleCheck(conn, tag, state)
 		case "CLOSE":
 			s.handleClose(conn, tag, state)
+		case "EXPUNGE":
+			s.handleExpunge(conn, tag, state)
 		case "SUBSCRIBE":
 			s.handleSubscribe(conn, tag, parts, state)
 		case "UNSUBSCRIBE":

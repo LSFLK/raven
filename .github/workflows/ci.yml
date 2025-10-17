@@ -42,6 +42,9 @@ jobs:
       - name: Test CLOSE command
         run: go test -tags=test -v ./test/server -run "TestCloseCommand"
 
+      - name: Test EXPUNGE command
+        run: go test -tags=test -v ./test/server -run "TestExpungeCommand"
+
       - name: Test LOGOUT command
         run: go test -tags=test -v ./test/server -run "TestLogoutCommand"
 
