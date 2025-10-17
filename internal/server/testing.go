@@ -81,6 +81,11 @@ func (t *TestInterface) HandleCheck(conn net.Conn, tag string, state *models.Cli
 	t.server.handleCheck(conn, tag, state)
 }
 
+// HandleClose exposes the close handler for testing
+func (t *TestInterface) HandleClose(conn net.Conn, tag string, state *models.ClientState) {
+	t.server.handleClose(conn, tag, state)
+}
+
 // HandleSelect exposes the select handler for testing
 func (t *TestInterface) HandleSelect(conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	t.server.handleSelect(conn, tag, parts, state)

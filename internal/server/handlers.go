@@ -523,6 +523,68 @@ func (s *IMAPServer) handleCheck(conn net.Conn, tag string, state *models.Client
 	s.sendResponse(conn, fmt.Sprintf("%s OK CHECK completed", tag))
 }
 
+func (s *IMAPServer) handleClose(conn net.Conn, tag string, state *models.ClientState) {
+	// CLOSE command requires authentication
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	// CLOSE command requires a selected mailbox (Selected state)
+	// Per RFC 3501: CLOSE is only valid in Selected state
+	if state.SelectedMailboxID == 0 {
+		s.sendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
+		return
+	}
+
+	// Per RFC 3501: CLOSE permanently removes all messages with \Deleted flag
+	// from the currently selected mailbox, and returns to authenticated state
+	// No untagged EXPUNGE responses are sent (unlike EXPUNGE command)
+
+	// Important: Per RFC 3501, if mailbox is read-only (selected with EXAMINE),
+	// no messages are removed and no error is given.
+	// Since we don't currently track read-only state in ClientState,
+	// we always perform the expunge operation.
+	// TODO: Add ReadOnly field to ClientState to properly handle EXAMINE
+
+	// Delete all messages with \Deleted flag from the mailbox
+	// Query for all messages with \Deleted flag in the current mailbox
+	rows, err := s.db.Query(`
+		SELECT id FROM message_mailbox
+		WHERE mailbox_id = ? AND flags LIKE '%\Deleted%'
+	`, state.SelectedMailboxID)
+
+	if err == nil {
+		defer rows.Close()
+
+		// Collect all message_mailbox IDs to delete
+		var idsToDelete []int64
+		for rows.Next() {
+			var id int64
+			if err := rows.Scan(&id); err == nil {
+				idsToDelete = append(idsToDelete, id)
+			}
+		}
+
+		// Delete the messages from message_mailbox table
+		// This removes them from the mailbox but keeps the message data
+		for _, id := range idsToDelete {
+			s.db.Exec(`DELETE FROM message_mailbox WHERE id = ?`, id)
+		}
+	}
+
+	// Return to authenticated state by clearing the selected mailbox
+	state.SelectedFolder = ""
+	state.SelectedMailboxID = 0
+	state.LastMessageCount = 0
+	state.LastRecentCount = 0
+	state.UIDValidity = 0
+	state.UIDNext = 0
+
+	// Always complete successfully per RFC 3501
+	s.sendResponse(conn, fmt.Sprintf("%s OK CLOSE completed", tag))
+}
+
 func (s *IMAPServer) handleIdle(conn net.Conn, tag string, state *models.ClientState) {
 	if !state.Authenticated {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
