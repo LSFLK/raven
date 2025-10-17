@@ -30,10 +30,7 @@ func TestListCommand_Authentication(t *testing.T) {
 func TestListCommand_InvalidArguments(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Test LIST command with insufficient arguments
 	server.HandleList(conn, "A001", []string{"A001", "LIST"}, state)
@@ -48,10 +45,7 @@ func TestListCommand_InvalidArguments(t *testing.T) {
 func TestListCommand_HierarchyDelimiter(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Test LIST command with empty mailbox name to get hierarchy delimiter
 	server.HandleList(conn, "A001", []string{"A001", "LIST", `""`, `""`}, state)
@@ -80,10 +74,7 @@ func TestListCommand_HierarchyDelimiter(t *testing.T) {
 func TestListCommand_HierarchyDelimiterWithReference(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Test LIST command with reference and empty mailbox name
 	server.HandleList(conn, "A001", []string{"A001", "LIST", `"~/Mail/"`, `""`}, state)
@@ -107,10 +98,7 @@ func TestListCommand_HierarchyDelimiterWithReference(t *testing.T) {
 func TestListCommand_AllMailboxes(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Test LIST command with * wildcard
 	server.HandleList(conn, "A001", []string{"A001", "LIST", `""`, `"*"`}, state)
@@ -149,10 +137,7 @@ func TestListCommand_AllMailboxes(t *testing.T) {
 func TestListCommand_SpecificMailbox(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Test LIST command with specific mailbox
 	server.HandleList(conn, "A001", []string{"A001", "LIST", `""`, `"INBOX"`}, state)
@@ -181,10 +166,7 @@ func TestListCommand_SpecificMailbox(t *testing.T) {
 func TestListCommand_WildcardMatching(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	testCases := []struct {
 		pattern          string
@@ -251,10 +233,7 @@ func TestListCommand_WildcardMatching(t *testing.T) {
 func TestListCommand_PercentWildcard(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Test LIST command with % wildcard
 	server.HandleList(conn, "A001", []string{"A001", "LIST", `""`, `"%"`}, state)
@@ -279,10 +258,7 @@ func TestListCommand_PercentWildcard(t *testing.T) {
 func TestListCommand_CaseInsensitiveINBOX(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	testCases := []string{"inbox", "Inbox", "InBoX", "INBOX"}
 
@@ -310,10 +286,7 @@ func TestListCommand_CaseInsensitiveINBOX(t *testing.T) {
 func TestListCommand_MailboxAttributes(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Test LIST command with * wildcard to get all mailboxes
 	server.HandleList(conn, "A001", []string{"A001", "LIST", `""`, `"*"`}, state)
@@ -340,10 +313,7 @@ func TestListCommand_MailboxAttributes(t *testing.T) {
 func TestListCommand_QuotedStrings(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	testCases := []struct {
 		reference string
@@ -380,10 +350,7 @@ func TestListCommand_QuotedStrings(t *testing.T) {
 func TestListCommand_ReferenceHandling(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Test with reference that should be prefixed to pattern
 	server.HandleList(conn, "A001", []string{"A001", "LIST", `"Mail/"`, `"IN*"`}, state)

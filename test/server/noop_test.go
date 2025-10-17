@@ -157,10 +157,7 @@ func TestNoopCommand_AlwaysSucceeds(t *testing.T) {
 func TestNoopCommand_ResponseFormat(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	server.HandleNoop(conn, "FORMAT", state)
 
@@ -184,10 +181,7 @@ func TestNoopCommand_ResponseFormat(t *testing.T) {
 func TestNoopCommand_MultipleInvocations(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Call NOOP multiple times with different tags
 	server.HandleNoop(conn, "M001", state)

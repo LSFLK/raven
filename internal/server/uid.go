@@ -3,10 +3,12 @@ package server
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"net"
 	"strconv"
 	"strings"
 
+	"go-imap/internal/delivery/parser"
 	"go-imap/internal/models"
 )
 
@@ -48,7 +50,11 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 	sequence := parts[3]
 	items := strings.Join(parts[4:], " ")
 	items = strings.Trim(items, "()")
-	tableName := s.getUserTableName(state.Username)
+
+	if state.SelectedMailboxID == 0 {
+		s.sendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
+		return
+	}
 
 	var rows *sql.Rows
 	var err error
@@ -57,7 +63,7 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 	sequences := strings.Split(sequence, ",")
 	var uidRanges []string
 	var args []interface{}
-	args = append(args, state.SelectedFolder)
+	args = append(args, state.SelectedMailboxID)
 
 	for _, seq := range sequences {
 		seq = strings.TrimSpace(seq)
@@ -81,7 +87,7 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 			if start > end {
 				start, end = end, start
 			}
-			uidRanges = append(uidRanges, "(id >= ? AND id <= ?)")
+			uidRanges = append(uidRanges, "(uid >= ? AND uid <= ?)")
 			args = append(args, start, end)
 		} else {
 			// Handle single UID (e.g., "3")
@@ -90,14 +96,14 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 				s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid UID", tag))
 				return
 			}
-			uidRanges = append(uidRanges, "id = ?")
+			uidRanges = append(uidRanges, "uid = ?")
 			args = append(args, uid)
 		}
 	}
 
 	// Build the query with OR conditions for multiple ranges
 	whereClause := strings.Join(uidRanges, " OR ")
-	query := fmt.Sprintf("SELECT id, raw_message, flags, ROW_NUMBER() OVER (ORDER BY id ASC) as seq FROM %s WHERE folder = ? AND (%s) ORDER BY id ASC", tableName, whereClause)
+	query := fmt.Sprintf("SELECT mm.uid, mm.message_id, mm.flags, ROW_NUMBER() OVER (ORDER BY mm.uid ASC) as seq FROM message_mailbox mm WHERE mm.mailbox_id = ? AND (%s) ORDER BY mm.uid ASC", whereClause)
 	rows, err = s.db.Query(query, args...)
 
 	if err != nil {
@@ -107,9 +113,21 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 	defer rows.Close()
 
 	for rows.Next() {
-		var id, seqNum int
-		var rawMsg, flags string
-		rows.Scan(&id, &rawMsg, &flags, &seqNum)
+		var uid, messageID, seqNum int64
+		var flagsStr sql.NullString
+		rows.Scan(&uid, &messageID, &flagsStr, &seqNum)
+
+		flags := ""
+		if flagsStr.Valid {
+			flags = flagsStr.String
+		}
+
+		// Reconstruct message from database
+		rawMsg, err := parser.ReconstructMessage(s.db, messageID)
+		if err != nil {
+			log.Printf("Failed to reconstruct message %d: %v", messageID, err)
+			continue
+		}
 
 		if !strings.Contains(rawMsg, "\r\n") {
 			rawMsg = strings.ReplaceAll(rawMsg, "\n", "\r\n")
@@ -120,7 +138,7 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 	var literalData string // Store literal data separately
 
 	if strings.Contains(itemsUpper, "UID") || true {
-		responseParts = append(responseParts, fmt.Sprintf("UID %d", id))
+		responseParts = append(responseParts, fmt.Sprintf("UID %d", uid))
 	}
 
 	if strings.Contains(itemsUpper, "FLAGS") {
@@ -320,14 +338,13 @@ func (s *IMAPServer) handleUIDSearch(conn net.Conn, tag string, parts []string, 
 		return
 	}
 
-	if state.SelectedFolder == "" {
-		s.sendResponse(conn, fmt.Sprintf("%s NO No folder selected", tag))
+	if state.SelectedMailboxID == 0 {
+		s.sendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
 		return
 	}
 
-	tableName := s.getUserTableName(state.Username)
-	query := fmt.Sprintf("SELECT id FROM %s WHERE folder = ? ORDER BY id ASC", tableName)
-	rows, err := s.db.Query(query, state.SelectedFolder)
+	query := "SELECT uid FROM message_mailbox WHERE mailbox_id = ? ORDER BY uid ASC"
+	rows, err := s.db.Query(query, state.SelectedMailboxID)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Search failed", tag))
 		return
@@ -336,9 +353,9 @@ func (s *IMAPServer) handleUIDSearch(conn net.Conn, tag string, parts []string, 
 
 	var results []string
 	for rows.Next() {
-		var uid int
+		var uid int64
 		rows.Scan(&uid)
-		results = append(results, strconv.Itoa(uid))
+		results = append(results, strconv.FormatInt(uid, 10))
 	}
 
 	s.sendResponse(conn, fmt.Sprintf("* SEARCH %s", strings.Join(results, " ")))
@@ -350,8 +367,8 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
 		return
 	}
-	if state.SelectedFolder == "" {
-		s.sendResponse(conn, fmt.Sprintf("%s NO No folder selected", tag))
+	if state.SelectedMailboxID == 0 {
+		s.sendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
 		return
 	}
 	if len(parts) < 6 {
@@ -361,7 +378,6 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 	sequence := parts[3]
 	flagsStr := strings.Join(parts[5:], " ")
 	flagsStr = strings.Trim(flagsStr, "()")
-	tableName := s.getUserTableName(state.Username)
 
 	if !strings.Contains(flagsStr, "\\Seen") {
 		s.sendResponse(conn, fmt.Sprintf("%s BAD Only \\Seen flag supported", tag))
@@ -372,7 +388,7 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 	sequences := strings.Split(sequence, ",")
 	var uidRanges []string
 	var args []interface{}
-	args = append(args, state.SelectedFolder)
+	args = append(args, state.SelectedMailboxID)
 
 	for _, seq := range sequences {
 		seq = strings.TrimSpace(seq)
@@ -396,7 +412,7 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 			if start > end {
 				start, end = end, start
 			}
-			uidRanges = append(uidRanges, "(id >= ? AND id <= ?)")
+			uidRanges = append(uidRanges, "(uid >= ? AND uid <= ?)")
 			args = append(args, start, end)
 		} else {
 			// Handle single UID (e.g., "3")
@@ -405,17 +421,18 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 				s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid UID", tag))
 				return
 			}
-			uidRanges = append(uidRanges, "id = ?")
+			uidRanges = append(uidRanges, "uid = ?")
 			args = append(args, uid)
 		}
 	}
 
 	// Build the query with OR conditions for multiple ranges
 	whereClause := strings.Join(uidRanges, " OR ")
-	query := fmt.Sprintf("UPDATE %s SET flags = CASE WHEN flags LIKE '%%\\Seen%%' THEN flags ELSE flags || ' \\Seen' END WHERE folder = ? AND (%s)", tableName, whereClause)
+	query := fmt.Sprintf("UPDATE message_mailbox SET flags = CASE WHEN flags LIKE '%%\\Seen%%' THEN flags ELSE COALESCE(flags || ' ', '') || '\\Seen' END WHERE mailbox_id = ? AND (%s)", whereClause)
 	_, err := s.db.Exec(query, args...)
 
 	if err != nil {
+		log.Printf("UID STORE error: %v", err)
 		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}

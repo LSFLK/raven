@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go-imap/internal/db"
+	"go-imap/internal/delivery/parser"
 	"go-imap/internal/models"
 )
 
@@ -26,43 +27,50 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 
 	folder := strings.Trim(parts[2], "\"")
 	state.SelectedFolder = folder
-	tableName := s.getUserTableName(state.Username)
 
-	var count int
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ?", tableName)
-	err := s.db.QueryRow(query, folder).Scan(&count)
+	// Get mailbox ID using new schema
+	mailboxID, err := db.GetMailboxByName(s.db, state.UserID, folder)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Mailbox does not exist", tag))
+		return
+	}
+
+	state.SelectedMailboxID = mailboxID
+
+	// Get mailbox info (UID validity and next UID)
+	uidValidity, uidNext, err := db.GetMailboxInfo(s.db, mailboxID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Server error: cannot get mailbox info", tag))
+		return
+	}
+
+	state.UIDValidity = uidValidity
+	state.UIDNext = uidNext
+
+	// Get message count using new schema
+	count, err := db.GetMessageCount(s.db, mailboxID)
 	if err != nil {
 		count = 0
 	}
 
-	var recent int
-	query = fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ? AND flags NOT LIKE '%%\\Seen%%'", tableName)
-	err = s.db.QueryRow(query, folder).Scan(&recent)
+	// Get unseen (recent) count using new schema
+	recent, err := db.GetUnseenCount(s.db, mailboxID)
 	if err != nil {
 		recent = 0
 	}
 
-	// Get the next UID (max ID + 1)
-	var maxUID int
-	query = fmt.Sprintf("SELECT COALESCE(MAX(id), 0) FROM %s WHERE folder = ?", tableName)
-	err = s.db.QueryRow(query, folder).Scan(&maxUID)
-	if err != nil {
-		maxUID = 0
-	}
-
 	// Get the first unseen message sequence number (RFC 3501 requirement)
-	// We need to find the sequence number (position) of the first unseen message
 	var unseenSeqNum int
-	query = fmt.Sprintf(`
+	query := `
 		SELECT seq_num FROM (
-			SELECT ROW_NUMBER() OVER (ORDER BY id ASC) as seq_num, flags
-			FROM %s
-			WHERE folder = ?
-		) WHERE flags IS NULL OR flags NOT LIKE '%%\Seen%%'
+			SELECT ROW_NUMBER() OVER (ORDER BY uid ASC) as seq_num, flags
+			FROM message_mailbox
+			WHERE mailbox_id = ?
+		) WHERE flags IS NULL OR flags NOT LIKE '%\Seen%'
 		ORDER BY seq_num ASC
 		LIMIT 1
-	`, tableName)
-	err = s.db.QueryRow(query, folder).Scan(&unseenSeqNum)
+	`
+	err = s.db.QueryRow(query, mailboxID).Scan(&unseenSeqNum)
 	hasUnseen := (err == nil && unseenSeqNum > 0)
 
 	// Initialize state tracking for NOOP and other commands
@@ -81,19 +89,19 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 	}
 	s.sendResponse(conn, fmt.Sprintf("* %d EXISTS", count))
 	s.sendResponse(conn, fmt.Sprintf("* %d RECENT", recent))
-	
+
 	// Send REQUIRED OK untagged responses
 	if hasUnseen {
 		s.sendResponse(conn, fmt.Sprintf("* OK [UNSEEN %d] Message %d is first unseen", unseenSeqNum, unseenSeqNum))
 	}
-	s.sendResponse(conn, "* OK [UIDVALIDITY 1] UIDs valid")
-	s.sendResponse(conn, fmt.Sprintf("* OK [UIDNEXT %d] Predicted next UID", maxUID+1))
-	
+	s.sendResponse(conn, fmt.Sprintf("* OK [UIDVALIDITY %d] UIDs valid", uidValidity))
+	s.sendResponse(conn, fmt.Sprintf("* OK [UIDNEXT %d] Predicted next UID", uidNext))
+
 	// FLAGS for EXAMINE comes after OK untagged responses
 	if isExamine {
 		s.sendResponse(conn, "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
 	}
-	
+
 	// PERMANENTFLAGS: Empty for EXAMINE (read-only), full for SELECT
 	if isExamine {
 		s.sendResponse(conn, "* OK [PERMANENTFLAGS ()] No permanent flags permitted")
@@ -115,7 +123,7 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		return
 	}
 
-	if state.SelectedFolder == "" {
+	if state.SelectedMailboxID == 0 {
 		s.sendResponse(conn, fmt.Sprintf("%s NO No folder selected", tag))
 		return
 	}
@@ -128,7 +136,6 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 	sequence := parts[2]
 	items := strings.Join(parts[3:], " ")
 	items = strings.Trim(items, "()")
-	tableName := s.getUserTableName(state.Username)
 
 	var rows *sql.Rows
 	var err error
@@ -150,9 +157,8 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 			}
 		}
 		if seqRange[1] == "*" {
-			// Get max count for end
-			query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ?", tableName)
-			s.db.QueryRow(query, state.SelectedFolder).Scan(&end)
+			// Get max count for end using new schema
+			end, _ = db.GetMessageCount(s.db, state.SelectedMailboxID)
 		} else {
 			end, err = strconv.Atoi(seqRange[1])
 			if err != nil || end < 1 {
@@ -166,19 +172,29 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		if end < start {
 			end = start
 		}
-		query := fmt.Sprintf("SELECT id, raw_message, flags FROM %s WHERE folder = ? ORDER BY id ASC LIMIT ? OFFSET ?", tableName)
-		rows, err = s.db.Query(query, state.SelectedFolder, end-start+1, start-1)
+		// Query message_mailbox for messages in selected mailbox using new schema
+		query := `SELECT mm.message_id, mm.uid, mm.flags
+		          FROM message_mailbox mm
+		          WHERE mm.mailbox_id = ?
+		          ORDER BY mm.uid ASC LIMIT ? OFFSET ?`
+		rows, err = s.db.Query(query, state.SelectedMailboxID, end-start+1, start-1)
 	} else if sequence == "1:*" || sequence == "*" {
-		query := fmt.Sprintf("SELECT id, raw_message, flags FROM %s WHERE folder = ? ORDER BY id ASC", tableName)
-		rows, err = s.db.Query(query, state.SelectedFolder)
+		query := `SELECT mm.message_id, mm.uid, mm.flags
+		          FROM message_mailbox mm
+		          WHERE mm.mailbox_id = ?
+		          ORDER BY mm.uid ASC`
+		rows, err = s.db.Query(query, state.SelectedMailboxID)
 	} else {
 		msgNum, parseErr := strconv.Atoi(sequence)
 		if parseErr != nil {
 			s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence number", tag))
 			return
 		}
-		query := fmt.Sprintf("SELECT id, raw_message, flags FROM %s WHERE folder = ? ORDER BY id ASC LIMIT 1 OFFSET ?", tableName)
-		rows, err = s.db.Query(query, state.SelectedFolder, msgNum-1)
+		query := `SELECT mm.message_id, mm.uid, mm.flags
+		          FROM message_mailbox mm
+		          WHERE mm.mailbox_id = ?
+		          ORDER BY mm.uid ASC LIMIT 1 OFFSET ?`
+		rows, err = s.db.Query(query, state.SelectedMailboxID, msgNum-1)
 	}
 
 	if err != nil {
@@ -192,9 +208,24 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		seqNum = start
 	}
 	for rows.Next() {
-		var id int
-		var rawMsg, flags string
-		rows.Scan(&id, &rawMsg, &flags)
+		var messageID int64
+		var uid int64
+		var flagsStr sql.NullString
+		if err := rows.Scan(&messageID, &uid, &flagsStr); err != nil {
+			continue
+		}
+
+		flags := ""
+		if flagsStr.Valid {
+			flags = flagsStr.String
+		}
+
+		// Reconstruct message from new schema
+		rawMsg, err := parser.ReconstructMessage(s.db, messageID)
+		if err != nil {
+			// If reconstruction fails, skip this message
+			continue
+		}
 
 		if !strings.Contains(rawMsg, "\r\n") {
 			rawMsg = strings.ReplaceAll(rawMsg, "\n", "\r\n")
@@ -205,7 +236,7 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		var literalData string // Store literal data separately
 
 		if strings.Contains(itemsUpper, "UID") {
-			responseParts = append(responseParts, fmt.Sprintf("UID %d", id))
+			responseParts = append(responseParts, fmt.Sprintf("UID %d", uid))
 		}
 		if strings.Contains(itemsUpper, "FLAGS") {
 			if flags == "" {
@@ -216,24 +247,19 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 			responseParts = append(responseParts, fmt.Sprintf("FLAGS %s", flags))
 		}
 		if strings.Contains(itemsUpper, "INTERNALDATE") {
-			var internalDate string
-			query := fmt.Sprintf("SELECT date_sent FROM %s WHERE id = ?", tableName)
-			s.db.QueryRow(query, id).Scan(&internalDate)
-			if internalDate == "" {
-				internalDate = "01-Jan-1970 00:00:00 +0000"
+			var internalDate time.Time
+			// Query message_mailbox for internal_date using new schema
+			query := "SELECT internal_date FROM message_mailbox WHERE message_id = ? AND mailbox_id = ?"
+			err := s.db.QueryRow(query, messageID, state.SelectedMailboxID).Scan(&internalDate)
+
+			var dateStr string
+			if err != nil || internalDate.IsZero() {
+				dateStr = "01-Jan-1970 00:00:00 +0000"
 			} else {
-				// Convert ISO 8601 format to RFC 3501 IMAP date format
-				// From: "2025-10-07T19:33:57+05:30"
-				// To: "07-Oct-2025 19:33:57 +0530"
-				if strings.Contains(internalDate, "T") {
-					t, err := time.Parse("2006-01-02T15:04:05-07:00", internalDate)
-					if err == nil {
-						// Format as RFC 3501: "02-Jan-2006 15:04:05 -0700"
-						internalDate = t.Format("02-Jan-2006 15:04:05 -0700")
-					}
-				}
+				// Format as RFC 3501: "02-Jan-2006 15:04:05 -0700"
+				dateStr = internalDate.Format("02-Jan-2006 15:04:05 -0700")
 			}
-			responseParts = append(responseParts, fmt.Sprintf("INTERNALDATE \"%s\"", internalDate))
+			responseParts = append(responseParts, fmt.Sprintf("INTERNALDATE \"%s\"", dateStr))
 		}
 		if strings.Contains(itemsUpper, "RFC822.SIZE") {
 			responseParts = append(responseParts, fmt.Sprintf("RFC822.SIZE %d", len(rawMsg)))
@@ -423,14 +449,16 @@ func (s *IMAPServer) handleSearch(conn net.Conn, tag string, parts []string, sta
 		return
 	}
 
-	if state.SelectedFolder == "" {
+	if state.SelectedMailboxID == 0 {
 		s.sendResponse(conn, fmt.Sprintf("%s NO No folder selected", tag))
 		return
 	}
 
-	tableName := s.getUserTableName(state.Username)
-	query := fmt.Sprintf("SELECT ROW_NUMBER() OVER (ORDER BY id ASC) as seq FROM %s WHERE folder = ?", tableName)
-	rows, err := s.db.Query(query, state.SelectedFolder)
+	// Query message_mailbox using new schema
+	query := `SELECT ROW_NUMBER() OVER (ORDER BY uid ASC) as seq
+	          FROM message_mailbox
+	          WHERE mailbox_id = ?`
+	rows, err := s.db.Query(query, state.SelectedMailboxID)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Search failed", tag))
 		return
@@ -468,14 +496,9 @@ func (s *IMAPServer) handleStatus(conn net.Conn, tag string, parts []string, sta
 		return
 	}
 
-	// Check if mailbox exists (use db.MailboxExists)
-	exists, err := db.MailboxExists(s.db, state.Username, mailboxName)
+	// Get mailbox ID using new schema
+	mailboxID, err := db.GetMailboxByName(s.db, state.UserID, mailboxName)
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO STATUS failure: server error", tag))
-		return
-	}
-
-	if !exists {
 		s.sendResponse(conn, fmt.Sprintf("%s NO STATUS failure: no status for that name", tag))
 		return
 	}
@@ -502,53 +525,33 @@ func (s *IMAPServer) handleStatus(conn net.Conn, tag string, parts []string, sta
 		return
 	}
 
-	// Query the database for mailbox statistics
-	tableName := s.getUserTableName(state.Username)
-
 	// Initialize status values
 	statusValues := make(map[string]int)
 
-	// Query total message count
-	var messageCount int
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ?", tableName)
-	err = s.db.QueryRow(query, mailboxName).Scan(&messageCount)
+	// Query total message count using new schema
+	messageCount, err := db.GetMessageCount(s.db, mailboxID)
 	if err != nil {
 		messageCount = 0
 	}
 	statusValues["MESSAGES"] = messageCount
 
-	// Query recent count (messages without \Recent flag or messages without \Seen flag)
-	// RFC 3501: Messages with \Recent flag set
-	// For simplicity, we'll count messages without \Seen flag as recent
-	var recentCount int
-	query = fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ? AND (flags IS NULL OR flags = '' OR flags NOT LIKE '%%\\Seen%%')", tableName)
-	err = s.db.QueryRow(query, mailboxName).Scan(&recentCount)
+	// Query recent/unseen count using new schema
+	recentCount, err := db.GetUnseenCount(s.db, mailboxID)
 	if err != nil {
 		recentCount = 0
 	}
 	statusValues["RECENT"] = recentCount
+	statusValues["UNSEEN"] = recentCount
 
-	// Query UIDNEXT (next unique identifier value)
-	var maxUID int
-	query = fmt.Sprintf("SELECT COALESCE(MAX(id), 0) FROM %s WHERE folder = ?", tableName)
-	err = s.db.QueryRow(query, mailboxName).Scan(&maxUID)
-	if err != nil {
-		maxUID = 0
+	// Get mailbox info for UID values
+	uidValidity, uidNext, err := db.GetMailboxInfo(s.db, mailboxID)
+	if err == nil {
+		statusValues["UIDNEXT"] = int(uidNext)
+		statusValues["UIDVALIDITY"] = int(uidValidity)
+	} else {
+		statusValues["UIDNEXT"] = 1
+		statusValues["UIDVALIDITY"] = 1
 	}
-	statusValues["UIDNEXT"] = maxUID + 1
-
-	// UIDVALIDITY - use a constant value of 1 for simplicity
-	// In a production system, this should be stored per-mailbox
-	statusValues["UIDVALIDITY"] = 1
-
-	// Query UNSEEN count (messages without \Seen flag)
-	var unseenCount int
-	query = fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ? AND (flags IS NULL OR flags = '' OR flags NOT LIKE '%%\\Seen%%')", tableName)
-	err = s.db.QueryRow(query, mailboxName).Scan(&unseenCount)
-	if err != nil {
-		unseenCount = 0
-	}
-	statusValues["UNSEEN"] = unseenCount
 
 	// Build response with only requested items
 	var responseItems []string

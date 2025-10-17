@@ -13,10 +13,7 @@ import (
 func TestListCommand_RFC3501_Examples(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	testCases := []struct {
 		name              string
@@ -83,10 +80,7 @@ func TestListCommand_RFC3501_Examples(t *testing.T) {
 func TestListCommand_WildcardEdgeCases(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	testCases := []struct {
 		pattern          string
@@ -170,10 +164,7 @@ func TestListCommand_WildcardEdgeCases(t *testing.T) {
 func TestListCommand_HierarchyDelimiterVariations(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	testCases := []struct {
 		reference         string
@@ -219,10 +210,7 @@ func TestListCommand_HierarchyDelimiterVariations(t *testing.T) {
 func TestListCommand_ReferencePatternCombination(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	testCases := []struct {
 		reference       string
@@ -316,10 +304,7 @@ func TestListCommand_ErrorConditions(t *testing.T) {
 func TestListCommand_SpecialCharacters(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	state := &models.ClientState{
-		Authenticated: true,
-		Username:      "testuser",
-	}
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	testCases := []struct {
 		pattern     string

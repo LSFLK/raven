@@ -13,6 +13,7 @@ import (
 	"go-imap/internal/models"
 	"go-imap/internal/conf"
 	"go-imap/internal/db"
+	"go-imap/internal/delivery/parser"
 )
 
 func (s *IMAPServer) handleCapability(conn net.Conn, tag string, state *models.ClientState) {
@@ -116,7 +117,7 @@ func (s *IMAPServer) handleList(conn net.Conn, tag string, parts []string, state
 	}
 
 	// Get all mailboxes for the user
-	mailboxes, err := db.GetUserMailboxes(s.db, state.Username)
+	mailboxes, err := db.GetUserMailboxes(s.db, state.UserID)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO LIST failure: can't list mailboxes", tag))
 		return
@@ -164,7 +165,7 @@ func (s *IMAPServer) handleLsub(conn net.Conn, tag string, parts []string, state
 	}
 
 	// Get subscribed mailboxes from database
-	subscriptions, err := db.GetUserSubscriptions(s.db, state.Username)
+	subscriptions, err := db.GetUserSubscriptions(s.db, state.UserID)
 	if err != nil {
 		fmt.Printf("Failed to get subscriptions for user %s: %v\n", state.Username, err)
 		s.sendResponse(conn, fmt.Sprintf("%s NO LSUB failure: can't list that reference or name", tag))
@@ -175,7 +176,7 @@ func (s *IMAPServer) handleLsub(conn net.Conn, tag string, parts []string, state
 	if len(subscriptions) == 0 {
 		defaultMailboxes := []string{"INBOX", "Sent", "Drafts", "Trash"}
 		for _, mailbox := range defaultMailboxes {
-			db.SubscribeToMailbox(s.db, state.Username, mailbox)
+			db.SubscribeToMailbox(s.db, state.UserID, mailbox)
 		}
 		subscriptions = defaultMailboxes
 	}
@@ -272,14 +273,8 @@ func (s *IMAPServer) handleCreate(conn net.Conn, tag string, parts []string, sta
 		return
 	}
 
-	// Ensure mailboxes table exists
-	if err := db.EnsureMailboxTable(s.db); err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Server error: cannot initialize mailbox storage", tag))
-		return
-	}
-
 	// Check if mailbox already exists
-	exists, err := db.MailboxExists(s.db, state.Username, mailboxName)
+	exists, err := db.MailboxExists(s.db, state.UserID, mailboxName)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Server error: cannot check mailbox existence", tag))
 		return
@@ -295,30 +290,30 @@ func (s *IMAPServer) handleCreate(conn net.Conn, tag string, parts []string, sta
 	if strings.Contains(mailboxName, "/") {
 		parts := strings.Split(mailboxName, "/")
 		currentPath := ""
-		
+
 		// Create each level of the hierarchy
 		for i, part := range parts {
 			if i > 0 {
 				currentPath += "/"
 			}
 			currentPath += part
-			
+
 			// Skip if this is the final mailbox (we'll create it below)
 			if i == len(parts)-1 {
 				break
 			}
-			
+
 			// Check if this intermediate mailbox exists
-			intermediateExists, checkErr := db.MailboxExists(s.db, state.Username, currentPath)
+			intermediateExists, checkErr := db.MailboxExists(s.db, state.UserID, currentPath)
 			if checkErr == nil && !intermediateExists {
 				// Create intermediate mailbox - ignore errors as per RFC 3501
-				db.CreateMailbox(s.db, state.Username, currentPath)
+				db.CreateMailbox(s.db, state.UserID, currentPath, "")
 			}
 		}
 	}
 
 	// Create the target mailbox
-	err = db.CreateMailbox(s.db, state.Username, mailboxName)
+	_, err = db.CreateMailbox(s.db, state.UserID, mailboxName, "")
 	if err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			s.sendResponse(conn, fmt.Sprintf("%s NO Mailbox already exists", tag))
@@ -357,14 +352,8 @@ func (s *IMAPServer) handleDelete(conn net.Conn, tag string, parts []string, sta
 		return
 	}
 
-	// Ensure mailboxes table exists
-	if err := db.EnsureMailboxTable(s.db); err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Server error: cannot initialize mailbox storage", tag))
-		return
-	}
-
 	// Attempt to delete the mailbox
-	err := db.DeleteMailbox(s.db, state.Username, mailboxName)
+	err := db.DeleteMailbox(s.db, state.UserID, mailboxName)
 	if err != nil {
 		if strings.Contains(err.Error(), "does not exist") {
 			s.sendResponse(conn, fmt.Sprintf("%s NO Mailbox does not exist", tag))
@@ -402,14 +391,8 @@ func (s *IMAPServer) handleRename(conn net.Conn, tag string, parts []string, sta
 		return
 	}
 
-	// Ensure mailboxes table exists
-	if err := db.EnsureMailboxTable(s.db); err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Server error: cannot initialize mailbox storage", tag))
-		return
-	}
-
 	// Attempt to rename the mailbox
-	err := db.RenameMailbox(s.db, state.Username, oldName, newName)
+	err := db.RenameMailbox(s.db, state.UserID, oldName, newName)
 	if err != nil {
 		if strings.Contains(err.Error(), "source mailbox does not exist") {
 			s.sendResponse(conn, fmt.Sprintf("%s NO Source mailbox does not exist", tag))
@@ -435,34 +418,28 @@ func (s *IMAPServer) handleNoop(conn net.Conn, tag string, state *models.ClientS
 	// NOOP can be used before authentication
 	// If authenticated and a folder is selected, check for mailbox updates
 	// and send untagged responses per RFC 3501
-	if state.Authenticated && state.SelectedFolder != "" {
-		tableName := s.getUserTableName(state.Username)
-		
-		// Get current mailbox state
-		var currentCount int
-		query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ?", tableName)
-		err := s.db.QueryRow(query, state.SelectedFolder).Scan(&currentCount)
+	if state.Authenticated && state.SelectedMailboxID > 0 {
+		// Get current mailbox state using new schema
+		currentCount, err := db.GetMessageCount(s.db, state.SelectedMailboxID)
 		if err != nil {
 			// If there's a database error, just complete normally
 			s.sendResponse(conn, fmt.Sprintf("%s OK NOOP completed", tag))
 			return
 		}
 
-		var currentRecent int
-		query = fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ? AND flags NOT LIKE '%%\\Seen%%'", tableName)
-		err = s.db.QueryRow(query, state.SelectedFolder).Scan(&currentRecent)
+		currentRecent, err := db.GetUnseenCount(s.db, state.SelectedMailboxID)
 		if err != nil {
 			currentRecent = 0
 		}
 
 		// Debug logging
-		fmt.Printf("NOOP Debug: folder=%s, lastCount=%d, currentCount=%d, lastRecent=%d, currentRecent=%d\n",
-			state.SelectedFolder, state.LastMessageCount, currentCount, state.LastRecentCount, currentRecent)
+		fmt.Printf("NOOP Debug: mailbox_id=%d, lastCount=%d, currentCount=%d, lastRecent=%d, currentRecent=%d\n",
+			state.SelectedMailboxID, state.LastMessageCount, currentCount, state.LastRecentCount, currentRecent)
 
 		// Check for new messages (EXISTS response)
 		if currentCount > state.LastMessageCount {
 			s.sendResponse(conn, fmt.Sprintf("* %d EXISTS", currentCount))
-			
+
 			// Calculate new recent messages
 			newRecent := currentCount - state.LastMessageCount
 			if newRecent > 0 {
@@ -494,9 +471,56 @@ func (s *IMAPServer) handleNoop(conn net.Conn, tag string, state *models.ClientS
 		state.LastMessageCount = currentCount
 		state.LastRecentCount = currentRecent
 	}
-	
+
 	// Always complete successfully per RFC 3501
 	s.sendResponse(conn, fmt.Sprintf("%s OK NOOP completed", tag))
+}
+
+func (s *IMAPServer) handleCheck(conn net.Conn, tag string, state *models.ClientState) {
+	// CHECK command requires authentication
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	// CHECK command requires a selected mailbox (Selected state)
+	// Per RFC 3501: CHECK is only valid in Selected state
+	if state.SelectedMailboxID == 0 {
+		s.sendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
+		return
+	}
+
+	// Perform checkpoint operations for the currently selected mailbox
+	// This involves resolving the server's in-memory state with the state on disk
+	// In our implementation, this is similar to NOOP but emphasizes housekeeping
+
+	// Get current mailbox state
+	currentCount, err := db.GetMessageCount(s.db, state.SelectedMailboxID)
+	if err != nil {
+		// If there's a database error, still complete normally per RFC 3501
+		// CHECK should always succeed even if housekeeping fails
+		s.sendResponse(conn, fmt.Sprintf("%s OK CHECK completed", tag))
+		return
+	}
+
+	currentRecent, err := db.GetUnseenCount(s.db, state.SelectedMailboxID)
+	if err != nil {
+		currentRecent = 0
+	}
+
+	// Update state tracking to ensure in-memory state matches database
+	// This is the "checkpoint" - synchronizing cached state with actual state
+	state.LastMessageCount = currentCount
+	state.LastRecentCount = currentRecent
+
+	// Note: Unlike NOOP, CHECK does not guarantee sending EXISTS responses
+	// Per RFC 3501: "There is no guarantee that an EXISTS untagged response
+	// will happen as a result of CHECK. NOOP, not CHECK, SHOULD be used for
+	// new message polling."
+	// Therefore, we do NOT send untagged responses here
+
+	// Always complete successfully per RFC 3501
+	s.sendResponse(conn, fmt.Sprintf("%s OK CHECK completed", tag))
 }
 
 func (s *IMAPServer) handleIdle(conn net.Conn, tag string, state *models.ClientState) {
@@ -505,7 +529,7 @@ func (s *IMAPServer) handleIdle(conn net.Conn, tag string, state *models.ClientS
 		return
 	}
 
-	if state.SelectedFolder == "" {
+	if state.SelectedMailboxID == 0 {
 		s.sendResponse(conn, fmt.Sprintf("%s NO No folder selected", tag))
 		return
 	}
@@ -514,25 +538,18 @@ func (s *IMAPServer) handleIdle(conn net.Conn, tag string, state *models.ClientS
 	s.sendResponse(conn, "+ idling")
 
 	buf := make([]byte, 4096)
-	tableName := s.getUserTableName(state.Username)
 
-	// Track previous state of the folder
-	var prevCount, prevUnseen int
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ?", tableName)
-	_ = s.db.QueryRow(query, state.SelectedFolder).Scan(&prevCount)
-	query = fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ? AND flags NOT LIKE '%%\\Seen%%'", tableName)
-	_ = s.db.QueryRow(query, state.SelectedFolder).Scan(&prevUnseen)
+	// Track previous state of the folder using new schema
+	prevCount, _ := db.GetMessageCount(s.db, state.SelectedMailboxID)
+	prevUnseen, _ := db.GetUnseenCount(s.db, state.SelectedMailboxID)
 
 	for {
 		// Poll every 2 seconds for changes
 		time.Sleep(2 * time.Second)
 
-		// Check current mailbox state
-		var count, unseen int
-		query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ?", tableName)
-		_ = s.db.QueryRow(query, state.SelectedFolder).Scan(&count)
-		query = fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE folder = ? AND flags NOT LIKE '%%\\Seen%%'", tableName)
-		_ = s.db.QueryRow(query, state.SelectedFolder).Scan(&unseen)
+		// Check current mailbox state using new schema
+		count, _ := db.GetMessageCount(s.db, state.SelectedMailboxID)
+		unseen, _ := db.GetUnseenCount(s.db, state.SelectedMailboxID)
 
 		// Notify about new messages
 		if count > prevCount {
@@ -586,16 +603,19 @@ func (s *IMAPServer) handleUnselect(conn net.Conn, tag string, state *models.Cli
 		return
 	}
 
-	if state.SelectedFolder == "" {
+	if state.SelectedMailboxID == 0 {
 		s.sendResponse(conn, fmt.Sprintf("%s NO No folder selected", tag))
 		return
 	}
 
 	// Close mailbox without expunging messages
 	state.SelectedFolder = ""
+	state.SelectedMailboxID = 0
 	// Reset state tracking
 	state.LastMessageCount = 0
 	state.LastRecentCount = 0
+	state.UIDValidity = 0
+	state.UIDNext = 0
 	s.sendResponse(conn, fmt.Sprintf("%s OK UNSELECT completed", tag))
 }
 
@@ -614,14 +634,9 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 	// Parse folder name (could be quoted)
 	folder := strings.Trim(parts[2], "\"")
 
-	// Validate folder exists using the database
-	exists, err := db.MailboxExists(s.db, state.Username, folder)
+	// Validate folder exists using the database with new schema
+	mailboxID, err := db.GetMailboxByName(s.db, state.UserID, folder)
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Server error checking folder", tag))
-		return
-	}
-	
-	if !exists {
 		s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Folder does not exist", tag))
 		return
 	}
@@ -678,61 +693,55 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 
 	rawMessage := string(messageData)
 
-	// Parse email headers for metadata
-	subject := ""
-	sender := ""
-	recipient := ""
-	dateSent := time.Now().Format("02-Jan-2006 15:04:05 -0700")
-
-	lines := strings.Split(rawMessage, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			break // End of headers
-		}
-		
-		upperLine := strings.ToUpper(line)
-		if strings.HasPrefix(upperLine, "SUBJECT:") {
-			subject = strings.TrimSpace(line[8:])
-		} else if strings.HasPrefix(upperLine, "FROM:") {
-			sender = strings.TrimSpace(line[5:])
-		} else if strings.HasPrefix(upperLine, "TO:") {
-			recipient = strings.TrimSpace(line[3:])
-		} else if strings.HasPrefix(upperLine, "DATE:") {
-			dateSent = strings.TrimSpace(line[5:])
-		}
-	}
-
 	// Ensure message has CRLF line endings
 	if !strings.Contains(rawMessage, "\r\n") {
 		rawMessage = strings.ReplaceAll(rawMessage, "\n", "\r\n")
 	}
 
-	// Insert into database
-	tableName := s.getUserTableName(state.Username)
-	query := fmt.Sprintf(
-		"INSERT INTO %s (subject, sender, recipient, date_sent, raw_message, flags, folder) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		tableName,
-	)
-	_, err = s.db.Exec(query, subject, sender, recipient, dateSent, rawMessage, flags, folder)
-
+	// Parse and store message using new schema
+	parsed, err := parser.ParseMIMEMessage(rawMessage)
 	if err != nil {
-		log.Printf("Failed to insert message: %v", err)
+		log.Printf("Failed to parse message: %v", err)
+		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to parse message", tag))
+		return
+	}
+
+	// Store message in database
+	messageID, err := parser.StoreMessage(s.db, parsed)
+	if err != nil {
+		log.Printf("Failed to store message: %v", err)
 		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to save message", tag))
 		return
 	}
 
-	// Get the newly inserted message ID for APPENDUID response
+	// Add message to mailbox
+	internalDate := time.Now()
+	err = db.AddMessageToMailbox(s.db, messageID, mailboxID, flags, internalDate)
+	if err != nil {
+		log.Printf("Failed to add message to mailbox: %v", err)
+		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to add message to mailbox", tag))
+		return
+	}
+
+	// Get UID validity for APPENDUID response
+	uidValidity, _, err := db.GetMailboxInfo(s.db, mailboxID)
+	if err != nil {
+		uidValidity = 1
+	}
+
+	// Get the UID assigned to the message
 	var newUID int64
-	err = s.db.QueryRow("SELECT last_insert_rowid()").Scan(&newUID)
+	query := "SELECT uid FROM message_mailbox WHERE message_id = ? AND mailbox_id = ?"
+	err = s.db.QueryRow(query, messageID, mailboxID).Scan(&newUID)
 	if err != nil {
 		log.Printf("Failed to get new UID: %v", err)
+		newUID = 1
 	}
 
 	log.Printf("Message appended to folder '%s' with UID %d", folder, newUID)
-	
+
 	// Send success response with APPENDUID (RFC 4315 - UIDPLUS extension)
-	s.sendResponse(conn, fmt.Sprintf("%s OK [APPENDUID 1 %d] APPEND completed", tag, newUID))
+	s.sendResponse(conn, fmt.Sprintf("%s OK [APPENDUID %d %d] APPEND completed", tag, uidValidity, newUID))
 }
 
 func (s *IMAPServer) handleStartTLS(conn net.Conn, tag string, parts []string) {
@@ -935,16 +944,23 @@ func (s *IMAPServer) authenticateUser(conn net.Conn, tag string, username string
 
 	if resp.StatusCode == 200 {
 		log.Printf("Accepting login for user: %s", username)
-		
-		// Ensure user table exists
-		if err := s.ensureUserTable(username); err != nil {
-			log.Printf("Failed to create user table: %v", err)
+
+		// Extract username and domain
+		actualUsername := s.extractUsername(username)
+		domain := s.getUserDomain(username)
+
+		// Ensure user exists in database and has default mailboxes
+		userID, domainID, err := s.ensureUserAndMailboxes(actualUsername, domain)
+		if err != nil {
+			log.Printf("Failed to create user and mailboxes: %v", err)
 			s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Server error", tag))
 			return
 		}
-		
+
 		state.Authenticated = true
-		state.Username = username
+		state.Username = actualUsername
+		state.UserID = userID
+		state.DomainID = domainID
 		
 		// Detect if TLS is active
 		isTLS := false
@@ -997,7 +1013,7 @@ func (s *IMAPServer) handleSubscribe(conn net.Conn, tag string, parts []string, 
 	}
 
 	// Subscribe to the mailbox
-	err := db.SubscribeToMailbox(s.db, state.Username, mailboxName)
+	err := db.SubscribeToMailbox(s.db, state.UserID, mailboxName)
 	if err != nil {
 		fmt.Printf("Failed to subscribe to mailbox %s for user %s: %v\n", mailboxName, state.Username, err)
 		s.sendResponse(conn, fmt.Sprintf("%s NO SUBSCRIBE failure: server error", tag))
@@ -1034,7 +1050,7 @@ func (s *IMAPServer) handleUnsubscribe(conn net.Conn, tag string, parts []string
 	}
 
 	// Unsubscribe from the mailbox
-	err := db.UnsubscribeFromMailbox(s.db, state.Username, mailboxName)
+	err := db.UnsubscribeFromMailbox(s.db, state.UserID, mailboxName)
 	if err != nil {
 		if strings.Contains(err.Error(), "subscription does not exist") {
 			s.sendResponse(conn, fmt.Sprintf("%s NO UNSUBSCRIBE failure: can't unsubscribe that name", tag))
@@ -1073,6 +1089,11 @@ func (s *IMAPServer) HandleLsub(conn net.Conn, tag string, parts []string, state
 // HandleStatus exports the status handler for testing
 func (s *IMAPServer) HandleStatus(conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	s.handleStatus(conn, tag, parts, state)
+}
+
+// HandleCheck exports the check handler for testing
+func (s *IMAPServer) HandleCheck(conn net.Conn, tag string, state *models.ClientState) {
+	s.handleCheck(conn, tag, state)
 }
 
 // parseQuotedString parses a quoted string argument, handling both quoted and unquoted strings
