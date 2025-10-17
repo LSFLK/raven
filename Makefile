@@ -30,7 +30,7 @@
 #   make test-commands     - Run all command tests
 #   make help              - Show all available targets
 
-.PHONY: test test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-commands test-verbose test-coverage test-race clean
+.PHONY: test test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-uid test-commands test-verbose test-coverage test-race clean
 
 # Build delivery service
 build-delivery:
@@ -152,7 +152,11 @@ test-store:
 test-copy:
 	go test -tags=test -v ./test/server -run "TestCopyCommand"
 
-# Run all command tests (CAPABILITY + NOOP + CHECK + CLOSE + EXPUNGE + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + LIST + LIST-EXTENDED + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB + STATUS + RENAME + SEARCH + FETCH + STORE + COPY)
+# Run only UID-related tests
+test-uid:
+	go test -tags=test -v ./test/server -run "TestUID"
+
+# Run all command tests (CAPABILITY + NOOP + CHECK + CLOSE + EXPUNGE + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + LIST + LIST-EXTENDED + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB + STATUS + RENAME + SEARCH + FETCH + STORE + COPY + UID)
 test-commands:
 	@echo "Running CAPABILITY tests..."
 	@go test -tags=test -v ./test/server -run "TestCapabilityCommand"
@@ -204,6 +208,8 @@ test-commands:
 	@go test -tags=test -v ./test/server -run "TestStoreCommand"
 	@echo "\nRunning COPY tests..."
 	@go test -tags=test -v ./test/server -run "TestCopyCommand"
+	@echo "\nRunning UID tests..."
+	@go test -tags=test -v ./test/server -run "TestUID"
 
 # Run tests with verbose output
 test-verbose:
@@ -296,7 +302,8 @@ help:
 	@echo "  test-fetch             - Run FETCH command tests only"
 	@echo "  test-store             - Run STORE command tests only"
 	@echo "  test-copy              - Run COPY command tests only"
-	@echo "  test-commands          - Run all command tests (CAPABILITY + NOOP + CHECK + CLOSE + EXPUNGE + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + LIST + LIST-EXTENDED + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB + STATUS + RENAME + SEARCH + FETCH + STORE + COPY)"
+	@echo "  test-uid               - Run UID command tests only"
+	@echo "  test-commands          - Run all command tests (CAPABILITY + NOOP + CHECK + CLOSE + EXPUNGE + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + LIST + LIST-EXTENDED + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB + STATUS + RENAME + SEARCH + FETCH + STORE + COPY + UID)"
 	@echo "  test-verbose           - Run tests with verbose output"
 	@echo "  test-coverage          - Run tests with coverage report"
 	@echo "  test-race              - Run tests with race detection"

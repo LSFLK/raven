@@ -156,6 +156,11 @@ func (t *TestInterface) HandleCopy(conn net.Conn, tag string, parts []string, st
 	t.server.handleCopy(conn, tag, parts, state)
 }
 
+// HandleUID exposes the UID handler for testing
+func (t *TestInterface) HandleUID(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	t.server.handleUID(conn, tag, parts, state)
+}
+
 // SetTLSCertificates sets custom TLS certificate paths for testing
 func (t *TestInterface) SetTLSCertificates(certPath, keyPath string) {
 	t.server.SetTLSCertificates(certPath, keyPath)
