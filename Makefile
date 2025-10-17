@@ -25,10 +25,11 @@
 #   make test-status      - Run STATUS command tests
 #   make test-rename       - Run RENAME command tests
 #   make test-search       - Run SEARCH command tests
+#   make test-fetch        - Run FETCH command tests
 #   make test-commands     - Run all command tests
 #   make help              - Show all available targets
 
-.PHONY: test test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-commands test-verbose test-coverage test-race clean
+.PHONY: test test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-commands test-verbose test-coverage test-race clean
 
 # Build delivery service
 build-delivery:
@@ -138,7 +139,11 @@ test-rename:
 test-search:
 	go test -tags=test -v ./test/server -run "TestSearchCommand"
 
-# Run all command tests (CAPABILITY + NOOP + CHECK + CLOSE + EXPUNGE + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + LIST + LIST-EXTENDED + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB + STATUS + RENAME + SEARCH)
+# Run only FETCH-related tests
+test-fetch:
+	go test -tags=test -v ./test/server -run "TestFetchCommand"
+
+# Run all command tests (CAPABILITY + NOOP + CHECK + CLOSE + EXPUNGE + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + LIST + LIST-EXTENDED + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB + STATUS + RENAME + SEARCH + FETCH)
 test-commands:
 	@echo "Running CAPABILITY tests..."
 	@go test -tags=test -v ./test/server -run "TestCapabilityCommand"
@@ -184,6 +189,8 @@ test-commands:
 	@go test -tags=test -v ./test/server -run "TestRenameCommand"
 	@echo "\nRunning SEARCH tests..."
 	@go test -tags=test -v ./test/server -run "TestSearchCommand"
+	@echo "\nRunning FETCH tests..."
+	@go test -tags=test -v ./test/server -run "TestFetchCommand"
 
 # Run tests with verbose output
 test-verbose:
@@ -273,7 +280,8 @@ help:
 	@echo "  test-status            - Run STATUS command tests only"
 	@echo "  test-rename            - Run RENAME command tests only"
 	@echo "  test-search            - Run SEARCH command tests only"
-	@echo "  test-commands          - Run all command tests (CAPABILITY + NOOP + CHECK + CLOSE + EXPUNGE + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + LIST + LIST-EXTENDED + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB + STATUS + RENAME + SEARCH)"
+	@echo "  test-fetch             - Run FETCH command tests only"
+	@echo "  test-commands          - Run all command tests (CAPABILITY + NOOP + CHECK + CLOSE + EXPUNGE + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + LIST + LIST-EXTENDED + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB + STATUS + RENAME + SEARCH + FETCH)"
 	@echo "  test-verbose           - Run tests with verbose output"
 	@echo "  test-coverage          - Run tests with coverage report"
 	@echo "  test-race              - Run tests with race detection"

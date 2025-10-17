@@ -135,7 +135,20 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 
 	sequence := parts[2]
 	items := strings.Join(parts[3:], " ")
-	items = strings.Trim(items, "()")
+
+	// Handle FETCH macros: ALL, FAST, FULL
+	itemsUpper := strings.ToUpper(strings.TrimSpace(items))
+	switch itemsUpper {
+	case "ALL":
+		items = "FLAGS INTERNALDATE RFC822.SIZE ENVELOPE"
+	case "FAST":
+		items = "FLAGS INTERNALDATE RFC822.SIZE"
+	case "FULL":
+		items = "FLAGS INTERNALDATE RFC822.SIZE ENVELOPE BODY"
+	default:
+		// Remove parentheses if present
+		items = strings.Trim(items, "()")
+	}
 
 	var rows *sql.Rows
 	var err error
@@ -264,17 +277,46 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		if strings.Contains(itemsUpper, "RFC822.SIZE") {
 			responseParts = append(responseParts, fmt.Sprintf("RFC822.SIZE %d", len(rawMsg)))
 		}
-		
+
+		// Handle ENVELOPE
+		if strings.Contains(itemsUpper, "ENVELOPE") {
+			envelope := s.buildEnvelope(rawMsg)
+			responseParts = append(responseParts, envelope)
+		}
+
+		// Handle BODYSTRUCTURE
+		if strings.Contains(itemsUpper, "BODYSTRUCTURE") {
+			bodyStructure := s.buildBodyStructure(rawMsg)
+			responseParts = append(responseParts, bodyStructure)
+		}
+
+		// Handle BODY (non-extensible BODYSTRUCTURE)
+		if strings.Contains(itemsUpper, "BODY") && !strings.Contains(itemsUpper, "BODY[") && !strings.Contains(itemsUpper, "BODY.PEEK") && !strings.Contains(itemsUpper, "BODYSTRUCTURE") {
+			// BODY is the non-extensible form of BODYSTRUCTURE
+			bodyStructure := s.buildBodyStructure(rawMsg)
+			// Replace BODYSTRUCTURE with BODY in the response
+			bodyStructure = strings.Replace(bodyStructure, "BODYSTRUCTURE", "BODY", 1)
+			responseParts = append(responseParts, bodyStructure)
+		}
+
 		// Handle multiple body parts - process each separately
 		// Handle BODY.PEEK[HEADER.FIELDS (...)] or BODY[HEADER.FIELDS (...)] - specific header fields
 		if strings.Contains(itemsUpper, "BODY.PEEK[HEADER.FIELDS") || strings.Contains(itemsUpper, "BODY[HEADER.FIELDS") {
 			start := strings.Index(itemsUpper, "BODY.PEEK[HEADER.FIELDS")
-			end := strings.Index(itemsUpper[start:], "]")
-			
+			if start == -1 {
+				start = strings.Index(itemsUpper, "BODY[HEADER.FIELDS")
+			}
+
 			// Extract requested header field names
 			requestedHeaders := []string{"FROM", "TO", "CC", "BCC", "SUBJECT", "DATE", "MESSAGE-ID", "PRIORITY", "X-PRIORITY", "REFERENCES", "NEWSGROUPS", "IN-REPLY-TO", "CONTENT-TYPE", "REPLY-TO"}
-			if start != -1 && end != -1 {
-				fieldsStr := items[start+len("BODY.PEEK[HEADER.FIELDS ("):]
+			if start != -1 {
+				isPeek := strings.Contains(itemsUpper, "BODY.PEEK[HEADER.FIELDS")
+				prefixLen := len("BODY[HEADER.FIELDS (")
+				if isPeek {
+					prefixLen = len("BODY.PEEK[HEADER.FIELDS (")
+				}
+
+				fieldsStr := items[start+prefixLen:]
 				closeParen := strings.Index(fieldsStr, ")")
 				if closeParen != -1 {
 					fieldsStr = fieldsStr[:closeParen]
@@ -1142,6 +1184,193 @@ func (s *IMAPServer) requiresArgument(token string) bool {
 		return true // Actually requires 2 arguments, but handle separately
 	}
 	return false
+}
+
+// buildEnvelope builds an ENVELOPE structure from a message
+// ENVELOPE: (date subject from sender reply-to to cc bcc in-reply-to message-id)
+func (s *IMAPServer) buildEnvelope(rawMsg string) string {
+	// Extract headers
+	date := s.extractHeader(rawMsg, "Date")
+	subject := s.extractHeader(rawMsg, "Subject")
+	from := s.extractHeader(rawMsg, "From")
+	sender := s.extractHeader(rawMsg, "Sender")
+	replyTo := s.extractHeader(rawMsg, "Reply-To")
+	to := s.extractHeader(rawMsg, "To")
+	cc := s.extractHeader(rawMsg, "Cc")
+	bcc := s.extractHeader(rawMsg, "Bcc")
+	inReplyTo := s.extractHeader(rawMsg, "In-Reply-To")
+	messageID := s.extractHeader(rawMsg, "Message-ID")
+
+	// If sender is empty, use from
+	if sender == "" {
+		sender = from
+	}
+	// If reply-to is empty, use from
+	if replyTo == "" {
+		replyTo = from
+	}
+
+	// Build ENVELOPE structure
+	envelope := fmt.Sprintf("ENVELOPE (%s %s %s %s %s %s %s %s %s %s)",
+		s.quoteOrNIL(date),
+		s.quoteOrNIL(subject),
+		s.parseAddressList(from),
+		s.parseAddressList(sender),
+		s.parseAddressList(replyTo),
+		s.parseAddressList(to),
+		s.parseAddressList(cc),
+		s.parseAddressList(bcc),
+		s.quoteOrNIL(inReplyTo),
+		s.quoteOrNIL(messageID),
+	)
+
+	return envelope
+}
+
+// extractHeader extracts a header value from a raw message
+func (s *IMAPServer) extractHeader(rawMsg string, headerName string) string {
+	lines := strings.Split(rawMsg, "\n")
+	headerNameUpper := strings.ToUpper(headerName)
+	var headerValue strings.Builder
+	inHeader := false
+
+	for _, line := range lines {
+		line = strings.TrimRight(line, "\r")
+		if line == "" {
+			break // End of headers
+		}
+
+		// Check if continuation line
+		if len(line) > 0 && (line[0] == ' ' || line[0] == '\t') {
+			if inHeader {
+				headerValue.WriteString(" ")
+				headerValue.WriteString(strings.TrimSpace(line))
+			}
+			continue
+		}
+
+		// New header line
+		colonIdx := strings.Index(line, ":")
+		if colonIdx != -1 {
+			currentHeader := strings.TrimSpace(line[:colonIdx])
+			if strings.ToUpper(currentHeader) == headerNameUpper {
+				inHeader = true
+				headerValue.WriteString(strings.TrimSpace(line[colonIdx+1:]))
+			} else {
+				inHeader = false
+			}
+		}
+	}
+
+	return headerValue.String()
+}
+
+// quoteOrNIL quotes a string or returns NIL if empty
+func (s *IMAPServer) quoteOrNIL(str string) string {
+	if str == "" {
+		return "NIL"
+	}
+	// Escape quotes and backslashes in the string
+	str = strings.ReplaceAll(str, "\\", "\\\\")
+	str = strings.ReplaceAll(str, "\"", "\\\"")
+	return fmt.Sprintf("\"%s\"", str)
+}
+
+// parseAddressList parses an address header into IMAP address list format
+// Address list: ((name route mailbox host) ...) or NIL
+func (s *IMAPServer) parseAddressList(addresses string) string {
+	if addresses == "" {
+		return "NIL"
+	}
+
+	// Simple parser - split by comma
+	addrs := strings.Split(addresses, ",")
+	var addrStructs []string
+
+	for _, addr := range addrs {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			continue
+		}
+
+		// Parse "Name <email@domain.com>" or just "email@domain.com"
+		name := ""
+		email := addr
+
+		// Check for name part
+		if strings.Contains(addr, "<") && strings.Contains(addr, ">") {
+			start := strings.Index(addr, "<")
+			end := strings.Index(addr, ">")
+			name = strings.TrimSpace(addr[:start])
+			email = addr[start+1 : end]
+			// Remove quotes from name if present
+			name = strings.Trim(name, "\"")
+		}
+
+		// Parse email into mailbox@host
+		mailbox := email
+		host := ""
+		if strings.Contains(email, "@") {
+			parts := strings.SplitN(email, "@", 2)
+			mailbox = parts[0]
+			host = parts[1]
+		}
+
+		// Build address structure: (name route mailbox host)
+		// route is always NIL in modern email
+		addrStruct := fmt.Sprintf("(%s NIL %s %s)",
+			s.quoteOrNIL(name),
+			s.quoteOrNIL(mailbox),
+			s.quoteOrNIL(host),
+		)
+		addrStructs = append(addrStructs, addrStruct)
+	}
+
+	if len(addrStructs) == 0 {
+		return "NIL"
+	}
+
+	return "(" + strings.Join(addrStructs, " ") + ")"
+}
+
+// buildBodyStructure builds a BODYSTRUCTURE response
+// For simple messages (non-multipart), this is a simplified implementation
+func (s *IMAPServer) buildBodyStructure(rawMsg string) string {
+	// Extract Content-Type header
+	contentType := s.extractHeader(rawMsg, "Content-Type")
+	if contentType == "" {
+		contentType = "text/plain; charset=us-ascii"
+	}
+
+	// Parse content type
+	mediaType := "text"
+	mediaSubtype := "plain"
+	if strings.Contains(contentType, "/") {
+		parts := strings.SplitN(contentType, "/", 2)
+		mediaType = strings.ToUpper(strings.TrimSpace(parts[0]))
+		subParts := strings.Split(parts[1], ";")
+		mediaSubtype = strings.ToUpper(strings.TrimSpace(subParts[0]))
+	}
+
+	// Get message size (body only)
+	headerEnd := strings.Index(rawMsg, "\r\n\r\n")
+	if headerEnd == -1 {
+		headerEnd = strings.Index(rawMsg, "\n\n")
+	}
+	bodySize := 0
+	if headerEnd != -1 {
+		bodySize = len(rawMsg) - headerEnd - 4
+	}
+
+	// For non-multipart messages, return basic body structure
+	// Format: (type subtype (params) id description encoding size)
+	bodyStruct := fmt.Sprintf("BODYSTRUCTURE (%s %s NIL NIL NIL \"7BIT\" %d)",
+		s.quoteOrNIL(mediaType),
+		s.quoteOrNIL(mediaSubtype),
+		bodySize,
+	)
+
+	return bodyStruct
 }
 
 func (s *IMAPServer) handleStatus(conn net.Conn, tag string, parts []string, state *models.ClientState) {
