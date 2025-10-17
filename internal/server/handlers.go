@@ -585,6 +585,119 @@ func (s *IMAPServer) handleClose(conn net.Conn, tag string, state *models.Client
 	s.sendResponse(conn, fmt.Sprintf("%s OK CLOSE completed", tag))
 }
 
+func (s *IMAPServer) handleExpunge(conn net.Conn, tag string, state *models.ClientState) {
+	// EXPUNGE command requires authentication
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	// EXPUNGE command requires a selected mailbox (Selected state)
+	// Per RFC 3501: EXPUNGE is only valid in Selected state
+	if state.SelectedMailboxID == 0 {
+		s.sendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
+		return
+	}
+
+	// Per RFC 3501: EXPUNGE permanently removes all messages with \Deleted flag
+	// Before returning OK, an untagged EXPUNGE response is sent for each message removed
+	// The key difference from CLOSE: EXPUNGE sends untagged responses showing which
+	// messages were deleted
+
+	// Important: Per RFC 3501, if mailbox is read-only (selected with EXAMINE),
+	// EXPUNGE should return NO
+	// TODO: Add ReadOnly field to ClientState to properly handle EXAMINE
+
+	// Query for all messages with \Deleted flag, ordered by sequence number
+	// We need to get the sequence numbers before deletion
+	rows, err := s.db.Query(`
+		SELECT id, uid FROM message_mailbox
+		WHERE mailbox_id = ? AND flags LIKE '%\Deleted%'
+		ORDER BY uid ASC
+	`, state.SelectedMailboxID)
+
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO EXPUNGE failed: %v", tag, err))
+		return
+	}
+	defer rows.Close()
+
+	// Collect messages to delete with their UIDs
+	type messageToDelete struct {
+		id  int64
+		uid int64
+	}
+	var messagesToDelete []messageToDelete
+	for rows.Next() {
+		var msg messageToDelete
+		if err := rows.Scan(&msg.id, &msg.uid); err == nil {
+			messagesToDelete = append(messagesToDelete, msg)
+		}
+	}
+	rows.Close()
+
+	// If no messages to delete, just return OK
+	if len(messagesToDelete) == 0 {
+		s.sendResponse(conn, fmt.Sprintf("%s OK EXPUNGE completed", tag))
+		return
+	}
+
+	// Get all messages in the mailbox to calculate sequence numbers
+	allRows, err := s.db.Query(`
+		SELECT id, uid FROM message_mailbox
+		WHERE mailbox_id = ?
+		ORDER BY uid ASC
+	`, state.SelectedMailboxID)
+
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO EXPUNGE failed: %v", tag, err))
+		return
+	}
+	defer allRows.Close()
+
+	// Build a map of message IDs to sequence numbers
+	sequenceMap := make(map[int64]int)
+	seqNum := 1
+	for allRows.Next() {
+		var id, uid int64
+		if err := allRows.Scan(&id, &uid); err == nil {
+			sequenceMap[id] = seqNum
+			seqNum++
+		}
+	}
+	allRows.Close()
+
+	// Delete messages and send EXPUNGE responses
+	// Important: As we delete messages, sequence numbers change for subsequent messages
+	// We need to account for this by tracking how many messages we've deleted
+	deletedCount := 0
+	for _, msg := range messagesToDelete {
+		// Get the original sequence number for this message
+		originalSeqNum := sequenceMap[msg.id]
+
+		// Adjust for previously deleted messages in this EXPUNGE operation
+		// When we delete message N, all messages after it shift down by 1
+		adjustedSeqNum := originalSeqNum - deletedCount
+
+		// Send untagged EXPUNGE response with the adjusted sequence number
+		s.sendResponse(conn, fmt.Sprintf("* %d EXPUNGE", adjustedSeqNum))
+
+		// Delete the message from the mailbox
+		s.db.Exec(`DELETE FROM message_mailbox WHERE id = ?`, msg.id)
+
+		deletedCount++
+	}
+
+	// Update state tracking
+	state.LastMessageCount -= len(messagesToDelete)
+	if state.LastMessageCount < 0 {
+		state.LastMessageCount = 0
+	}
+
+	// Send completion response
+	s.sendResponse(conn, fmt.Sprintf("%s OK EXPUNGE completed", tag))
+}
+
 func (s *IMAPServer) handleIdle(conn net.Conn, tag string, state *models.ClientState) {
 	if !state.Authenticated {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
