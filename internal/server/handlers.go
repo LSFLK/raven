@@ -476,6 +476,53 @@ func (s *IMAPServer) handleNoop(conn net.Conn, tag string, state *models.ClientS
 	s.sendResponse(conn, fmt.Sprintf("%s OK NOOP completed", tag))
 }
 
+func (s *IMAPServer) handleCheck(conn net.Conn, tag string, state *models.ClientState) {
+	// CHECK command requires authentication
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	// CHECK command requires a selected mailbox (Selected state)
+	// Per RFC 3501: CHECK is only valid in Selected state
+	if state.SelectedMailboxID == 0 {
+		s.sendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
+		return
+	}
+
+	// Perform checkpoint operations for the currently selected mailbox
+	// This involves resolving the server's in-memory state with the state on disk
+	// In our implementation, this is similar to NOOP but emphasizes housekeeping
+
+	// Get current mailbox state
+	currentCount, err := db.GetMessageCount(s.db, state.SelectedMailboxID)
+	if err != nil {
+		// If there's a database error, still complete normally per RFC 3501
+		// CHECK should always succeed even if housekeeping fails
+		s.sendResponse(conn, fmt.Sprintf("%s OK CHECK completed", tag))
+		return
+	}
+
+	currentRecent, err := db.GetUnseenCount(s.db, state.SelectedMailboxID)
+	if err != nil {
+		currentRecent = 0
+	}
+
+	// Update state tracking to ensure in-memory state matches database
+	// This is the "checkpoint" - synchronizing cached state with actual state
+	state.LastMessageCount = currentCount
+	state.LastRecentCount = currentRecent
+
+	// Note: Unlike NOOP, CHECK does not guarantee sending EXISTS responses
+	// Per RFC 3501: "There is no guarantee that an EXISTS untagged response
+	// will happen as a result of CHECK. NOOP, not CHECK, SHOULD be used for
+	// new message polling."
+	// Therefore, we do NOT send untagged responses here
+
+	// Always complete successfully per RFC 3501
+	s.sendResponse(conn, fmt.Sprintf("%s OK CHECK completed", tag))
+}
+
 func (s *IMAPServer) handleIdle(conn net.Conn, tag string, state *models.ClientState) {
 	if !state.Authenticated {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
@@ -1042,6 +1089,11 @@ func (s *IMAPServer) HandleLsub(conn net.Conn, tag string, parts []string, state
 // HandleStatus exports the status handler for testing
 func (s *IMAPServer) HandleStatus(conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	s.handleStatus(conn, tag, parts, state)
+}
+
+// HandleCheck exports the check handler for testing
+func (s *IMAPServer) HandleCheck(conn net.Conn, tag string, state *models.ClientState) {
+	s.handleCheck(conn, tag, state)
 }
 
 // parseQuotedString parses a quoted string argument, handling both quoted and unquoted strings

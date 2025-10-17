@@ -3,6 +3,7 @@
 # Quick Reference:
 #   make test              - Run all tests
 #   make test-noop         - Run NOOP command tests
+#   make test-check        - Run CHECK command tests
 #   make test-capability   - Run CAPABILITY command tests
 #   make test-logout       - Run LOGOUT command tests
 #   make test-append       - Run APPEND command tests
@@ -23,7 +24,7 @@
 #   make test-commands     - Run all command tests
 #   make help              - Show all available targets
 
-.PHONY: test test-capability test-noop test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-commands test-verbose test-coverage test-race clean
+.PHONY: test test-capability test-noop test-check test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-commands test-verbose test-coverage test-race clean
 
 # Build delivery service
 build-delivery:
@@ -48,6 +49,10 @@ test-capability:
 # Run only NOOP-related tests
 test-noop:
 	go test -tags=test -v ./test/server -run "TestNoopCommand"
+
+# Run only CHECK-related tests
+test-check:
+	go test -tags=test -v ./test/server -run "TestCheckCommand"
 
 # Run only LOGOUT-related tests
 test-logout:
@@ -117,12 +122,14 @@ test-status:
 test-rename:
 	go test -tags=test -v ./test/server -run "TestRenameCommand"
 
-# Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + LIST + LIST-EXTENDED + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB + STATUS + RENAME)
+# Run all command tests (CAPABILITY + NOOP + CHECK + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + LIST + LIST-EXTENDED + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB + STATUS + RENAME)
 test-commands:
 	@echo "Running CAPABILITY tests..."
 	@go test -tags=test -v ./test/server -run "TestCapabilityCommand"
 	@echo "\nRunning NOOP tests..."
 	@go test -tags=test -v ./test/server -run "TestNoopCommand"
+	@echo "\nRunning CHECK tests..."
+	@go test -tags=test -v ./test/server -run "TestCheckCommand"
 	@echo "\nRunning LOGOUT tests..."
 	@go test -tags=test -v ./test/server -run "TestLogoutCommand"
 	@echo "\nRunning APPEND tests..."
@@ -224,6 +231,7 @@ help:
 	@echo "  test-delivery          - Run delivery service tests"
 	@echo "  test-capability        - Run CAPABILITY command tests only"
 	@echo "  test-noop              - Run NOOP command tests only"
+	@echo "  test-check             - Run CHECK command tests only"
 	@echo "  test-logout            - Run LOGOUT command tests only"
 	@echo "  test-append            - Run APPEND command tests only"
 	@echo "  test-authenticate      - Run AUTHENTICATE command tests only"
@@ -239,7 +247,7 @@ help:
 	@echo "  test-unsubscribe       - Run UNSUBSCRIBE command tests only"
 	@echo "  test-lsub              - Run LSUB command tests only"
 	@echo "  test-status            - Run STATUS command tests only"
-	@echo "  test-commands          - Run all command tests (CAPABILITY + NOOP + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + LIST + LIST-EXTENDED + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB + STATUS)"
+	@echo "  test-commands          - Run all command tests (CAPABILITY + NOOP + CHECK + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + LIST + LIST-EXTENDED + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB + STATUS)"
 	@echo "  test-verbose           - Run tests with verbose output"
 	@echo "  test-coverage          - Run tests with coverage report"
 	@echo "  test-race              - Run tests with race detection"

@@ -76,6 +76,11 @@ func (t *TestInterface) HandleNoop(conn net.Conn, tag string, state *models.Clie
 	t.server.handleNoop(conn, tag, state)
 }
 
+// HandleCheck exposes the check handler for testing
+func (t *TestInterface) HandleCheck(conn net.Conn, tag string, state *models.ClientState) {
+	t.server.handleCheck(conn, tag, state)
+}
+
 // HandleSelect exposes the select handler for testing
 func (t *TestInterface) HandleSelect(conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	t.server.handleSelect(conn, tag, parts, state)

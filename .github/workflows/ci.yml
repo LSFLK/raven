@@ -36,6 +36,9 @@ jobs:
       - name: Test NOOP command
         run: go test -tags=test -v ./test/server -run "TestNoopCommand"
 
+      - name: Test CHECK command
+        run: go test -tags=test -v ./test/server -run "TestCheckCommand"
+
       - name: Test LOGOUT command
         run: go test -tags=test -v ./test/server -run "TestLogoutCommand"
 
