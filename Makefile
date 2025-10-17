@@ -23,10 +23,12 @@
 #   make test-unsubscribe  - Run UNSUBSCRIBE command tests
 #   make test-lsub         - Run LSUB command tests
 #   make test-status      - Run STATUS command tests
+#   make test-rename       - Run RENAME command tests
+#   make test-search       - Run SEARCH command tests
 #   make test-commands     - Run all command tests
 #   make help              - Show all available targets
 
-.PHONY: test test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-commands test-verbose test-coverage test-race clean
+.PHONY: test test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-commands test-verbose test-coverage test-race clean
 
 # Build delivery service
 build-delivery:
@@ -132,7 +134,11 @@ test-status:
 test-rename:
 	go test -tags=test -v ./test/server -run "TestRenameCommand"
 
-# Run all command tests (CAPABILITY + NOOP + CHECK + CLOSE + EXPUNGE + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + LIST + LIST-EXTENDED + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB + STATUS + RENAME)
+# Run only SEARCH-related tests
+test-search:
+	go test -tags=test -v ./test/server -run "TestSearchCommand"
+
+# Run all command tests (CAPABILITY + NOOP + CHECK + CLOSE + EXPUNGE + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + LIST + LIST-EXTENDED + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB + STATUS + RENAME + SEARCH)
 test-commands:
 	@echo "Running CAPABILITY tests..."
 	@go test -tags=test -v ./test/server -run "TestCapabilityCommand"
@@ -176,6 +182,8 @@ test-commands:
 	@go test -tags=test -v ./test/server -run "TestStatusCommand"
 	@echo "\nRunning RENAME tests..."
 	@go test -tags=test -v ./test/server -run "TestRenameCommand"
+	@echo "\nRunning SEARCH tests..."
+	@go test -tags=test -v ./test/server -run "TestSearchCommand"
 
 # Run tests with verbose output
 test-verbose:
@@ -263,7 +271,9 @@ help:
 	@echo "  test-unsubscribe       - Run UNSUBSCRIBE command tests only"
 	@echo "  test-lsub              - Run LSUB command tests only"
 	@echo "  test-status            - Run STATUS command tests only"
-	@echo "  test-commands          - Run all command tests (CAPABILITY + NOOP + CHECK + CLOSE + EXPUNGE + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + LIST + LIST-EXTENDED + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB + STATUS)"
+	@echo "  test-rename            - Run RENAME command tests only"
+	@echo "  test-search            - Run SEARCH command tests only"
+	@echo "  test-commands          - Run all command tests (CAPABILITY + NOOP + CHECK + CLOSE + EXPUNGE + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + LIST + LIST-EXTENDED + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB + STATUS + RENAME + SEARCH)"
 	@echo "  test-verbose           - Run tests with verbose output"
 	@echo "  test-coverage          - Run tests with coverage report"
 	@echo "  test-race              - Run tests with race detection"
