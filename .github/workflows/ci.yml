@@ -99,6 +99,9 @@ jobs:
       - name: Test FETCH command
         run: go test -tags=test -v ./test/server -run "TestFetchCommand"
 
+      - name: Test STORE command
+        run: go test -tags=test -v ./test/server -run "TestStoreCommand"
+
   test-delivery:
     name: Test Delivery Service
     runs-on: ubuntu-latest

@@ -146,6 +146,11 @@ func (t *TestInterface) HandleFetch(conn net.Conn, tag string, parts []string, s
 	t.server.handleFetch(conn, tag, parts, state)
 }
 
+// HandleStore exposes the store handler for testing
+func (t *TestInterface) HandleStore(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	t.server.handleStore(conn, tag, parts, state)
+}
+
 // SetTLSCertificates sets custom TLS certificate paths for testing
 func (t *TestInterface) SetTLSCertificates(certPath, keyPath string) {
 	t.server.SetTLSCertificates(certPath, keyPath)
