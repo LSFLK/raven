@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -696,6 +697,186 @@ func (s *IMAPServer) handleExpunge(conn net.Conn, tag string, state *models.Clie
 
 	// Send completion response
 	s.sendResponse(conn, fmt.Sprintf("%s OK EXPUNGE completed", tag))
+}
+
+func (s *IMAPServer) handleStore(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	// RFC 3501: STORE requires authentication and selected mailbox
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	if state.SelectedMailboxID == 0 {
+		s.sendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
+		return
+	}
+
+	// Parse command: STORE sequence data-item value
+	if len(parts) < 4 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD STORE requires sequence set, data item, and value", tag))
+		return
+	}
+
+	sequenceSet := parts[2]
+	dataItem := strings.ToUpper(parts[3])
+
+	// Check if .SILENT suffix is used
+	silent := strings.HasSuffix(dataItem, ".SILENT")
+	if silent {
+		dataItem = strings.TrimSuffix(dataItem, ".SILENT")
+	}
+
+	// Parse flags from remaining parts
+	flagsPart := strings.Join(parts[4:], " ")
+	flagsPart = strings.Trim(flagsPart, "()")
+	newFlags := strings.Fields(flagsPart)
+
+	// Validate data item
+	if dataItem != "FLAGS" && dataItem != "+FLAGS" && dataItem != "-FLAGS" {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid data item: %s", tag, parts[3]))
+		return
+	}
+
+	// Parse sequence set
+	sequences := s.parseSequenceSet(sequenceSet, state.SelectedMailboxID)
+	if len(sequences) == 0 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence set", tag))
+		return
+	}
+
+	// Process each message in the sequence
+	for _, seqNum := range sequences {
+		// Get message by sequence number
+		query := `
+			SELECT mm.message_id, mm.uid, mm.flags
+			FROM message_mailbox mm
+			WHERE mm.mailbox_id = ?
+			ORDER BY mm.uid ASC
+			LIMIT 1 OFFSET ?
+		`
+		var messageID, uid int64
+		var currentFlags string
+		err := s.db.QueryRow(query, state.SelectedMailboxID, seqNum-1).Scan(&messageID, &uid, &currentFlags)
+		if err != nil {
+			// Message not found - skip
+			continue
+		}
+
+		// Calculate new flags based on operation
+		updatedFlags := s.calculateNewFlags(currentFlags, newFlags, dataItem)
+
+		// Update flags in database
+		updateQuery := "UPDATE message_mailbox SET flags = ? WHERE message_id = ? AND mailbox_id = ?"
+		_, err = s.db.Exec(updateQuery, updatedFlags, messageID, state.SelectedMailboxID)
+		if err != nil {
+			log.Printf("Failed to update flags for message %d: %v", messageID, err)
+			continue
+		}
+
+		// Send untagged FETCH response unless .SILENT
+		if !silent {
+			flagsFormatted := "()"
+			if updatedFlags != "" {
+				flagsFormatted = fmt.Sprintf("(%s)", updatedFlags)
+			}
+			s.sendResponse(conn, fmt.Sprintf("* %d FETCH (FLAGS %s)", seqNum, flagsFormatted))
+		}
+	}
+
+	s.sendResponse(conn, fmt.Sprintf("%s OK STORE completed", tag))
+}
+
+// calculateNewFlags determines the new flags based on the operation
+func (s *IMAPServer) calculateNewFlags(currentFlags string, newFlags []string, operation string) string {
+	// Parse current flags into a map
+	flagMap := make(map[string]bool)
+	if currentFlags != "" {
+		for _, flag := range strings.Fields(currentFlags) {
+			flagMap[flag] = true
+		}
+	}
+
+	switch operation {
+	case "FLAGS":
+		// Replace all flags (except \Recent which server manages)
+		flagMap = make(map[string]bool)
+		for _, flag := range newFlags {
+			if flag != "\\Recent" {
+				flagMap[flag] = true
+			}
+		}
+
+	case "+FLAGS":
+		// Add flags
+		for _, flag := range newFlags {
+			if flag != "\\Recent" {
+				flagMap[flag] = true
+			}
+		}
+
+	case "-FLAGS":
+		// Remove flags
+		for _, flag := range newFlags {
+			if flag != "\\Recent" {
+				delete(flagMap, flag)
+			}
+		}
+	}
+
+	// Convert map back to string
+	var flags []string
+	for flag := range flagMap {
+		flags = append(flags, flag)
+	}
+
+	return strings.Join(flags, " ")
+}
+
+// parseSequenceSet parses a sequence set and returns message sequence numbers
+func (s *IMAPServer) parseSequenceSet(sequenceSet string, mailboxID int64) []int {
+	var sequences []int
+
+	// Get total message count
+	totalMessages, err := db.GetMessageCount(s.db, mailboxID)
+	if err != nil || totalMessages == 0 {
+		return sequences
+	}
+
+	// Handle * (last message)
+	sequenceSet = strings.ReplaceAll(sequenceSet, "*", fmt.Sprintf("%d", totalMessages))
+
+	// Split by comma for multiple sequences
+	parts := strings.Split(sequenceSet, ",")
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+
+		// Check if it's a range (e.g., "2:4")
+		if strings.Contains(part, ":") {
+			rangeParts := strings.Split(part, ":")
+			if len(rangeParts) == 2 {
+				start, err1 := strconv.Atoi(rangeParts[0])
+				end, err2 := strconv.Atoi(rangeParts[1])
+
+				if err1 == nil && err2 == nil && start > 0 && end > 0 {
+					if start > end {
+						start, end = end, start
+					}
+					for i := start; i <= end && i <= totalMessages; i++ {
+						sequences = append(sequences, i)
+					}
+				}
+			}
+		} else {
+			// Single message
+			num, err := strconv.Atoi(part)
+			if err == nil && num > 0 && num <= totalMessages {
+				sequences = append(sequences, num)
+			}
+		}
+	}
+
+	return sequences
 }
 
 func (s *IMAPServer) handleIdle(conn net.Conn, tag string, state *models.ClientState) {

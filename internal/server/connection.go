@@ -56,6 +56,8 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 			s.handleFetch(conn, tag, parts, state)
 		case "SEARCH":
 			s.handleSearch(conn, tag, parts, state)
+		case "STORE":
+			s.handleStore(conn, tag, parts, state)
 		case "STATUS":
 			s.handleStatus(conn, tag, parts, state)
 		case "UID":
