@@ -534,15 +534,6 @@ type messageInfo struct {
 	seqNum       int
 }
 
-// messageInfo holds metadata about a message for search operations
-type messageInfo struct {
-	messageID    int64
-	uid          int64
-	flags        string
-	internalDate time.Time
-	seqNum       int
-}
-
 func (s *IMAPServer) handleSearch(conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	if !state.Authenticated {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
