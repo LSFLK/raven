@@ -105,6 +105,9 @@ jobs:
       - name: Test COPY command
         run: go test -tags=test -v ./test/server -run "TestCopyCommand"
 
+      - name: Test UID commands
+        run: go test -tags=test -v ./test/server -run "TestUID"
+
   test-delivery:
     name: Test Delivery Service
     runs-on: ubuntu-latest

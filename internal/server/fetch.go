@@ -117,6 +117,32 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 	}
 }
 
+// handleFetchForUIDs handles FETCH for a list of UIDs (used by UID FETCH command)
+func (s *IMAPServer) handleFetchForUIDs(conn net.Conn, tag string, uids []int, items string, state *models.ClientState) {
+	for _, uid := range uids {
+		// Get message details by UID
+		var messageID int64
+		var seqNum int
+		var flags sql.NullString
+
+		err := s.db.QueryRow(`
+			SELECT mm.message_id, mm.flags,
+				(SELECT COUNT(*) FROM message_mailbox mm2
+				 WHERE mm2.mailbox_id = mm.mailbox_id AND mm2.uid <= mm.uid) as seq_num
+			FROM message_mailbox mm
+			WHERE mm.mailbox_id = ? AND mm.uid = ?
+		`, state.SelectedMailboxID, uid).Scan(&messageID, &flags, &seqNum)
+
+		if err != nil {
+			// Non-existent UID is silently ignored
+			continue
+		}
+
+		// Process this message using the same logic as handleFetch
+		s.processFetchForMessage(conn, messageID, int64(uid), seqNum, flags.String, items, state)
+	}
+}
+
 func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	if !state.Authenticated {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
@@ -233,12 +259,24 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 			flags = flagsStr.String
 		}
 
-		// Reconstruct message from new schema
-		rawMsg, err := parser.ReconstructMessage(s.db, messageID)
-		if err != nil {
-			// If reconstruction fails, skip this message
-			continue
-		}
+		// Process this message
+		s.processFetchForMessage(conn, messageID, uid, seqNum, flags, items, state)
+		seqNum++
+	}
+
+	s.sendResponse(conn, fmt.Sprintf("%s OK FETCH completed", tag))
+}
+
+// processFetchForMessage processes a single message for FETCH/UID FETCH
+func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64, seqNum int, flags, items string, state *models.ClientState) {
+	// Reconstruct message from new schema
+	rawMsg, err := parser.ReconstructMessage(s.db, messageID)
+	if err != nil {
+		// If reconstruction fails, skip this message
+		fmt.Printf("ERROR: ReconstructMessage failed for messageID %d: %v\n", messageID, err)
+		return
+	}
+	fmt.Printf("DEBUG: Reconstructed message for messageID %d, length=%d\n", messageID, len(rawMsg))
 
 		if !strings.Contains(rawMsg, "\r\n") {
 			rawMsg = strings.ReplaceAll(rawMsg, "\n", "\r\n")
@@ -248,8 +286,11 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		responseParts := []string{}
 		var literalData string // Store literal data separately
 
+		fmt.Printf("DEBUG: Processing FETCH items: %s\n", itemsUpper)
+
 		if strings.Contains(itemsUpper, "UID") {
 			responseParts = append(responseParts, fmt.Sprintf("UID %d", uid))
+			fmt.Printf("DEBUG: Added UID %d\n", uid)
 		}
 		if strings.Contains(itemsUpper, "FLAGS") {
 			if flags == "" {
@@ -468,21 +509,20 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		literalData += fmt.Sprintf("{%d}\r\n%s", len(rawMsg), rawMsg)
 	}
 	
-		if len(responseParts) > 0 {
-			responseStr := fmt.Sprintf("* %d FETCH (%s", seqNum, strings.Join(responseParts, " "))
-			if literalData != "" {
-				responseStr += " " + literalData + ")"
-			} else {
-				responseStr += ")"
-			}
-			s.sendResponse(conn, responseStr)
+	fmt.Printf("DEBUG: responseParts count=%d, literalData length=%d\n", len(responseParts), len(literalData))
+	if len(responseParts) > 0 {
+		responseStr := fmt.Sprintf("* %d FETCH (%s", seqNum, strings.Join(responseParts, " "))
+		if literalData != "" {
+			responseStr += " " + literalData + ")"
 		} else {
-			s.sendResponse(conn, fmt.Sprintf("* %d FETCH (FLAGS ())", seqNum))
+			responseStr += ")"
 		}
-		seqNum++
+		fmt.Printf("DEBUG: Sending response: %s\n", responseStr[:min(len(responseStr), 200)])
+		s.sendResponse(conn, responseStr)
+	} else {
+		fmt.Printf("DEBUG: No response parts, sending default\n")
+		s.sendResponse(conn, fmt.Sprintf("* %d FETCH (FLAGS ())", seqNum))
 	}
-
-	s.sendResponse(conn, fmt.Sprintf("%s OK FETCH completed", tag))
 }
 
 // messageInfo holds metadata about a message for search operations
