@@ -141,6 +141,11 @@ func (t *TestInterface) HandleSearch(conn net.Conn, tag string, parts []string, 
 	t.server.handleSearch(conn, tag, parts, state)
 }
 
+// HandleFetch exposes the fetch handler for testing
+func (t *TestInterface) HandleFetch(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	t.server.handleFetch(conn, tag, parts, state)
+}
+
 // SetTLSCertificates sets custom TLS certificate paths for testing
 func (t *TestInterface) SetTLSCertificates(certPath, keyPath string) {
 	t.server.SetTLSCertificates(certPath, keyPath)
