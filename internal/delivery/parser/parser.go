@@ -39,9 +39,17 @@ type ParsedMessage struct {
 	Date        time.Time
 	InReplyTo   string
 	References  string
+	Headers     []MessageHeader
 	Parts       []MessagePart
 	RawMessage  string
 	SizeBytes   int64
+}
+
+// MessageHeader represents a single email header
+type MessageHeader struct {
+	Name     string
+	Value    string
+	Sequence int
 }
 
 // MessagePart represents a single MIME part
@@ -154,7 +162,10 @@ func ParseMIMEMessage(rawMessage string) (*ParsedMessage, error) {
 		return nil, fmt.Errorf("failed to parse message: %v", err)
 	}
 
-	// Extract headers
+	// Extract ALL headers from the raw message to preserve order and multi-line headers
+	parsed.Headers = extractAllHeaders(rawMessage)
+
+	// Extract specific headers for backward compatibility
 	parsed.Subject = msg.Header.Get("Subject")
 	parsed.InReplyTo = msg.Header.Get("In-Reply-To")
 	parsed.References = msg.Header.Get("References")
@@ -329,6 +340,13 @@ func StoreMessage(database *sql.DB, parsed *ParsedMessage) (int64, error) {
 
 	parsed.MessageID = messageID
 
+	// Store all headers
+	for _, header := range parsed.Headers {
+		if err := db.AddMessageHeader(database, messageID, header.Name, header.Value, header.Sequence); err != nil {
+			return 0, fmt.Errorf("failed to store header %s: %v", header.Name, err)
+		}
+	}
+
 	// Store addresses
 	if err := storeAddresses(database, messageID, "from", parsed.From); err != nil {
 		return 0, fmt.Errorf("failed to store from addresses: %v", err)
@@ -402,47 +420,106 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 		return "", fmt.Errorf("no message parts found")
 	}
 
-	// Get addresses
-	fromAddrs, _ := db.GetMessageAddresses(database, messageID, "from")
-	toAddrs, _ := db.GetMessageAddresses(database, messageID, "to")
-	ccAddrs, _ := db.GetMessageAddresses(database, messageID, "cc")
-
-	// Get message metadata
-	var subject string
-	var date time.Time
-	err = database.QueryRow("SELECT subject, date FROM messages WHERE id = ?", messageID).Scan(&subject, &date)
+	// Get ALL stored headers
+	headers, err := db.GetMessageHeaders(database, messageID)
 	if err != nil {
-		return "", fmt.Errorf("failed to get message metadata: %v", err)
+		// If we can't get headers, try to reconstruct from addresses and metadata
+		fmt.Printf("WARNING: Failed to get message headers for message %d: %v\n", messageID, err)
+		headers = []map[string]string{}
 	}
 
 	// Build message headers
 	var buf bytes.Buffer
 
-	if len(fromAddrs) > 0 {
-		buf.WriteString(fmt.Sprintf("From: %s\r\n", strings.Join(fromAddrs, ", ")))
-	}
-	if len(toAddrs) > 0 {
-		buf.WriteString(fmt.Sprintf("To: %s\r\n", strings.Join(toAddrs, ", ")))
-	}
-	if len(ccAddrs) > 0 {
-		buf.WriteString(fmt.Sprintf("Cc: %s\r\n", strings.Join(ccAddrs, ", ")))
+	// If we have stored headers, use them
+	if len(headers) > 0 {
+		// Write all headers in original order
+		for _, header := range headers {
+			buf.WriteString(fmt.Sprintf("%s: %s\r\n", header["name"], header["value"]))
+		}
+	} else {
+		// Fallback: Build minimal headers from addresses and metadata for old messages
+		fmt.Printf("WARNING: No stored headers found for message %d, using fallback\n", messageID)
+
+		// Get addresses
+		fromAddrs, _ := db.GetMessageAddresses(database, messageID, "from")
+		toAddrs, _ := db.GetMessageAddresses(database, messageID, "to")
+		ccAddrs, _ := db.GetMessageAddresses(database, messageID, "cc")
+
+		// Get message metadata
+		var subject string
+		var date time.Time
+		err = database.QueryRow("SELECT subject, date FROM messages WHERE id = ?", messageID).Scan(&subject, &date)
+		if err != nil {
+			return "", fmt.Errorf("failed to get message metadata: %v", err)
+		}
+
+		if len(fromAddrs) > 0 {
+			buf.WriteString(fmt.Sprintf("From: %s\r\n", strings.Join(fromAddrs, ", ")))
+		}
+		if len(toAddrs) > 0 {
+			buf.WriteString(fmt.Sprintf("To: %s\r\n", strings.Join(toAddrs, ", ")))
+		}
+		if len(ccAddrs) > 0 {
+			buf.WriteString(fmt.Sprintf("Cc: %s\r\n", strings.Join(ccAddrs, ", ")))
+		}
+
+		buf.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
+		buf.WriteString(fmt.Sprintf("Date: %s\r\n", date.Format(time.RFC1123Z)))
 	}
 
-	buf.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
-	buf.WriteString(fmt.Sprintf("Date: %s\r\n", date.Format(time.RFC1123Z)))
+	// Check if we need to add Content-Type headers (for backward compatibility with old messages)
+	// New messages will have these headers already stored in message_headers
+	hasContentType := false
+	var storedContentType string
+	for _, header := range headers {
+		if strings.EqualFold(header["name"], "Content-Type") {
+			hasContentType = true
+			storedContentType = header["value"]
+			break
+		}
+	}
+
+	// Extract boundaries from stored Content-Type header if present
+	boundaryAlt := "boundary-alt"
+	boundaryMixed := "boundary-mixed"
+	if storedContentType != "" {
+		// Try to extract boundary from Content-Type
+		if idx := strings.Index(storedContentType, "boundary="); idx != -1 {
+			boundaryStr := storedContentType[idx+9:] // Skip "boundary="
+			// Remove quotes if present
+			boundaryStr = strings.Trim(boundaryStr, "\"")
+			// Get only the boundary value (up to semicolon or end)
+			if semiIdx := strings.Index(boundaryStr, ";"); semiIdx != -1 {
+				boundaryStr = boundaryStr[:semiIdx]
+			}
+			boundaryStr = strings.TrimSpace(boundaryStr)
+
+			// Determine which type of boundary this is based on Content-Type
+			if strings.Contains(storedContentType, "multipart/alternative") {
+				boundaryAlt = boundaryStr
+			} else if strings.Contains(storedContentType, "multipart/mixed") {
+				boundaryMixed = boundaryStr
+			}
+		}
+	}
 
 	// For simple single-part messages
 	if len(parts) == 1 {
 		part := parts[0]
-		contentType := part["content_type"].(string)
-		if charset, ok := part["charset"].(string); ok && charset != "" {
-			buf.WriteString(fmt.Sprintf("Content-Type: %s; charset=%s\r\n", contentType, charset))
-		} else {
-			buf.WriteString(fmt.Sprintf("Content-Type: %s\r\n", contentType))
-		}
 
-		if encoding, ok := part["content_transfer_encoding"].(string); ok && encoding != "" {
-			buf.WriteString(fmt.Sprintf("Content-Transfer-Encoding: %s\r\n", encoding))
+		// Only add Content-Type if not already in headers
+		if !hasContentType {
+			contentType := part["content_type"].(string)
+			if charset, ok := part["charset"].(string); ok && charset != "" {
+				buf.WriteString(fmt.Sprintf("Content-Type: %s; charset=%s\r\n", contentType, charset))
+			} else {
+				buf.WriteString(fmt.Sprintf("Content-Type: %s\r\n", contentType))
+			}
+
+			if encoding, ok := part["content_transfer_encoding"].(string); ok && encoding != "" {
+				buf.WriteString(fmt.Sprintf("Content-Transfer-Encoding: %s\r\n", encoding))
+			}
 		}
 
 		buf.WriteString("\r\n")
@@ -506,80 +583,86 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 
 		// Build the message structure
 		if hasAttachments {
-			// multipart/mixed with attachments
-			buf.WriteString("Content-Type: multipart/mixed; boundary=\"boundary-mixed\"\r\n")
+			// Only add Content-Type if not already in headers
+			if !hasContentType {
+				buf.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=\"%s\"\r\n", boundaryMixed))
+			}
 			buf.WriteString("\r\n")
 
 			// First part: the message body
 			if hasPlain && hasHTML {
 				// multipart/alternative for text versions
-				buf.WriteString("--boundary-mixed\r\n")
-				buf.WriteString("Content-Type: multipart/alternative; boundary=\"boundary-alt\"\r\n")
+				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryMixed))
+				buf.WriteString(fmt.Sprintf("Content-Type: multipart/alternative; boundary=\"%s\"\r\n", boundaryAlt))
 				buf.WriteString("\r\n")
 
 				// Plain text version
-				buf.WriteString("--boundary-alt\r\n")
+				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryAlt))
 				writePartHeaders(&buf, plainPart)
 				writePartContent(&buf, database, plainPart)
 
 				// HTML version
-				buf.WriteString("--boundary-alt\r\n")
+				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryAlt))
 				writePartHeaders(&buf, htmlPart)
 				writePartContent(&buf, database, htmlPart)
 
-				buf.WriteString("--boundary-alt--\r\n")
+				buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryAlt))
 			} else if hasHTML {
 				// HTML only
-				buf.WriteString("--boundary-mixed\r\n")
+				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryMixed))
 				writePartHeaders(&buf, htmlPart)
 				writePartContent(&buf, database, htmlPart)
 			} else if hasPlain {
 				// Plain text only
-				buf.WriteString("--boundary-mixed\r\n")
+				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryMixed))
 				writePartHeaders(&buf, plainPart)
 				writePartContent(&buf, database, plainPart)
 			}
 
 			// Attachments
 			for _, attachment := range attachments {
-				buf.WriteString("--boundary-mixed\r\n")
+				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryMixed))
 				writePartHeaders(&buf, attachment)
 				writePartContent(&buf, database, attachment)
 			}
 
-			buf.WriteString("--boundary-mixed--\r\n")
+			buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryMixed))
 		} else if hasPlain && hasHTML {
 			// multipart/alternative (no attachments)
-			buf.WriteString("Content-Type: multipart/alternative; boundary=\"boundary-alt\"\r\n")
+			if !hasContentType {
+				buf.WriteString(fmt.Sprintf("Content-Type: multipart/alternative; boundary=\"%s\"\r\n", boundaryAlt))
+			}
 			buf.WriteString("\r\n")
 
 			// Plain text version
-			buf.WriteString("--boundary-alt\r\n")
+			buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryAlt))
 			writePartHeaders(&buf, plainPart)
 			writePartContent(&buf, database, plainPart)
 
 			// HTML version
-			buf.WriteString("--boundary-alt\r\n")
+			buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryAlt))
 			writePartHeaders(&buf, htmlPart)
 			writePartContent(&buf, database, htmlPart)
 
-			buf.WriteString("--boundary-alt--\r\n")
+			buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryAlt))
 		} else if len(textParts) == 1 {
 			// Single text part, no multipart needed
 			writePartHeaders(&buf, textParts[0])
 			writePartContent(&buf, database, textParts[0])
 		} else {
 			// Fallback: multipart/mixed for all parts
-			buf.WriteString("Content-Type: multipart/mixed; boundary=\"boundary-mixed\"\r\n")
+			if !hasContentType {
+				buf.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=\"%s\"\r\n", boundaryMixed))
+			}
 			buf.WriteString("\r\n")
 
 			for _, part := range parts {
-				buf.WriteString("--boundary-mixed\r\n")
+				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryMixed))
 				writePartHeaders(&buf, part)
 				writePartContent(&buf, database, part)
 			}
 
-			buf.WriteString("--boundary-mixed--\r\n")
+			buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryMixed))
 		}
 	}
 
@@ -803,4 +886,64 @@ func ReadDataCommand(r *bufio.Reader, maxSize int64) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+// extractAllHeaders extracts all headers from raw message preserving order and multi-line values
+func extractAllHeaders(rawMessage string) []MessageHeader {
+	var headers []MessageHeader
+	lines := strings.Split(rawMessage, "\n")
+	sequence := 0
+	var currentHeaderName string
+	var currentHeaderValue strings.Builder
+
+	for _, line := range lines {
+		line = strings.TrimRight(line, "\r")
+
+		// Empty line marks end of headers
+		if line == "" {
+			// Save last header if exists
+			if currentHeaderName != "" {
+				headers = append(headers, MessageHeader{
+					Name:     currentHeaderName,
+					Value:    currentHeaderValue.String(),
+					Sequence: sequence,
+				})
+				sequence++
+			}
+			break
+		}
+
+		// Check if this is a continuation line (starts with space or tab)
+		if len(line) > 0 && (line[0] == ' ' || line[0] == '\t') {
+			if currentHeaderName != "" {
+				// Append to current header value preserving the line break
+				currentHeaderValue.WriteString("\r\n")
+				currentHeaderValue.WriteString(line)
+			}
+			continue
+		}
+
+		// New header line - save previous header if exists
+		if currentHeaderName != "" {
+			headers = append(headers, MessageHeader{
+				Name:     currentHeaderName,
+				Value:    currentHeaderValue.String(),
+				Sequence: sequence,
+			})
+			sequence++
+			currentHeaderValue.Reset()
+		}
+
+		// Parse new header
+		colonIdx := strings.Index(line, ":")
+		if colonIdx != -1 {
+			currentHeaderName = strings.TrimSpace(line[:colonIdx])
+			currentHeaderValue.WriteString(strings.TrimSpace(line[colonIdx+1:]))
+		} else {
+			// Malformed header, skip it
+			currentHeaderName = ""
+		}
+	}
+
+	return headers
 }

@@ -68,6 +68,10 @@ func InitDB(file string) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to create message_mailbox table: %v", err)
 	}
 
+	if err = createMessageHeadersTable(db); err != nil {
+		return nil, fmt.Errorf("failed to create message_headers table: %v", err)
+	}
+
 	if err = createOutboundQueueTable(db); err != nil {
 		return nil, fmt.Errorf("failed to create outbound_queue table: %v", err)
 	}
@@ -274,6 +278,21 @@ func createMessageMailboxTable(db *sql.DB) error {
 	return err
 }
 
+func createMessageHeadersTable(db *sql.DB) error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS message_headers (
+		id INTEGER PRIMARY KEY,
+		message_id INTEGER NOT NULL,
+		header_name TEXT NOT NULL,
+		header_value TEXT NOT NULL,
+		sequence INTEGER NOT NULL,
+		FOREIGN KEY (message_id) REFERENCES messages(id)
+	);
+	`
+	_, err := db.Exec(schema)
+	return err
+}
+
 func createOutboundQueueTable(db *sql.DB) error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS outbound_queue (
@@ -310,6 +329,7 @@ func createIndexes(db *sql.DB) error {
 		"CREATE INDEX IF NOT EXISTS idx_message_mailbox_mailbox ON message_mailbox(mailbox_id)",
 		"CREATE INDEX IF NOT EXISTS idx_message_mailbox_message ON message_mailbox(message_id)",
 		"CREATE INDEX IF NOT EXISTS idx_message_mailbox_uid ON message_mailbox(mailbox_id, uid)",
+		"CREATE INDEX IF NOT EXISTS idx_message_headers_message ON message_headers(message_id)",
 		"CREATE INDEX IF NOT EXISTS idx_blobs_hash ON blobs(sha256_hash)",
 		"CREATE INDEX IF NOT EXISTS idx_deliveries_message ON deliveries(message_id)",
 		"CREATE INDEX IF NOT EXISTS idx_deliveries_status ON deliveries(status)",
@@ -1061,4 +1081,40 @@ func RetryOutboundMessage(db *sql.DB, queueID int64, nextRetryDelay time.Duratio
 		WHERE id = ?
 	`, time.Now().Add(nextRetryDelay), queueID)
 	return err
+}
+
+// Message header management functions
+
+func AddMessageHeader(db *sql.DB, messageID int64, headerName, headerValue string, sequence int) error {
+	_, err := db.Exec(`
+		INSERT INTO message_headers (message_id, header_name, header_value, sequence)
+		VALUES (?, ?, ?, ?)
+	`, messageID, headerName, headerValue, sequence)
+	return err
+}
+
+func GetMessageHeaders(db *sql.DB, messageID int64) ([]map[string]string, error) {
+	rows, err := db.Query(`
+		SELECT header_name, header_value
+		FROM message_headers
+		WHERE message_id = ?
+		ORDER BY sequence
+	`, messageID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var headers []map[string]string
+	for rows.Next() {
+		var name, value string
+		if err := rows.Scan(&name, &value); err == nil {
+			headers = append(headers, map[string]string{
+				"name":  name,
+				"value": value,
+			})
+		}
+	}
+
+	return headers, rows.Err()
 }

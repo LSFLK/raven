@@ -53,7 +53,12 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 
 	uidSequence := parts[3]
 	items := strings.Join(parts[4:], " ")
-	items = strings.Trim(items, "()")
+
+	// Ensure UID is always in the items list
+	itemsUpper := strings.ToUpper(items)
+	if !strings.Contains(itemsUpper, "UID") {
+		items = "UID " + items
+	}
 
 	// Parse UID sequence set
 	uids := s.parseUIDSequenceSet(uidSequence, state.SelectedMailboxID)
@@ -63,46 +68,9 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 		return
 	}
 
-	itemsUpper := strings.ToUpper(items)
-
-	// Process each UID
-	for _, uid := range uids {
-		// Get message by UID
-		var messageID int64
-		var seqNum int
-		var flags string
-
-		err := s.db.QueryRow(`
-			SELECT mm.message_id, mm.flags,
-				(SELECT COUNT(*) FROM message_mailbox mm2
-				 WHERE mm2.mailbox_id = mm.mailbox_id AND mm2.uid <= mm.uid) as seq_num
-			FROM message_mailbox mm
-			WHERE mm.mailbox_id = ? AND mm.uid = ?
-		`, state.SelectedMailboxID, uid).Scan(&messageID, &flags, &seqNum)
-
-		if err != nil {
-			// Non-existent UID is silently ignored
-			continue
-		}
-
-		// Build FETCH response parts
-		var responseParts []string
-
-		// UID is always included (RFC 3501 requirement)
-		responseParts = append(responseParts, fmt.Sprintf("UID %d", uid))
-
-		// Add requested items
-		if strings.Contains(itemsUpper, "FLAGS") {
-			flagsResponse := "()"
-			if flags != "" {
-				flagsResponse = fmt.Sprintf("(%s)", flags)
-			}
-			responseParts = append(responseParts, fmt.Sprintf("FLAGS %s", flagsResponse))
-		}
-
-		// Send FETCH response with sequence number (not UID) as first element
-		s.sendResponse(conn, fmt.Sprintf("* %d FETCH (%s)", seqNum, strings.Join(responseParts, " ")))
-	}
+	// Convert UIDs to a sequence set format that handleFetchForUIDs can use
+	// For each UID, we need to fetch using the same logic as handleFetch
+	s.handleFetchForUIDs(conn, tag, uids, items, state)
 
 	s.sendResponse(conn, fmt.Sprintf("%s OK UID FETCH completed", tag))
 }
