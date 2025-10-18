@@ -879,6 +879,124 @@ func (s *IMAPServer) parseSequenceSet(sequenceSet string, mailboxID int64) []int
 	return sequences
 }
 
+// handleCopy implements the COPY command (RFC 3501 Section 6.4.7)
+// Syntax: COPY sequence-set mailbox-name
+func (s *IMAPServer) handleCopy(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	// Check authentication
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	// Check if mailbox is selected
+	if state.SelectedMailboxID == 0 {
+		s.sendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
+		return
+	}
+
+	// Parse command: COPY sequence-set mailbox-name
+	if len(parts) < 3 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid COPY command syntax", tag))
+		return
+	}
+
+	sequenceSet := parts[1]
+	destMailbox := strings.Trim(strings.Join(parts[2:], " "), "\"")
+
+	// Parse sequence set
+	sequences := s.parseSequenceSet(sequenceSet, state.SelectedMailboxID)
+	if len(sequences) == 0 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence set", tag))
+		return
+	}
+
+	// Check if destination mailbox exists
+	var destMailboxID int64
+	err := s.db.QueryRow(`
+		SELECT id FROM mailboxes
+		WHERE name = ? AND user_id = ?
+	`, destMailbox, state.UserID).Scan(&destMailboxID)
+
+	if err != nil {
+		// Destination mailbox doesn't exist - return NO with [TRYCREATE]
+		s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Destination mailbox does not exist", tag))
+		return
+	}
+
+	// Begin transaction to ensure atomicity
+	tx, err := s.db.Begin()
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
+		return
+	}
+	defer tx.Rollback()
+
+	// Get the next UID for destination mailbox
+	var nextUID int64
+	err = tx.QueryRow(`
+		SELECT COALESCE(MAX(uid), 0) + 1
+		FROM message_mailbox
+		WHERE mailbox_id = ?
+	`, destMailboxID).Scan(&nextUID)
+
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
+		return
+	}
+
+	// Copy each message in the sequence
+	for _, seqNum := range sequences {
+		// Get message details from source mailbox
+		var messageID int64
+		var flags, internalDate string
+
+		err = tx.QueryRow(`
+			SELECT mm.message_id, mm.flags, mm.internal_date
+			FROM message_mailbox mm
+			WHERE mm.mailbox_id = ?
+			ORDER BY mm.uid
+			LIMIT 1 OFFSET ?
+		`, state.SelectedMailboxID, seqNum-1).Scan(&messageID, &flags, &internalDate)
+
+		if err != nil {
+			s.sendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
+			return
+		}
+
+		// Prepare flags for copy - preserve existing flags and add \Recent
+		copyFlags := flags
+		if !strings.Contains(copyFlags, `\Recent`) {
+			if copyFlags == "" {
+				copyFlags = `\Recent`
+			} else {
+				copyFlags = copyFlags + ` \Recent`
+			}
+		}
+
+		// Insert message into destination mailbox
+		_, err = tx.Exec(`
+			INSERT INTO message_mailbox (message_id, mailbox_id, uid, flags, internal_date)
+			VALUES (?, ?, ?, ?, ?)
+		`, messageID, destMailboxID, nextUID, copyFlags, internalDate)
+
+		if err != nil {
+			s.sendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
+			return
+		}
+
+		nextUID++
+	}
+
+	// Commit transaction
+	err = tx.Commit()
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
+		return
+	}
+
+	s.sendResponse(conn, fmt.Sprintf("%s OK COPY completed", tag))
+}
+
 func (s *IMAPServer) handleIdle(conn net.Conn, tag string, state *models.ClientState) {
 	if !state.Authenticated {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))

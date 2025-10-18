@@ -151,6 +151,11 @@ func (t *TestInterface) HandleStore(conn net.Conn, tag string, parts []string, s
 	t.server.handleStore(conn, tag, parts, state)
 }
 
+// HandleCopy exposes the copy handler for testing
+func (t *TestInterface) HandleCopy(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	t.server.handleCopy(conn, tag, parts, state)
+}
+
 // SetTLSCertificates sets custom TLS certificate paths for testing
 func (t *TestInterface) SetTLSCertificates(certPath, keyPath string) {
 	t.server.SetTLSCertificates(certPath, keyPath)

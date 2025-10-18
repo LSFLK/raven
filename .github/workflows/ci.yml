@@ -102,6 +102,9 @@ jobs:
       - name: Test STORE command
         run: go test -tags=test -v ./test/server -run "TestStoreCommand"
 
+      - name: Test COPY command
+        run: go test -tags=test -v ./test/server -run "TestCopyCommand"
+
   test-delivery:
     name: Test Delivery Service
     runs-on: ubuntu-latest
