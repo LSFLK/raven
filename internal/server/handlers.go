@@ -1018,8 +1018,8 @@ func (s *IMAPServer) handleIdle(conn net.Conn, tag string, state *models.ClientS
 	prevUnseen, _ := db.GetUnseenCount(s.db, state.SelectedMailboxID)
 
 	for {
-		// Poll every 2 seconds for changes
-		time.Sleep(2 * time.Second)
+		// Poll every 500ms for changes to ensure responsive notifications
+		time.Sleep(500 * time.Millisecond)
 
 		// Check current mailbox state using new schema
 		count, _ := db.GetMessageCount(s.db, state.SelectedMailboxID)
