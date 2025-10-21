@@ -1128,32 +1128,40 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 		}
 	}
 
-	// Look for literal size indicator {size}
+	// Look for literal size indicator {size} or {size+}
 	literalStartIdx := strings.Index(fullLine, "{")
 	literalEndIdx := strings.Index(fullLine, "}")
-	
+
 	if literalStartIdx == -1 || literalEndIdx == -1 || literalStartIdx > literalEndIdx {
 		s.sendResponse(conn, fmt.Sprintf("%s BAD APPEND requires message size", tag))
 		return
 	}
 
-	// Extract the size
+	// Extract the size and check for LITERAL+ (RFC 4466)
 	sizeStr := fullLine[literalStartIdx+1 : literalEndIdx]
+	isLiteralPlus := strings.HasSuffix(sizeStr, "+")
+	if isLiteralPlus {
+		sizeStr = strings.TrimSuffix(sizeStr, "+")
+	}
+
 	var messageSize int
 	fmt.Sscanf(sizeStr, "%d", &messageSize)
-	
+
 	if messageSize <= 0 || messageSize > 50*1024*1024 { // Max 50MB
 		s.sendResponse(conn, fmt.Sprintf("%s NO Message size invalid or too large", tag))
 		return
 	}
 
-	// Send continuation response
-	s.sendResponse(conn, "+ Ready for literal data")
+	// Send continuation response only for synchronizing literals
+	// RFC 4466: LITERAL+ ({size+}) means client sends data immediately without waiting
+	if !isLiteralPlus {
+		s.sendResponse(conn, "+ Ready for literal data")
+	}
 
 	// Read the message data
 	messageData := make([]byte, messageSize)
 	totalRead := 0
-	
+
 	conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
 	for totalRead < messageSize {
 		n, err := conn.Read(messageData[totalRead:])
@@ -1163,6 +1171,20 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 			return
 		}
 		totalRead += n
+	}
+
+	// Read and discard the trailing CRLF after the literal data
+	// RFC 3501: The client sends CRLF after the literal data
+	// Use a short timeout to avoid delays
+	crlfBuf := make([]byte, 2)
+	conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	n, err := conn.Read(crlfBuf)
+	if err != nil {
+		log.Printf("Warning: Failed to read trailing CRLF after literal data: %v", err)
+		// Continue anyway - some clients might not send it
+	} else if n > 0 && !(crlfBuf[0] == '\r' || crlfBuf[0] == '\n') {
+		log.Printf("Warning: Expected CRLF after literal data, got: %v", crlfBuf[:n])
+		// Continue anyway - be lenient with protocol violations
 	}
 
 	rawMessage := string(messageData)
