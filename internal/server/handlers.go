@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -11,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"go-imap/internal/models"
 	"go-imap/internal/conf"
 	"go-imap/internal/db"
 	"go-imap/internal/delivery/parser"
+	"go-imap/internal/models"
 )
 
 func (s *IMAPServer) handleCapability(conn net.Conn, tag string, state *models.ClientState) {
@@ -1018,8 +1019,8 @@ func (s *IMAPServer) handleIdle(conn net.Conn, tag string, state *models.ClientS
 	prevUnseen, _ := db.GetUnseenCount(s.db, state.SelectedMailboxID)
 
 	for {
-		// Poll every 2 seconds for changes
-		time.Sleep(2 * time.Second)
+		// Poll every 500ms for changes to ensure responsive notifications
+		time.Sleep(500 * time.Millisecond)
 
 		// Check current mailbox state using new schema
 		count, _ := db.GetMessageCount(s.db, state.SelectedMailboxID)
@@ -1128,41 +1129,63 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 		}
 	}
 
-	// Look for literal size indicator {size}
+	// Look for literal size indicator {size} or {size+}
 	literalStartIdx := strings.Index(fullLine, "{")
 	literalEndIdx := strings.Index(fullLine, "}")
-	
+
 	if literalStartIdx == -1 || literalEndIdx == -1 || literalStartIdx > literalEndIdx {
 		s.sendResponse(conn, fmt.Sprintf("%s BAD APPEND requires message size", tag))
 		return
 	}
 
-	// Extract the size
+	// Extract the size and check for LITERAL+ (RFC 4466)
 	sizeStr := fullLine[literalStartIdx+1 : literalEndIdx]
+	isLiteralPlus := strings.HasSuffix(sizeStr, "+")
+	if isLiteralPlus {
+		sizeStr = strings.TrimSuffix(sizeStr, "+")
+	}
+
 	var messageSize int
 	fmt.Sscanf(sizeStr, "%d", &messageSize)
-	
+
 	if messageSize <= 0 || messageSize > 50*1024*1024 { // Max 50MB
 		s.sendResponse(conn, fmt.Sprintf("%s NO Message size invalid or too large", tag))
 		return
 	}
 
-	// Send continuation response
-	s.sendResponse(conn, "+ Ready for literal data")
+	// Send continuation response only for synchronizing literals
+	// RFC 4466: LITERAL+ ({size+}) means client sends data immediately without waiting
+	if !isLiteralPlus {
+		s.sendResponse(conn, "+ Ready for literal data")
+	}
 
-	// Read the message data
+	// Read the message data using io.ReadFull to ensure we read exactly messageSize bytes
 	messageData := make([]byte, messageSize)
-	totalRead := 0
-	
+
 	conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
-	for totalRead < messageSize {
-		n, err := conn.Read(messageData[totalRead:])
-		if err != nil {
-			log.Printf("Error reading message data: %v", err)
-			s.sendResponse(conn, fmt.Sprintf("%s NO Failed to read message data", tag))
-			return
-		}
-		totalRead += n
+	log.Printf("APPEND expecting %d bytes literal", messageSize)
+
+	n, err := io.ReadFull(conn, messageData)
+	if err != nil {
+		log.Printf("Error reading message data: expected %d bytes, read %d bytes, error: %v", messageSize, n, err)
+		s.sendResponse(conn, fmt.Sprintf("%s NO Failed to read message data", tag))
+		return
+	}
+
+	log.Printf("APPEND successfully read %d bytes", n)
+
+	// Read and discard the trailing CRLF after the literal data
+	// RFC 3501: The client sends CRLF after the literal data
+	// Use a short timeout to avoid delays
+	crlfBuf := make([]byte, 2)
+	conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	n, err = conn.Read(crlfBuf)
+	if err != nil {
+		log.Printf("Warning: Failed to read trailing CRLF after literal data: %v", err)
+		// Continue anyway - some clients might not send it
+	} else if n > 0 && !(crlfBuf[0] == '\r' || crlfBuf[0] == '\n') {
+		log.Printf("Warning: Expected CRLF after literal data, got: %v", crlfBuf[:n])
+		// Continue anyway - be lenient with protocol violations
 	}
 
 	rawMessage := string(messageData)

@@ -3,6 +3,9 @@ package server
 import (
 	"database/sql"
 	"fmt"
+	"io"
+	"mime"
+	"mime/multipart"
 	"net"
 	"strconv"
 	"strings"
@@ -273,10 +276,8 @@ func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64,
 	rawMsg, err := parser.ReconstructMessage(s.db, messageID)
 	if err != nil {
 		// If reconstruction fails, skip this message
-		fmt.Printf("ERROR: ReconstructMessage failed for messageID %d: %v\n", messageID, err)
 		return
 	}
-	fmt.Printf("DEBUG: Reconstructed message for messageID %d, length=%d\n", messageID, len(rawMsg))
 
 		if !strings.Contains(rawMsg, "\r\n") {
 			rawMsg = strings.ReplaceAll(rawMsg, "\n", "\r\n")
@@ -286,11 +287,8 @@ func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64,
 		responseParts := []string{}
 		var literalData string // Store literal data separately
 
-		fmt.Printf("DEBUG: Processing FETCH items: %s\n", itemsUpper)
-
 		if strings.Contains(itemsUpper, "UID") {
 			responseParts = append(responseParts, fmt.Sprintf("UID %d", uid))
-			fmt.Printf("DEBUG: Added UID %d\n", uid)
 		}
 		if strings.Contains(itemsUpper, "FLAGS") {
 			if flags == "" {
@@ -509,7 +507,6 @@ func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64,
 		literalData += fmt.Sprintf("{%d}\r\n%s", len(rawMsg), rawMsg)
 	}
 	
-	fmt.Printf("DEBUG: responseParts count=%d, literalData length=%d\n", len(responseParts), len(literalData))
 	if len(responseParts) > 0 {
 		responseStr := fmt.Sprintf("* %d FETCH (%s", seqNum, strings.Join(responseParts, " "))
 		if literalData != "" {
@@ -517,10 +514,8 @@ func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64,
 		} else {
 			responseStr += ")"
 		}
-		fmt.Printf("DEBUG: Sending response: %s\n", responseStr[:min(len(responseStr), 200)])
 		s.sendResponse(conn, responseStr)
 	} else {
-		fmt.Printf("DEBUG: No response parts, sending default\n")
 		s.sendResponse(conn, fmt.Sprintf("* %d FETCH (FLAGS ())", seqNum))
 	}
 }
@@ -1374,7 +1369,6 @@ func (s *IMAPServer) parseAddressList(addresses string) string {
 }
 
 // buildBodyStructure builds a BODYSTRUCTURE response
-// For simple messages (non-multipart), this is a simplified implementation
 func (s *IMAPServer) buildBodyStructure(rawMsg string) string {
 	// Extract Content-Type header
 	contentType := s.extractHeader(rawMsg, "Content-Type")
@@ -1382,35 +1376,334 @@ func (s *IMAPServer) buildBodyStructure(rawMsg string) string {
 		contentType = "text/plain; charset=us-ascii"
 	}
 
-	// Parse content type
-	mediaType := "text"
-	mediaSubtype := "plain"
-	if strings.Contains(contentType, "/") {
-		parts := strings.SplitN(contentType, "/", 2)
-		mediaType = strings.ToUpper(strings.TrimSpace(parts[0]))
-		subParts := strings.Split(parts[1], ";")
-		mediaSubtype = strings.ToUpper(strings.TrimSpace(subParts[0]))
+	// Parse content type and parameters
+	mediaType, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		mediaType = "text/plain"
+		params = map[string]string{"charset": "us-ascii"}
 	}
 
-	// Get message size (body only)
+	// Split media type into type and subtype
+	typeParts := strings.SplitN(mediaType, "/", 2)
+	mainType := "TEXT"
+	subType := "PLAIN"
+	if len(typeParts) == 2 {
+		mainType = strings.ToUpper(typeParts[0])
+		subType = strings.ToUpper(typeParts[1])
+	}
+
+	// Handle multipart messages
+	if strings.HasPrefix(strings.ToLower(mediaType), "multipart/") {
+		boundary := params["boundary"]
+		if boundary != "" {
+			return s.buildMultipartBodyStructure(rawMsg, mainType, subType, boundary)
+		}
+	}
+
+	// For non-multipart messages, return basic body structure
+	// Get message body
 	headerEnd := strings.Index(rawMsg, "\r\n\r\n")
 	if headerEnd == -1 {
 		headerEnd = strings.Index(rawMsg, "\n\n")
 	}
-	bodySize := 0
+	body := ""
 	if headerEnd != -1 {
-		bodySize = len(rawMsg) - headerEnd - 4
+		body = rawMsg[headerEnd+4:]
 	}
 
-	// For non-multipart messages, return basic body structure
-	// Format: (type subtype (params) id description encoding size)
-	bodyStruct := fmt.Sprintf("BODYSTRUCTURE (%s %s NIL NIL NIL \"7BIT\" %d)",
-		s.quoteOrNIL(mediaType),
-		s.quoteOrNIL(mediaSubtype),
-		bodySize,
-	)
+	// Get encoding
+	encoding := s.extractHeader(rawMsg, "Content-Transfer-Encoding")
+	if encoding == "" {
+		encoding = "7BIT"
+	}
+	encoding = strings.ToUpper(encoding)
 
-	return bodyStruct
+	// Build parameters list
+	paramList := s.buildParamList(params)
+
+	// Get Content-ID and Content-Description
+	contentID := s.extractHeader(rawMsg, "Content-ID")
+	contentDesc := s.extractHeader(rawMsg, "Content-Description")
+
+	// Count lines for text types
+	lines := 0
+	if mainType == "TEXT" {
+		lines = strings.Count(body, "\n")
+	}
+
+	// Format: (type subtype (params) id description encoding size [lines for text])
+	if mainType == "TEXT" {
+		return fmt.Sprintf("BODYSTRUCTURE (%s %s %s %s %s %s %d %d)",
+			s.quoteOrNIL(mainType),
+			s.quoteOrNIL(subType),
+			paramList,
+			s.quoteOrNIL(contentID),
+			s.quoteOrNIL(contentDesc),
+			s.quoteOrNIL(encoding),
+			len(body),
+			lines,
+		)
+	}
+
+	return fmt.Sprintf("BODYSTRUCTURE (%s %s %s %s %s %s %d)",
+		s.quoteOrNIL(mainType),
+		s.quoteOrNIL(subType),
+		paramList,
+		s.quoteOrNIL(contentID),
+		s.quoteOrNIL(contentDesc),
+		s.quoteOrNIL(encoding),
+		len(body),
+	)
+}
+
+// buildMultipartBodyStructure builds BODYSTRUCTURE for multipart messages
+func (s *IMAPServer) buildMultipartBodyStructure(rawMsg, mainType, subType, boundary string) string {
+	// Get the body part (after headers)
+	headerEnd := strings.Index(rawMsg, "\r\n\r\n")
+	if headerEnd == -1 {
+		headerEnd = strings.Index(rawMsg, "\n\n")
+		if headerEnd == -1 {
+			// No headers found, return fallback
+			return s.buildFallbackBodyStructure(mainType, subType)
+		}
+		headerEnd += 2
+	} else {
+		headerEnd += 4
+	}
+	body := rawMsg[headerEnd:]
+
+	// Normalize line endings for multipart parsing
+	if !strings.Contains(body, "\r\n") {
+		body = strings.ReplaceAll(body, "\n", "\r\n")
+	}
+
+	// Parse multipart body
+	var parts []string
+	mr := multipart.NewReader(strings.NewReader(body), boundary)
+
+	for {
+		part, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			// Log error but try to continue parsing (might be a boundary issue)
+			// Fall back to manual parsing if multipart.Reader fails completely
+			if len(parts) == 0 {
+				return s.buildFallbackMultipartBodyStructure(rawMsg, mainType, subType, boundary)
+			}
+			break
+		}
+
+		// Read part content
+		partContent, err := io.ReadAll(part)
+		if err != nil {
+			continue
+		}
+
+		// Build part headers
+		var partHeaders strings.Builder
+		for key, values := range part.Header {
+			for _, value := range values {
+				partHeaders.WriteString(fmt.Sprintf("%s: %s\r\n", key, value))
+			}
+		}
+		partHeaders.WriteString("\r\n")
+		fullPart := partHeaders.String() + string(partContent)
+
+		// Build BODYSTRUCTURE for this part
+		partStruct := s.buildPartStructure(fullPart)
+		parts = append(parts, partStruct)
+	}
+
+	if len(parts) == 0 {
+		// Fallback to manual parsing if multipart.Reader failed
+		return s.buildFallbackMultipartBodyStructure(rawMsg, mainType, subType, boundary)
+	}
+
+	// Multipart BODYSTRUCTURE format: BODYSTRUCTURE ((part1)(part2)... subtype)
+	// Note: Each part is already a complete structure without BODYSTRUCTURE keyword
+	return fmt.Sprintf("BODYSTRUCTURE (%s %s)", strings.Join(parts, " "), s.quoteOrNIL(subType))
+}
+
+// buildPartStructure builds BODYSTRUCTURE for a single MIME part
+func (s *IMAPServer) buildPartStructure(partMsg string) string {
+	// Extract Content-Type
+	contentType := s.extractHeader(partMsg, "Content-Type")
+	if contentType == "" {
+		contentType = "text/plain; charset=us-ascii"
+	}
+
+	// Parse media type
+	mediaType, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		mediaType = "text/plain"
+		params = map[string]string{"charset": "us-ascii"}
+	}
+
+	typeParts := strings.SplitN(mediaType, "/", 2)
+	mainType := "TEXT"
+	subType := "PLAIN"
+	if len(typeParts) == 2 {
+		mainType = strings.ToUpper(typeParts[0])
+		subType = strings.ToUpper(typeParts[1])
+	}
+
+	// Get encoding
+	encoding := s.extractHeader(partMsg, "Content-Transfer-Encoding")
+	if encoding == "" {
+		encoding = "7BIT"
+	}
+	encoding = strings.ToUpper(encoding)
+
+	// Get body
+	headerEnd := strings.Index(partMsg, "\r\n\r\n")
+	if headerEnd == -1 {
+		headerEnd = strings.Index(partMsg, "\n\n")
+		if headerEnd == -1 {
+			headerEnd = 0
+		} else {
+			headerEnd += 2
+		}
+	} else {
+		headerEnd += 4
+	}
+	body := ""
+	if headerEnd < len(partMsg) {
+		body = partMsg[headerEnd:]
+	}
+
+	// Build parameters
+	paramList := s.buildParamList(params)
+
+	// Get Content-ID and Content-Description
+	contentID := s.extractHeader(partMsg, "Content-ID")
+	contentDesc := s.extractHeader(partMsg, "Content-Description")
+
+	// Get Content-Disposition and filename
+	disposition := s.extractHeader(partMsg, "Content-Disposition")
+	var dispList string
+	if disposition != "" {
+		dispType, dispParams, _ := mime.ParseMediaType(disposition)
+		dispParamList := s.buildParamList(dispParams)
+		dispList = fmt.Sprintf("(%s %s)", s.quoteOrNIL(strings.ToUpper(dispType)), dispParamList)
+	} else {
+		dispList = "NIL"
+	}
+
+	// Count lines for text types
+	lines := 0
+	if mainType == "TEXT" {
+		lines = strings.Count(body, "\n")
+		return fmt.Sprintf("(%s %s %s %s %s %s %d %d NIL %s NIL)",
+			s.quoteOrNIL(mainType),
+			s.quoteOrNIL(subType),
+			paramList,
+			s.quoteOrNIL(contentID),
+			s.quoteOrNIL(contentDesc),
+			s.quoteOrNIL(encoding),
+			len(body),
+			lines,
+			dispList,
+		)
+	}
+
+	return fmt.Sprintf("(%s %s %s %s %s %s %d NIL %s NIL)",
+		s.quoteOrNIL(mainType),
+		s.quoteOrNIL(subType),
+		paramList,
+		s.quoteOrNIL(contentID),
+		s.quoteOrNIL(contentDesc),
+		s.quoteOrNIL(encoding),
+		len(body),
+		dispList,
+	)
+}
+
+// buildParamList builds parameter list for BODYSTRUCTURE
+func (s *IMAPServer) buildParamList(params map[string]string) string {
+	if len(params) == 0 {
+		return "NIL"
+	}
+
+	var paramPairs []string
+	for key, value := range params {
+		paramPairs = append(paramPairs, fmt.Sprintf("%s %s",
+			s.quoteOrNIL(strings.ToUpper(key)),
+			s.quoteOrNIL(value)))
+	}
+
+	return fmt.Sprintf("(%s)", strings.Join(paramPairs, " "))
+}
+
+// buildFallbackBodyStructure builds a simple fallback BODYSTRUCTURE
+func (s *IMAPServer) buildFallbackBodyStructure(mainType, subType string) string {
+	return fmt.Sprintf("BODYSTRUCTURE (%s %s NIL NIL NIL \"7BIT\" 0)",
+		s.quoteOrNIL(mainType), s.quoteOrNIL(subType))
+}
+
+// buildFallbackMultipartBodyStructure manually parses multipart messages when multipart.Reader fails
+func (s *IMAPServer) buildFallbackMultipartBodyStructure(rawMsg, mainType, subType, boundary string) string {
+	// Get the body part (after headers)
+	headerEnd := strings.Index(rawMsg, "\r\n\r\n")
+	if headerEnd == -1 {
+		headerEnd = strings.Index(rawMsg, "\n\n")
+		if headerEnd == -1 {
+			return s.buildFallbackBodyStructure(mainType, subType)
+		}
+		headerEnd += 2
+	} else {
+		headerEnd += 4
+	}
+	body := rawMsg[headerEnd:]
+
+	// Normalize line endings
+	if !strings.Contains(body, "\r\n") {
+		body = strings.ReplaceAll(body, "\n", "\r\n")
+	}
+
+	// Manually split by boundary
+	boundaryMarker := "--" + boundary
+	closeBoundary := "--" + boundary + "--"
+
+	// Split the body into parts
+	partSections := strings.Split(body, boundaryMarker)
+	var parts []string
+
+	for i, section := range partSections {
+		// Skip the preamble (before first boundary) and epilogue (after final boundary)
+		if i == 0 || strings.TrimSpace(section) == "" {
+			continue
+		}
+
+		// Check if this is the closing boundary
+		if strings.HasPrefix(strings.TrimSpace(section), "--") {
+			break
+		}
+
+		// Remove the closing boundary if present
+		section = strings.TrimPrefix(section, "\r\n")
+		section = strings.TrimPrefix(section, "\n")
+
+		// Check if this section ends with the closing boundary
+		if idx := strings.Index(section, closeBoundary); idx != -1 {
+			section = section[:idx]
+		}
+
+		// Parse this part's structure
+		if strings.TrimSpace(section) != "" {
+			partStruct := s.buildPartStructure(section)
+			parts = append(parts, partStruct)
+		}
+	}
+
+	if len(parts) == 0 {
+		// Still no parts found, return simple fallback
+		return s.buildFallbackBodyStructure(mainType, subType)
+	}
+
+	// Return the multipart structure
+	return fmt.Sprintf("BODYSTRUCTURE (%s %s)", strings.Join(parts, " "), s.quoteOrNIL(subType))
 }
 
 func (s *IMAPServer) handleStatus(conn net.Conn, tag string, parts []string, state *models.ClientState) {

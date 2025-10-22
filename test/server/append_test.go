@@ -500,3 +500,34 @@ func TestAppendCommand_MessageParsing(t *testing.T) {
 		t.Errorf("Expected OK response, got: %s", response)
 	}
 }
+
+// TestAppendCommand_LiteralPlus tests APPEND with LITERAL+ (non-synchronizing literal)
+func TestAppendCommand_LiteralPlus(t *testing.T) {
+	server := helpers.SetupTestServerSimple(t)
+	conn := helpers.NewMockConn()
+	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+
+	// Test LITERAL+ syntax: {size+} means client sends data immediately
+	message := "From: sender@example.com\r\nSubject: Test LITERAL+\r\n\r\nBody\r\n"
+	appendCmd := fmt.Sprintf("A020 APPEND INBOX {%d+}", len(message))
+
+	parts := strings.Fields(appendCmd)
+	conn.AddReadData(message)
+
+	server.HandleAppend(conn, "A020", parts, appendCmd, state)
+
+	response := conn.GetWrittenData()
+
+	// With LITERAL+, server should NOT send continuation response
+	if strings.Contains(response, "+ Ready for literal data") {
+		t.Errorf("LITERAL+ should not trigger continuation response, got: %s", response)
+	}
+
+	if !strings.Contains(response, "A020 OK") {
+		t.Errorf("Expected OK response, got: %s", response)
+	}
+
+	if !strings.Contains(response, "APPENDUID") {
+		t.Errorf("Expected APPENDUID in response, got: %s", response)
+	}
+}
