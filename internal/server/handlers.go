@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -1158,27 +1159,27 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 		s.sendResponse(conn, "+ Ready for literal data")
 	}
 
-	// Read the message data
+	// Read the message data using io.ReadFull to ensure we read exactly messageSize bytes
 	messageData := make([]byte, messageSize)
-	totalRead := 0
 
 	conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
-	for totalRead < messageSize {
-		n, err := conn.Read(messageData[totalRead:])
-		if err != nil {
-			log.Printf("Error reading message data: %v", err)
-			s.sendResponse(conn, fmt.Sprintf("%s NO Failed to read message data", tag))
-			return
-		}
-		totalRead += n
+	log.Printf("APPEND expecting %d bytes literal", messageSize)
+
+	n, err := io.ReadFull(conn, messageData)
+	if err != nil {
+		log.Printf("Error reading message data: expected %d bytes, read %d bytes, error: %v", messageSize, n, err)
+		s.sendResponse(conn, fmt.Sprintf("%s NO Failed to read message data", tag))
+		return
 	}
+
+	log.Printf("APPEND successfully read %d bytes", n)
 
 	// Read and discard the trailing CRLF after the literal data
 	// RFC 3501: The client sends CRLF after the literal data
 	// Use a short timeout to avoid delays
 	crlfBuf := make([]byte, 2)
 	conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
-	n, err := conn.Read(crlfBuf)
+	n, err = conn.Read(crlfBuf)
 	if err != nil {
 		log.Printf("Warning: Failed to read trailing CRLF after literal data: %v", err)
 		// Continue anyway - some clients might not send it
