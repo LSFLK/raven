@@ -136,3 +136,44 @@ jobs:
 
       - name: Run All Delivery Tests
         run: go test -tags=test -v ./test/delivery
+
+  test-sasl:
+    name: Test SASL Authentication Service
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: Test SASL Server Creation
+        run: go test -tags=test -v ./test/sasl -run "TestNewServer"
+
+      - name: Test SASL Server Startup and Shutdown
+        run: go test -tags=test -v ./test/sasl -run "TestServerStartShutdown|TestServerShutdownIdempotent"
+
+      - name: Test SASL Protocol Handshake
+        run: go test -tags=test -v ./test/sasl -run "TestVersionHandshake|TestCPIDCommand"
+
+      - name: Test PLAIN Authentication
+        run: go test -tags=test -v ./test/sasl -run "TestPlainAuthentication"
+
+      - name: Test SASL Authentication Mechanisms
+        run: go test -tags=test -v ./test/sasl -run "TestLoginMechanism|TestUnsupportedMechanism|TestAuthMechanismCaseInsensitive"
+
+      - name: Test SASL Error Handling
+        run: go test -tags=test -v ./test/sasl -run "TestInvalidAuthCommand|TestAuthenticationAPIError"
+
+      - name: Test SASL Concurrent Connections
+        run: go test -tags=test -v ./test/sasl -run "TestConcurrentConnections|TestMultipleCommandsInSession"
+
+      - name: Run All SASL Tests
+        run: go test -tags=test -v ./test/sasl
