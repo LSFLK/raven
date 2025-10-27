@@ -43,14 +43,15 @@ COPY --from=builder /app/raven-sasl .
 COPY config/raven.yaml /etc/raven/raven.yaml
 
 # Create directories with proper permissions
-RUN mkdir -p /app/data /var/run/raven /etc/raven /var/run/sasl && \
-    chown -R ravenuser:ravenuser /app /var/run/raven /etc/raven /var/run/sasl
+RUN mkdir -p /app/data /var/run/raven /etc/raven /var/spool/postfix/private && \
+    chown -R ravenuser:ravenuser /app /var/run/raven /etc/raven && \
+    chmod 777 /var/spool/postfix/private
 
 # Create startup script
 RUN echo '#!/bin/sh' > /app/start.sh && \
     echo 'echo "Starting Raven services..."' >> /app/start.sh && \
     echo 'echo "Starting SASL authentication service..."' >> /app/start.sh && \
-    echo './raven-sasl -socket /var/run/sasl/auth.sock -config /etc/raven/raven.yaml &' >> /app/start.sh && \
+    echo './raven-sasl -socket /var/spool/postfix/private/auth -config /etc/raven/raven.yaml &' >> /app/start.sh && \
     echo 'SASL_PID=$!' >> /app/start.sh && \
     echo 'echo "SASL service started with PID: $SASL_PID"' >> /app/start.sh && \
     echo 'sleep 1' >> /app/start.sh && \
