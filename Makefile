@@ -30,7 +30,7 @@
 #   make test-commands     - Run all command tests
 #   make help              - Show all available targets
 
-.PHONY: test test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-uid test-commands test-verbose test-coverage test-race clean
+.PHONY: test test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-uid test-commands test-delivery test-sasl test-verbose test-coverage test-race clean
 
 # Build delivery service
 build-delivery:
@@ -43,6 +43,21 @@ run-delivery:
 # Test delivery service
 test-delivery:
 	go test -tags=test -v ./test/delivery
+
+# Test SASL authentication service
+test-sasl:
+	go test -tags=test -v ./test/sasl
+
+# Build SASL authentication service
+build-sasl:
+	go build -o bin/raven-sasl ./cmd/sasl
+
+# Run SASL authentication service
+run-sasl:
+	go run ./cmd/sasl
+
+# Build all services
+build-all: build-delivery build-sasl
 
 # Run all tests
 test:
@@ -272,11 +287,15 @@ help:
 	@echo ""
 	@echo "Build & Run:"
 	@echo "  build-delivery         - Build delivery service binary"
+	@echo "  build-sasl             - Build SASL authentication service binary"
+	@echo "  build-all              - Build all services"
 	@echo "  run-delivery           - Run delivery service"
+	@echo "  run-sasl               - Run SASL authentication service"
 	@echo ""
 	@echo "Testing:"
 	@echo "  test                   - Run all tests"
 	@echo "  test-delivery          - Run delivery service tests"
+	@echo "  test-sasl              - Run SASL authentication service tests"
 	@echo "  test-capability        - Run CAPABILITY command tests only"
 	@echo "  test-noop              - Run NOOP command tests only"
 	@echo "  test-check             - Run CHECK command tests only"
