@@ -130,6 +130,16 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 		case "CPID":
 			// Client process ID - acknowledge
+			// After CPID, announce available authentication mechanisms
+			// Format: MECH\t<mechanism>\t[options]
+			mechPlain := "MECH\tPLAIN\tplaintext\n"
+			conn.Write([]byte(mechPlain))
+			log.Printf("SASL sent: %s", strings.TrimSpace(mechPlain))
+
+			mechLogin := "MECH\tLOGIN\tplaintext\n"
+			conn.Write([]byte(mechLogin))
+			log.Printf("SASL sent: %s", strings.TrimSpace(mechLogin))
+
 			response := "DONE\n"
 			conn.Write([]byte(response))
 			log.Printf("SASL sent: %s", strings.TrimSpace(response))
