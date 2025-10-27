@@ -182,17 +182,35 @@ func TestCPIDCommand(t *testing.T) {
 	// Send CPID command
 	fmt.Fprintf(conn, "CPID\t12345\n")
 
-	// Read response
+	// Read all responses - server sends MECH lines followed by DONE
 	reader := bufio.NewReader(conn)
-	response, err := reader.ReadString('\n')
+
+	// Read first MECH line
+	response1, err := reader.ReadString('\n')
 	if err != nil {
-		t.Fatalf("Failed to read response: %v", err)
+		t.Fatalf("Failed to read first MECH response: %v", err)
+	}
+	if !strings.HasPrefix(response1, "MECH\t") {
+		t.Errorf("Expected first MECH response, got %q", response1)
 	}
 
-	// Check response
+	// Read second MECH line
+	response2, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("Failed to read second MECH response: %v", err)
+	}
+	if !strings.HasPrefix(response2, "MECH\t") {
+		t.Errorf("Expected second MECH response, got %q", response2)
+	}
+
+	// Read DONE line
+	response3, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("Failed to read DONE response: %v", err)
+	}
 	expectedResponse := "DONE\n"
-	if response != expectedResponse {
-		t.Errorf("Expected response %q, got %q", expectedResponse, response)
+	if response3 != expectedResponse {
+		t.Errorf("Expected response %q, got %q", expectedResponse, response3)
 	}
 }
 
@@ -937,7 +955,16 @@ func TestMultipleCommandsInSession(t *testing.T) {
 
 	// Send CPID
 	fmt.Fprintf(conn, "CPID\t12345\n")
-	response, _ = reader.ReadString('\n')
+	// Read all MECH responses
+	response, _ = reader.ReadString('\n') // First MECH
+	if !strings.HasPrefix(response, "MECH") {
+		t.Errorf("Expected MECH response, got: %s", response)
+	}
+	response, _ = reader.ReadString('\n') // Second MECH
+	if !strings.HasPrefix(response, "MECH") {
+		t.Errorf("Expected MECH response, got: %s", response)
+	}
+	response, _ = reader.ReadString('\n') // DONE
 	if !strings.HasPrefix(response, "DONE") {
 		t.Errorf("Expected DONE response, got: %s", response)
 	}
