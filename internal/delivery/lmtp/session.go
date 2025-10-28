@@ -46,14 +46,19 @@ func (s *Session) Handle() error {
 	}
 
 	// Send greeting
+	log.Printf("Sending greeting to %s", s.conn.RemoteAddr())
 	if err := s.sendResponse(220, "%s LMTP Service ready", s.config.LMTP.Hostname); err != nil {
+		log.Printf("Failed to send greeting to %s: %v", s.conn.RemoteAddr(), err)
 		return err
 	}
+	log.Printf("Greeting sent successfully to %s, waiting for client command...", s.conn.RemoteAddr())
 
 	// Process commands
 	for {
+		log.Printf("Waiting to read from %s...", s.conn.RemoteAddr())
 		line, err := s.reader.ReadString('\n')
 		if err != nil {
+			log.Printf("Read failed from %s: %v (connection likely closed by client)", s.conn.RemoteAddr(), err)
 			return fmt.Errorf("read error: %w", err)
 		}
 
