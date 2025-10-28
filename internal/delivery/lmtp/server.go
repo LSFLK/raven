@@ -1,12 +1,14 @@
 package lmtp
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
 	"net"
 	"os"
 	"sync"
+	"time"
 
 	"go-imap/internal/delivery/config"
 	"go-imap/internal/delivery/storage"
@@ -84,13 +86,19 @@ func (s *Server) startUnixListener() error {
 
 // startTCPListener starts listening on a TCP address
 func (s *Server) startTCPListener() error {
-	listener, err := net.Listen("tcp", s.config.LMTP.TCPAddress)
+	// Configure TCP listener with keep-alive
+	lc := net.ListenConfig{
+		KeepAlive: 30 * time.Second, // Send keep-alive probes every 30 seconds
+		Control:   nil,
+	}
+
+	listener, err := lc.Listen(context.Background(), "tcp", s.config.LMTP.TCPAddress)
 	if err != nil {
 		return err
 	}
 
 	s.tcpListener = listener
-	log.Printf("LMTP server listening on TCP: %s", s.config.LMTP.TCPAddress)
+	log.Printf("LMTP server listening on TCP: %s (with keep-alive enabled)", s.config.LMTP.TCPAddress)
 
 	s.wg.Add(1)
 	go s.acceptConnections(listener, "tcp")
@@ -132,6 +140,26 @@ func (s *Server) acceptConnections(listener net.Listener, listenerType string) {
 func (s *Server) handleConnection(conn net.Conn) {
 	defer s.wg.Done()
 	defer conn.Close()
+
+	// Configure TCP options for better connection stability
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		// Enable TCP keep-alive to detect dead connections
+		if err := tcpConn.SetKeepAlive(true); err != nil {
+			log.Printf("Warning: failed to enable keep-alive: %v", err)
+		}
+
+		// Set keep-alive period to 30 seconds
+		if err := tcpConn.SetKeepAlivePeriod(30 * time.Second); err != nil {
+			log.Printf("Warning: failed to set keep-alive period: %v", err)
+		}
+
+		// Disable Nagle's algorithm for better small packet handling (LMTP protocol)
+		if err := tcpConn.SetNoDelay(true); err != nil {
+			log.Printf("Warning: failed to set TCP_NODELAY: %v", err)
+		}
+
+		log.Printf("TCP options configured for connection from %s", conn.RemoteAddr())
+	}
 
 	session := NewSession(conn, s.storage, s.config)
 	if err := session.Handle(); err != nil {

@@ -39,9 +39,6 @@ COPY --from=builder /app/imap-server .
 COPY --from=builder /app/raven-delivery .
 COPY --from=builder /app/raven-sasl .
 
-# Copy configuration file
-COPY config/raven.yaml /etc/raven/raven.yaml
-
 # Create directories with proper permissions
 RUN mkdir -p /app/data /var/run/raven /etc/raven /var/spool/postfix/private && \
     chown -R ravenuser:ravenuser /app /var/run/raven /etc/raven && \
