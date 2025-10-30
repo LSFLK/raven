@@ -4,11 +4,9 @@
 package server_test
 
 import (
-	"database/sql"
 	"strings"
 	"testing"
 
-	"go-imap/internal/db"
 	"go-imap/internal/models"
 	"go-imap/test/helpers"
 )
@@ -72,8 +70,8 @@ func TestExpungeCommand_NoDeletedMessages(t *testing.T) {
 
 	// Setup authenticated state with selected mailbox
 	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := server.GetDB().(*sql.DB)
-	mailboxID, err := db.GetMailboxByName(database, state.UserID, "INBOX")
+	database := helpers.GetDatabaseFromServer(server)
+	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
@@ -108,8 +106,8 @@ func TestExpungeCommand_SingleDeletedMessage(t *testing.T) {
 
 	// Setup authenticated state with selected mailbox
 	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := server.GetDB().(*sql.DB)
-	mailboxID, err := db.GetMailboxByName(database, state.UserID, "INBOX")
+	database := helpers.GetDatabaseFromServer(server)
+	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
@@ -121,8 +119,10 @@ func TestExpungeCommand_SingleDeletedMessage(t *testing.T) {
 	msg2ID := helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@example.com", "testuser@localhost", "INBOX")
 	helpers.InsertTestMail(t, database, "testuser", "Message 3", "sender@example.com", "testuser@localhost", "INBOX")
 
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+
 	// Mark message 2 as deleted
-	database.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, msg2ID)
+	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, msg2ID)
 
 	server.HandleExpunge(conn, "E004", state)
 
@@ -148,7 +148,7 @@ func TestExpungeCommand_SingleDeletedMessage(t *testing.T) {
 
 	// Verify message was deleted
 	var countAfter int
-	database.QueryRow(`SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?`, mailboxID).Scan(&countAfter)
+	userDB.QueryRow(`SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?`, mailboxID).Scan(&countAfter)
 	if countAfter != 2 {
 		t.Errorf("Expected 2 messages after EXPUNGE, got %d", countAfter)
 	}
@@ -162,8 +162,8 @@ func TestExpungeCommand_MultipleDeletedMessages(t *testing.T) {
 
 	// Setup authenticated state with selected mailbox
 	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := server.GetDB().(*sql.DB)
-	mailboxID, err := db.GetMailboxByName(database, state.UserID, "INBOX")
+	database := helpers.GetDatabaseFromServer(server)
+	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
@@ -178,12 +178,14 @@ func TestExpungeCommand_MultipleDeletedMessages(t *testing.T) {
 		messageIDs = append(messageIDs, msgID)
 	}
 
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+
 	// Mark messages 3, 4, 7, and 11 as deleted (indices 2, 3, 6, 10)
 	// Per RFC 3501 example
-	database.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageIDs[2])
-	database.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageIDs[3])
-	database.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageIDs[6])
-	database.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageIDs[10])
+	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageIDs[2])
+	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageIDs[3])
+	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageIDs[6])
+	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageIDs[10])
 
 	server.HandleExpunge(conn, "A202", state)
 
@@ -221,7 +223,7 @@ func TestExpungeCommand_MultipleDeletedMessages(t *testing.T) {
 
 	// Verify 7 messages remain (11 - 4 deleted)
 	var countAfter int
-	database.QueryRow(`SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?`, mailboxID).Scan(&countAfter)
+	userDB.QueryRow(`SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?`, mailboxID).Scan(&countAfter)
 	if countAfter != 7 {
 		t.Errorf("Expected 7 messages after EXPUNGE, got %d", countAfter)
 	}
@@ -234,8 +236,8 @@ func TestExpungeCommand_StateUpdate(t *testing.T) {
 
 	// Setup authenticated state with selected mailbox
 	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := server.GetDB().(*sql.DB)
-	mailboxID, err := db.GetMailboxByName(database, state.UserID, "INBOX")
+	database := helpers.GetDatabaseFromServer(server)
+	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
@@ -245,7 +247,9 @@ func TestExpungeCommand_StateUpdate(t *testing.T) {
 	// Insert and delete some messages
 	msg1ID := helpers.InsertTestMail(t, database, "testuser", "Message 1", "sender@example.com", "testuser@localhost", "INBOX")
 	helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@example.com", "testuser@localhost", "INBOX")
-	database.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, msg1ID)
+
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, msg1ID)
 
 	// Set initial state
 	state.LastMessageCount = 2
@@ -269,8 +273,8 @@ func TestExpungeCommand_ResponseFormat(t *testing.T) {
 	conn := helpers.NewMockConn()
 
 	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := server.GetDB().(*sql.DB)
-	mailboxID, err := db.GetMailboxByName(database, state.UserID, "INBOX")
+	database := helpers.GetDatabaseFromServer(server)
+	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
@@ -314,8 +318,8 @@ func TestExpungeCommand_TagHandling(t *testing.T) {
 			conn := helpers.NewMockConn()
 
 			state := helpers.SetupAuthenticatedState(t, server, "testuser")
-			database := server.GetDB().(*sql.DB)
-			mailboxID, err := db.GetMailboxByName(database, state.UserID, "INBOX")
+			database := helpers.GetDatabaseFromServer(server)
+			mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
 			if err != nil {
 				t.Fatalf("Failed to get INBOX mailbox: %v", err)
 			}
@@ -360,8 +364,8 @@ func TestExpungeCommand_RFC3501Compliance(t *testing.T) {
 		conn := helpers.NewMockConn()
 
 		state := helpers.SetupAuthenticatedState(t, server, "testuser")
-		database := server.GetDB().(*sql.DB)
-		mailboxID, err := db.GetMailboxByName(database, state.UserID, "INBOX")
+		database := helpers.GetDatabaseFromServer(server)
+		mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
 		if err != nil {
 			t.Fatalf("Failed to get INBOX mailbox: %v", err)
 		}
@@ -381,8 +385,8 @@ func TestExpungeCommand_RFC3501Compliance(t *testing.T) {
 		conn := helpers.NewMockConn()
 
 		state := helpers.SetupAuthenticatedState(t, server, "testuser")
-		database := server.GetDB().(*sql.DB)
-		mailboxID, err := db.GetMailboxByName(database, state.UserID, "INBOX")
+		database := helpers.GetDatabaseFromServer(server)
+		mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
 		if err != nil {
 			t.Fatalf("Failed to get INBOX mailbox: %v", err)
 		}
@@ -391,7 +395,9 @@ func TestExpungeCommand_RFC3501Compliance(t *testing.T) {
 
 		// Insert and delete a message
 		msgID := helpers.InsertTestMail(t, database, "testuser", "Test", "sender@example.com", "testuser@localhost", "INBOX")
-		database.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, msgID)
+
+		userDB := helpers.GetUserDBByID(t, database, state.UserID)
+		userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, msgID)
 
 		server.HandleExpunge(conn, "RFC3", state)
 
@@ -413,8 +419,8 @@ func TestExpungeCommand_RFC3501Compliance(t *testing.T) {
 		conn := helpers.NewMockConn()
 
 		state := helpers.SetupAuthenticatedState(t, server, "testuser")
-		database := server.GetDB().(*sql.DB)
-		mailboxID, err := db.GetMailboxByName(database, state.UserID, "INBOX")
+		database := helpers.GetDatabaseFromServer(server)
+		mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
 		if err != nil {
 			t.Fatalf("Failed to get INBOX mailbox: %v", err)
 		}
@@ -442,13 +448,15 @@ func TestExpungeCommand_VsClose(t *testing.T) {
 		serverExp := helpers.SetupTestServerSimple(t)
 		connExp := helpers.NewMockConn()
 		stateExp := helpers.SetupAuthenticatedState(t, serverExp, "testuser")
-		databaseExp := serverExp.GetDB().(*sql.DB)
-		mailboxIDExp, _ := db.GetMailboxByName(databaseExp, stateExp.UserID, "INBOX")
+		databaseExp := helpers.GetDatabaseFromServer(serverExp)
+		mailboxIDExp, _ := helpers.GetMailboxID(t, databaseExp, stateExp.UserID, "INBOX")
 		stateExp.SelectedMailboxID = mailboxIDExp
 		stateExp.SelectedFolder = "INBOX"
 
 		msgID := helpers.InsertTestMail(t, databaseExp, "testuser", "Test", "sender@example.com", "testuser@localhost", "INBOX")
-		databaseExp.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxIDExp, msgID)
+
+		userDBExp := helpers.GetUserDBByID(t, databaseExp, stateExp.UserID)
+		userDBExp.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxIDExp, msgID)
 
 		serverExp.HandleExpunge(connExp, "E001", stateExp)
 		expungeResponse := connExp.GetWrittenData()
@@ -457,13 +465,15 @@ func TestExpungeCommand_VsClose(t *testing.T) {
 		serverClose := helpers.SetupTestServerSimple(t)
 		connClose := helpers.NewMockConn()
 		stateClose := helpers.SetupAuthenticatedState(t, serverClose, "testuser2")
-		databaseClose := serverClose.GetDB().(*sql.DB)
-		mailboxIDClose, _ := db.GetMailboxByName(databaseClose, stateClose.UserID, "INBOX")
+		databaseClose := helpers.GetDatabaseFromServer(serverClose)
+		mailboxIDClose, _ := helpers.GetMailboxID(t, databaseClose, stateClose.UserID, "INBOX")
 		stateClose.SelectedMailboxID = mailboxIDClose
 		stateClose.SelectedFolder = "INBOX"
 
 		msgID2 := helpers.InsertTestMail(t, databaseClose, "testuser2", "Test", "sender@example.com", "testuser2@localhost", "INBOX")
-		databaseClose.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxIDClose, msgID2)
+
+		userDBClose := helpers.GetUserDBByID(t, databaseClose, stateClose.UserID)
+		userDBClose.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxIDClose, msgID2)
 
 		serverClose.HandleClose(connClose, "C001", stateClose)
 		closeResponse := connClose.GetWrittenData()
@@ -484,8 +494,8 @@ func TestExpungeCommand_VsClose(t *testing.T) {
 		serverExp := helpers.SetupTestServerSimple(t)
 		connExp := helpers.NewMockConn()
 		stateExp := helpers.SetupAuthenticatedState(t, serverExp, "testuser")
-		databaseExp := serverExp.GetDB().(*sql.DB)
-		mailboxIDExp, _ := db.GetMailboxByName(databaseExp, stateExp.UserID, "INBOX")
+		databaseExp := helpers.GetDatabaseFromServer(serverExp)
+		mailboxIDExp, _ := helpers.GetMailboxID(t, databaseExp, stateExp.UserID, "INBOX")
 		stateExp.SelectedMailboxID = mailboxIDExp
 		stateExp.SelectedFolder = "INBOX"
 
@@ -500,8 +510,8 @@ func TestExpungeCommand_VsClose(t *testing.T) {
 		serverClose := helpers.SetupTestServerSimple(t)
 		connClose := helpers.NewMockConn()
 		stateClose := helpers.SetupAuthenticatedState(t, serverClose, "testuser2")
-		databaseClose := serverClose.GetDB().(*sql.DB)
-		mailboxIDClose, _ := db.GetMailboxByName(databaseClose, stateClose.UserID, "INBOX")
+		databaseClose := helpers.GetDatabaseFromServer(serverClose)
+		mailboxIDClose, _ := helpers.GetMailboxID(t, databaseClose, stateClose.UserID, "INBOX")
 		stateClose.SelectedMailboxID = mailboxIDClose
 		stateClose.SelectedFolder = "INBOX"
 
@@ -520,8 +530,8 @@ func TestExpungeCommand_PreservesMessageData(t *testing.T) {
 	conn := helpers.NewMockConn()
 
 	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := server.GetDB().(*sql.DB)
-	mailboxID, err := db.GetMailboxByName(database, state.UserID, "INBOX")
+	database := helpers.GetDatabaseFromServer(server)
+	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
@@ -531,21 +541,23 @@ func TestExpungeCommand_PreservesMessageData(t *testing.T) {
 	// Insert a test message
 	messageID := helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@example.com", "testuser@localhost", "INBOX")
 
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+
 	// Mark it as deleted
-	database.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageID)
+	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageID)
 
 	server.HandleExpunge(conn, "PRESERVE", state)
 
 	// Message should be removed from mailbox
 	var countInMailbox int
-	database.QueryRow(`SELECT COUNT(*) FROM message_mailbox WHERE message_id = ?`, messageID).Scan(&countInMailbox)
+	userDB.QueryRow(`SELECT COUNT(*) FROM message_mailbox WHERE message_id = ?`, messageID).Scan(&countInMailbox)
 	if countInMailbox != 0 {
 		t.Errorf("Expected message to be removed from mailbox, but found %d entries", countInMailbox)
 	}
 
 	// But message data should still exist in messages table
 	var countInMessages int
-	database.QueryRow(`SELECT COUNT(*) FROM messages WHERE id = ?`, messageID).Scan(&countInMessages)
+	userDB.QueryRow(`SELECT COUNT(*) FROM messages WHERE id = ?`, messageID).Scan(&countInMessages)
 	if countInMessages != 1 {
 		t.Errorf("Expected message data to be preserved in messages table, found %d entries", countInMessages)
 	}

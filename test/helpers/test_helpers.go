@@ -109,19 +109,18 @@ type MockConnInterface interface {
 var _ MockConnInterface = (*MockConn)(nil)
 var _ MockConnInterface = (*MockTLSConn)(nil)
 
-// SetupTestServer creates a test IMAP server with in-memory database using new schema
+// SetupTestServer creates a test IMAP server with DBManager and per-user databases
 func SetupTestServer(t *testing.T) (*server.TestInterface, func()) {
-	// Create a temporary database file (we need a file for InitDB to work)
+	// Create a temporary directory for databases
 	tmpDir := t.TempDir()
-	dbPath := filepath.Join(tmpDir, "test.db")
 
-	// Initialize database with new normalized schema
-	database, err := db.InitDB(dbPath)
+	// Initialize DBManager with the temp directory
+	dbManager, err := db.NewDBManager(tmpDir)
 	if err != nil {
-		t.Fatalf("Failed to initialize test database: %v", err)
+		t.Fatalf("Failed to initialize DBManager: %v", err)
 	}
 
-	imapServer := server.NewIMAPServer(database)
+	imapServer := server.NewIMAPServer(dbManager)
 	testInterface := server.NewTestInterface(imapServer)
 
 	// Generate test certificates for STARTTLS
@@ -130,7 +129,7 @@ func SetupTestServer(t *testing.T) (*server.TestInterface, func()) {
 
 	cleanup := func() {
 		certCleanup()
-		database.Close()
+		dbManager.Close()
 		// Temp dir cleanup is handled by t.TempDir()
 	}
 	return testInterface, cleanup
@@ -143,29 +142,56 @@ func SetupTestServerSimple(t *testing.T) *server.TestInterface {
 	return srv
 }
 
-// TestServerWithDB creates a test server with a specific database
-func TestServerWithDB(database *sql.DB) *server.TestInterface {
-	imapServer := server.NewIMAPServer(database)
+// TestServerWithDBManager creates a test server with a specific DBManager
+func TestServerWithDBManager(dbManager *db.DBManager) *server.TestInterface {
+	imapServer := server.NewIMAPServer(dbManager)
 	return server.NewTestInterface(imapServer)
 }
 
-// CreateTestDB creates an in-memory SQLite database for testing with new schema
-func CreateTestDB(t *testing.T) *sql.DB {
-	// Create a temporary database file
-	tmpDir := t.TempDir()
-	dbPath := filepath.Join(tmpDir, "test.db")
-
-	// Initialize database with new normalized schema
-	database, err := db.InitDB(dbPath)
-	if err != nil {
-		t.Fatalf("Failed to initialize test database: %v", err)
+// TestServerWithDB creates a test server with a specific database - supports both *sql.DB and *db.DBManager
+func TestServerWithDB(database interface{}) *server.TestInterface {
+	switch v := database.(type) {
+	case *db.DBManager:
+		return TestServerWithDBManager(v)
+	case *sql.DB:
+		// For legacy tests, wrap in a temporary DBManager
+		// This is a fallback for old-style tests, but ideally all tests should use DBManager
+		panic("TestServerWithDB: *sql.DB no longer supported, please use *db.DBManager from CreateTestDB()")
+	default:
+		panic(fmt.Sprintf("TestServerWithDB: unsupported database type: %T", database))
 	}
-
-	return database
 }
 
-// CreateTestUser creates a test user with default mailboxes in the new schema
-func CreateTestUser(t *testing.T, database *sql.DB, username string) (userID int64) {
+// CreateTestDB creates a DBManager for testing with new per-user schema
+func CreateTestDB(t *testing.T) *db.DBManager {
+	// Create a temporary directory for databases
+	tmpDir := t.TempDir()
+
+	// Initialize DBManager with the temp directory
+	dbManager, err := db.NewDBManager(tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to initialize test DBManager: %v", err)
+	}
+
+	return dbManager
+}
+
+// CreateTestUser creates a test user with default mailboxes - supports both old and new DB architecture
+func CreateTestUser(t *testing.T, database interface{}, username string) (userID int64) {
+	// Handle both *sql.DB (old tests with shared DB) and *db.DBManager (new per-user DB architecture)
+	var sharedDB *sql.DB
+	var dbManager *db.DBManager
+	
+	switch v := database.(type) {
+	case *sql.DB:
+		sharedDB = v
+	case *db.DBManager:
+		dbManager = v
+		sharedDB = v.GetSharedDB()
+	default:
+		t.Fatalf("CreateTestUser: unsupported database type: %T", database)
+	}
+
 	domain := "localhost"
 	if strings.Contains(username, "@") {
 		parts := strings.Split(username, "@")
@@ -173,33 +199,41 @@ func CreateTestUser(t *testing.T, database *sql.DB, username string) (userID int
 		domain = parts[1]
 	}
 
-	// Create domain
-	domainID, err := db.GetOrCreateDomain(database, domain)
+	// Create domain in shared database
+	domainID, err := db.GetOrCreateDomain(sharedDB, domain)
 	if err != nil {
 		t.Fatalf("Failed to create domain: %v", err)
 	}
 
-	// Create user
-	userID, err = db.GetOrCreateUser(database, username, domainID)
+	// Create user in shared database
+	userID, err = db.GetOrCreateUser(sharedDB, username, domainID)
 	if err != nil {
 		t.Fatalf("Failed to create user %s: %v", username, err)
 	}
 
-	// Create default mailboxes
-	defaultMailboxes := []struct {
-		name       string
-		specialUse string
-	}{
-		{"INBOX", "\\Inbox"},
-		{"Sent", "\\Sent"},
-		{"Drafts", "\\Drafts"},
-		{"Trash", "\\Trash"},
-	}
+	// If using DBManager, initialize user database (creates default mailboxes automatically)
+	if dbManager != nil {
+		_, err := dbManager.GetUserDB(userID)
+		if err != nil {
+			t.Fatalf("Failed to initialize user database: %v", err)
+		}
+	} else {
+		// Old path: create mailboxes manually in shared DB
+		defaultMailboxes := []struct {
+			name       string
+			specialUse string
+		}{
+			{"INBOX", "\\Inbox"},
+			{"Sent", "\\Sent"},
+			{"Drafts", "\\Drafts"},
+			{"Trash", "\\Trash"},
+		}
 
-	for _, mbx := range defaultMailboxes {
-		_, err := db.CreateMailbox(database, userID, mbx.name, mbx.specialUse)
-		if err != nil && !strings.Contains(err.Error(), "already exists") {
-			t.Fatalf("Failed to create mailbox %s: %v", mbx.name, err)
+		for _, mbx := range defaultMailboxes {
+			_, err := db.CreateMailbox(sharedDB, userID, mbx.name, mbx.specialUse)
+			if err != nil && !strings.Contains(err.Error(), "already exists") {
+				t.Fatalf("Failed to create mailbox %s: %v", mbx.name, err)
+			}
 		}
 	}
 
@@ -207,12 +241,28 @@ func CreateTestUser(t *testing.T, database *sql.DB, username string) (userID int
 }
 
 // CreateTestUserTable creates a user with mailboxes (compatibility function)
-func CreateTestUserTable(t *testing.T, database *sql.DB, username string) {
+func CreateTestUserTable(t *testing.T, database interface{}, username string) {
 	CreateTestUser(t, database, username)
 }
 
 // InsertTestMail inserts a test mail into a user's mailbox using new schema
-func InsertTestMail(t *testing.T, database *sql.DB, username, subject, sender, recipient, folder string) int64 {
+func InsertTestMail(t *testing.T, database interface{}, username, subject, sender, recipient, folder string) int64 {
+	// Handle both *sql.DB (old tests with shared DB) and *db.DBManager (new per-user DB architecture)
+	var sharedDB *sql.DB
+	var userDB *sql.DB
+	var dbManager *db.DBManager
+	
+	switch v := database.(type) {
+	case *sql.DB:
+		sharedDB = v
+		userDB = v // Old architecture uses same DB
+	case *db.DBManager:
+		dbManager = v
+		sharedDB = v.GetSharedDB()
+	default:
+		t.Fatalf("InsertTestMail: unsupported database type: %T", database)
+	}
+
 	// Get user
 	domain := "localhost"
 	if strings.Contains(username, "@") {
@@ -221,22 +271,41 @@ func InsertTestMail(t *testing.T, database *sql.DB, username, subject, sender, r
 		domain = parts[1]
 	}
 
-	domainID, err := db.GetOrCreateDomain(database, domain)
+	domainID, err := db.GetOrCreateDomain(sharedDB, domain)
 	if err != nil {
 		t.Fatalf("Failed to get domain: %v", err)
 	}
 
-	userID, err := db.GetOrCreateUser(database, username, domainID)
+	userID, err := db.GetOrCreateUser(sharedDB, username, domainID)
 	if err != nil {
 		t.Fatalf("Failed to get user: %v", err)
 	}
 
-	// Get or create mailbox
-	mailboxID, err := db.GetMailboxByName(database, userID, folder)
-	if err != nil {
-		mailboxID, err = db.CreateMailbox(database, userID, folder, "")
+	// Get user database if using DBManager
+	if dbManager != nil {
+		userDB, err = dbManager.GetUserDB(userID)
 		if err != nil {
-			t.Fatalf("Failed to create mailbox: %v", err)
+			t.Fatalf("Failed to get user database: %v", err)
+		}
+	}
+
+	// Get or create mailbox
+	var mailboxID int64
+	if dbManager != nil {
+		mailboxID, err = db.GetMailboxByNamePerUser(userDB, userID, folder)
+		if err != nil {
+			mailboxID, err = db.CreateMailboxPerUser(userDB, userID, folder, "")
+			if err != nil {
+				t.Fatalf("Failed to create mailbox: %v", err)
+			}
+		}
+	} else {
+		mailboxID, err = db.GetMailboxByName(userDB, userID, folder)
+		if err != nil {
+			mailboxID, err = db.CreateMailbox(userDB, userID, folder, "")
+			if err != nil {
+				t.Fatalf("Failed to create mailbox: %v", err)
+			}
 		}
 	}
 
@@ -250,15 +319,27 @@ func InsertTestMail(t *testing.T, database *sql.DB, username, subject, sender, r
 		t.Fatalf("Failed to parse test message: %v", err)
 	}
 
-	messageID, err := parser.StoreMessage(database, parsed)
-	if err != nil {
-		t.Fatalf("Failed to store test message: %v", err)
-	}
-
-	// Add message to mailbox
-	err = db.AddMessageToMailbox(database, messageID, mailboxID, "", time.Now())
-	if err != nil {
-		t.Fatalf("Failed to add message to mailbox: %v", err)
+	var messageID int64
+	if dbManager != nil {
+		messageID, err = parser.StoreMessagePerUser(userDB, parsed)
+		if err != nil {
+			t.Fatalf("Failed to store test message: %v", err)
+		}
+		// Add message to mailbox
+		err = db.AddMessageToMailboxPerUser(userDB, messageID, mailboxID, "", time.Now())
+		if err != nil {
+			t.Fatalf("Failed to add message to mailbox: %v", err)
+		}
+	} else {
+		messageID, err = parser.StoreMessage(userDB, parsed)
+		if err != nil {
+			t.Fatalf("Failed to store test message: %v", err)
+		}
+		// Add message to mailbox
+		err = db.AddMessageToMailbox(userDB, messageID, mailboxID, "", time.Now())
+		if err != nil {
+			t.Fatalf("Failed to add message to mailbox: %v", err)
+		}
 	}
 
 	return messageID
@@ -484,7 +565,21 @@ func CreateTLSConfig(t *testing.T) (*tls.Config, func()) {
 }
 
 // CreateMailbox creates a mailbox for a user in the test database (new schema)
-func CreateMailbox(t *testing.T, database *sql.DB, username, mailboxName string) {
+func CreateMailbox(t *testing.T, database interface{}, username, mailboxName string) {
+	// Handle both *sql.DB and *db.DBManager
+	var sharedDB *sql.DB
+	var dbManager *db.DBManager
+	
+	switch v := database.(type) {
+	case *sql.DB:
+		sharedDB = v
+	case *db.DBManager:
+		dbManager = v
+		sharedDB = v.GetSharedDB()
+	default:
+		t.Fatalf("CreateMailbox: unsupported database type: %T", database)
+	}
+	
 	domain := "localhost"
 	if strings.Contains(username, "@") {
 		parts := strings.Split(username, "@")
@@ -492,24 +587,50 @@ func CreateMailbox(t *testing.T, database *sql.DB, username, mailboxName string)
 		domain = parts[1]
 	}
 
-	domainID, err := db.GetOrCreateDomain(database, domain)
+	domainID, err := db.GetOrCreateDomain(sharedDB, domain)
 	if err != nil {
 		t.Fatalf("Failed to get domain: %v", err)
 	}
 
-	userID, err := db.GetOrCreateUser(database, username, domainID)
+	userID, err := db.GetOrCreateUser(sharedDB, username, domainID)
 	if err != nil {
 		t.Fatalf("Failed to get user: %v", err)
 	}
 
-	_, err = db.CreateMailbox(database, userID, mailboxName, "")
-	if err != nil && !strings.Contains(err.Error(), "already exists") {
-		t.Fatalf("Failed to create mailbox %s for user %s: %v", mailboxName, username, err)
+	// Use per-user DB if we have a DBManager, otherwise use shared DB (legacy)
+	if dbManager != nil {
+		userDB, err := dbManager.GetUserDB(userID)
+		if err != nil {
+			t.Fatalf("Failed to get user database: %v", err)
+		}
+		_, err = db.CreateMailboxPerUser(userDB, userID, mailboxName, "")
+		if err != nil && !strings.Contains(err.Error(), "already exists") {
+			t.Fatalf("Failed to create mailbox %s for user %s: %v", mailboxName, username, err)
+		}
+	} else {
+		_, err = db.CreateMailbox(sharedDB, userID, mailboxName, "")
+		if err != nil && !strings.Contains(err.Error(), "already exists") {
+			t.Fatalf("Failed to create mailbox %s for user %s: %v", mailboxName, username, err)
+		}
 	}
 }
 
 // SubscribeToMailbox subscribes a user to a mailbox (compatibility wrapper for new schema)
-func SubscribeToMailbox(t *testing.T, database *sql.DB, username, mailboxName string) {
+func SubscribeToMailbox(t *testing.T, database interface{}, username, mailboxName string) {
+	var sharedDB *sql.DB
+	var userDB *sql.DB
+	var err error
+
+	switch v := database.(type) {
+	case *sql.DB:
+		sharedDB = v
+		userDB = v
+	case *db.DBManager:
+		sharedDB = v.GetSharedDB()
+	default:
+		t.Fatalf("SubscribeToMailbox: unsupported database type: %T", database)
+	}
+
 	domain := "localhost"
 	if strings.Contains(username, "@") {
 		parts := strings.Split(username, "@")
@@ -517,17 +638,27 @@ func SubscribeToMailbox(t *testing.T, database *sql.DB, username, mailboxName st
 		domain = parts[1]
 	}
 
-	domainID, err := db.GetOrCreateDomain(database, domain)
+	domainID, err := db.GetOrCreateDomain(sharedDB, domain)
 	if err != nil {
 		t.Fatalf("Failed to get domain: %v", err)
 	}
 
-	userID, err := db.GetOrCreateUser(database, username, domainID)
+	userID, err := db.GetOrCreateUser(sharedDB, username, domainID)
 	if err != nil {
 		t.Fatalf("Failed to get user: %v", err)
 	}
 
-	err = db.SubscribeToMailbox(database, userID, mailboxName)
+	// Get user DB if using DBManager
+	if dbManager, ok := database.(*db.DBManager); ok {
+		userDB, err = dbManager.GetUserDB(userID)
+		if err != nil {
+			t.Fatalf("Failed to get user database: %v", err)
+		}
+		err = db.SubscribeToMailboxPerUser(userDB, userID, mailboxName)
+	} else {
+		err = db.SubscribeToMailbox(userDB, userID, mailboxName)
+	}
+	
 	if err != nil {
 		t.Fatalf("Failed to subscribe to mailbox %s for user %s: %v", mailboxName, username, err)
 	}
@@ -557,9 +688,10 @@ func GetUserID(t *testing.T, database *sql.DB, username string) int64 {
 
 // SetupAuthenticatedState creates an authenticated state with proper user setup in database
 func SetupAuthenticatedState(t *testing.T, server *server.TestInterface, username string) *models.ClientState {
-	database := server.GetDB().(*sql.DB)
-	userID := CreateTestUser(t, database, username)
-
+	dbManager := server.GetDBManager().(*db.DBManager)
+	sharedDB := dbManager.GetSharedDB()
+	
+	// Parse username and domain
 	domain := "localhost"
 	if strings.Contains(username, "@") {
 		parts := strings.Split(username, "@")
@@ -567,9 +699,21 @@ func SetupAuthenticatedState(t *testing.T, server *server.TestInterface, usernam
 		domain = parts[1]
 	}
 
-	domainID, err := db.GetOrCreateDomain(database, domain)
+	// Create domain and user in shared database
+	domainID, err := db.GetOrCreateDomain(sharedDB, domain)
 	if err != nil {
 		t.Fatalf("Failed to get domain: %v", err)
+	}
+
+	userID, err := db.GetOrCreateUser(sharedDB, username, domainID)
+	if err != nil {
+		t.Fatalf("Failed to get user: %v", err)
+	}
+
+	// Initialize user database (creates default mailboxes)
+	_, err = dbManager.GetUserDB(userID)
+	if err != nil {
+		t.Fatalf("Failed to initialize user database: %v", err)
 	}
 
 	return &models.ClientState{
@@ -577,5 +721,154 @@ func SetupAuthenticatedState(t *testing.T, server *server.TestInterface, usernam
 		Username:      username,
 		UserID:        userID,
 		DomainID:      domainID,
+	}
+}
+
+// GetDBManager gets the DBManager from a test server
+func GetDBManager(t *testing.T, srv interface{}) *db.DBManager {
+	type dbManagerGetter interface {
+		GetDBManager() interface{}
+	}
+	
+	if getter, ok := srv.(dbManagerGetter); ok {
+		return getter.GetDBManager().(*db.DBManager)
+	}
+	t.Fatalf("Server does not implement GetDBManager()")
+	return nil
+}
+
+// GetUserDB gets a user's database from the test server
+func GetUserDB(t *testing.T, srv interface{}, userID int64) *sql.DB {
+	dbManager := GetDBManager(t, srv)
+	userDB, err := dbManager.GetUserDB(userID)
+	if err != nil {
+		t.Fatalf("Failed to get user database: %v", err)
+	}
+	return userDB
+}
+
+// GetSharedDB gets the shared database from the test server
+func GetSharedDB(t *testing.T, srv interface{}) *sql.DB {
+	dbManager := GetDBManager(t, srv)
+	return dbManager.GetSharedDB()
+}
+
+// GetDatabaseFromServer returns the DBManager from the test server
+// This is the recommended way to get the database in tests
+func GetDatabaseFromServer(srv interface{}) *db.DBManager {
+	type dbGetter interface {
+		GetDB() interface{}
+	}
+	
+	if getter, ok := srv.(dbGetter); ok {
+		if dbMgr, ok := getter.GetDB().(*db.DBManager); ok {
+			return dbMgr
+		}
+		panic(fmt.Sprintf("GetDB() returned unexpected type: %T", getter.GetDB()))
+	}
+	panic("Server does not implement GetDB()")
+}
+
+// GetMailboxID is a helper function that gets a mailbox ID for a user
+// Works with both old and new database architecture
+func GetMailboxID(t *testing.T, dbMgr *db.DBManager, userID int64, mailboxName string) (int64, error) {
+	userDB, err := dbMgr.GetUserDB(userID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get user database: %v", err)
+	}
+	return db.GetMailboxByNamePerUser(userDB, userID, mailboxName)
+}
+
+// UpdateMessageFlags updates message flags, handling both *sql.DB and *db.DBManager
+func UpdateMessageFlags(t *testing.T, database interface{}, username string, messageID int64, flags string) {
+	var userDB *sql.DB
+	var err error
+
+	switch v := database.(type) {
+	case *sql.DB:
+		userDB = v
+	case *db.DBManager:
+		// Get user ID first
+		sharedDB := v.GetSharedDB()
+		domain := "localhost"
+		if strings.Contains(username, "@") {
+			parts := strings.Split(username, "@")
+			username = parts[0]
+			domain = parts[1]
+		}
+
+		domainID, err := db.GetOrCreateDomain(sharedDB, domain)
+		if err != nil {
+			t.Fatalf("Failed to get domain: %v", err)
+		}
+
+		userID, err := db.GetOrCreateUser(sharedDB, username, domainID)
+		if err != nil {
+			t.Fatalf("Failed to get user: %v", err)
+		}
+
+		userDB, err = v.GetUserDB(userID)
+		if err != nil {
+			t.Fatalf("Failed to get user database: %v", err)
+		}
+	default:
+		t.Fatalf("UpdateMessageFlags: unsupported database type: %T", database)
+	}
+
+	_, err = userDB.Exec("UPDATE message_mailbox SET flags = ? WHERE message_id = ?", flags, messageID)
+	if err != nil {
+		t.Fatalf("Failed to update message flags: %v", err)
+	}
+}
+
+// GetUserDBFromManager gets a user's DB from a DBManager or returns the DB directly if it's *sql.DB
+func GetUserDBFromManager(t *testing.T, database interface{}, username string) *sql.DB {
+	switch v := database.(type) {
+	case *sql.DB:
+		return v
+	case *db.DBManager:
+		sharedDB := v.GetSharedDB()
+		domain := "localhost"
+		if strings.Contains(username, "@") {
+			parts := strings.Split(username, "@")
+			username = parts[0]
+			domain = parts[1]
+		}
+
+		domainID, err := db.GetOrCreateDomain(sharedDB, domain)
+		if err != nil {
+			t.Fatalf("Failed to get domain: %v", err)
+		}
+
+		userID, err := db.GetOrCreateUser(sharedDB, username, domainID)
+		if err != nil {
+			t.Fatalf("Failed to get user: %v", err)
+		}
+
+		userDB, err := v.GetUserDB(userID)
+		if err != nil {
+			t.Fatalf("Failed to get user database: %v", err)
+		}
+		return userDB
+	default:
+		t.Fatalf("GetUserDBFromManager: unsupported database type: %T", database)
+		return nil
+	}
+}
+
+// GetUserDBByID gets a user's DB from a DBManager by userID, or returns the DB directly if it's *sql.DB
+func GetUserDBByID(t *testing.T, database interface{}, userID int64) *sql.DB {
+	switch v := database.(type) {
+	case *sql.DB:
+		return v
+	case *db.DBManager:
+		userDB, err := v.GetUserDB(userID)
+		if err != nil {
+			t.Fatalf("Failed to get user database: %v", err)
+		}
+		return userDB
+	default:
+		t.Fatalf("GetUserDBByID: unsupported database type: %T", database)
+		return nil
 	}
 }
