@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"go-imap/internal/db"
 	"go-imap/internal/models"
 	"go-imap/test/helpers"
 )
@@ -79,11 +78,8 @@ func TestSelectCommand_WithUnseenMessages(t *testing.T) {
 	helpers.InsertTestMail(t, database, "testuser", "First Unseen", "sender@example.com", "recipient@example.com", "INBOX")
 	helpers.InsertTestMail(t, database, "testuser", "Second Unseen", "sender@example.com", "recipient@example.com", "INBOX")
 	
-	// Set first message as seen
-	_, err := database.Exec("UPDATE message_mailbox SET flags = ? WHERE message_id = ?", "\\Seen", messageID1)
-	if err != nil {
-		t.Fatalf("Failed to set message as seen: %v", err)
-	}
+	// Set first message as seen using helper
+	helpers.UpdateMessageFlags(t, database, "testuser", messageID1, "\\Seen")
 
 	s := helpers.TestServerWithDB(database)
 	conn := helpers.NewMockTLSConn()
@@ -187,13 +183,10 @@ func TestSelectCommand_MissingMailboxName(t *testing.T) {
 func TestSelectCommand_QuotedMailboxName(t *testing.T) {
 	database := helpers.CreateTestDB(t)
 	defer database.Close()
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	_ = helpers.CreateTestUser(t, database, "testuser")
 
 	// Create a mailbox with spaces and insert a message
-	_, err := db.CreateMailbox(database, userID, "Sent Items", "")
-	if err != nil {
-		t.Fatalf("Failed to create mailbox: %v", err)
-	}
+	helpers.CreateMailbox(t, database, "testuser", "Sent Items")
 	helpers.InsertTestMail(t, database, "testuser", "Test", "sender@example.com", "recipient@example.com", "Sent Items")
 
 	s := helpers.TestServerWithDB(database)
@@ -270,11 +263,8 @@ func TestSelectCommand_StateTracking(t *testing.T) {
 	helpers.InsertTestMail(t, database, "testuser", "Unseen Msg 1", "sender@example.com", "recipient@example.com", "INBOX")
 	helpers.InsertTestMail(t, database, "testuser", "Unseen Msg 2", "sender@example.com", "recipient@example.com", "INBOX")
 	
-	// Set first message as seen
-	_, err := database.Exec("UPDATE message_mailbox SET flags = ? WHERE message_id = ?", "\\Seen", messageID1)
-	if err != nil {
-		t.Fatalf("Failed to set message as seen: %v", err)
-	}
+	// Set first message as seen using helper
+	helpers.UpdateMessageFlags(t, database, "testuser", messageID1, "\\Seen")
 
 	s := helpers.TestServerWithDB(database)
 	conn := helpers.NewMockTLSConn()
@@ -356,11 +346,8 @@ func TestSelectCommand_RFC3501_Example(t *testing.T) {
 	// Insert 11 seen messages
 	for i := 1; i <= 11; i++ {
 		messageID := helpers.InsertTestMail(t, database, "testuser", fmt.Sprintf("Msg %d", i), "sender@example.com", "recipient@example.com", "INBOX")
-		// Set as seen
-		_, err := database.Exec("UPDATE message_mailbox SET flags = ? WHERE message_id = ?", "\\Seen", messageID)
-		if err != nil {
-			t.Fatalf("Failed to set message %d as seen: %v", i, err)
-		}
+		// Set as seen using helper
+		helpers.UpdateMessageFlags(t, database, "testuser", messageID, "\\Seen")
 	}
 
 	// Insert message 12 - first unseen
@@ -412,15 +399,9 @@ func TestSelectCommand_AllMessagesSeen(t *testing.T) {
 	messageID1 := helpers.InsertTestMail(t, database, "testuser", "Seen 1", "sender@example.com", "recipient@example.com", "INBOX")
 	messageID2 := helpers.InsertTestMail(t, database, "testuser", "Seen 2", "sender@example.com", "recipient@example.com", "INBOX")
 	
-	// Set both messages as seen
-	_, err := database.Exec("UPDATE message_mailbox SET flags = ? WHERE message_id = ?", "\\Seen", messageID1)
-	if err != nil {
-		t.Fatalf("Failed to set message 1 as seen: %v", err)
-	}
-	_, err = database.Exec("UPDATE message_mailbox SET flags = ? WHERE message_id = ?", "\\Seen", messageID2)
-	if err != nil {
-		t.Fatalf("Failed to set message 2 as seen: %v", err)
-	}
+	// Set both messages as seen using helper
+	helpers.UpdateMessageFlags(t, database, "testuser", messageID1, "\\Seen")
+	helpers.UpdateMessageFlags(t, database, "testuser", messageID2, "\\Seen")
 
 	s := helpers.TestServerWithDB(database)
 	conn := helpers.NewMockTLSConn()
@@ -449,23 +430,17 @@ func TestSelectCommand_AllMessagesSeen(t *testing.T) {
 func TestExamineCommand_RFC3501_Compliance(t *testing.T) {
 	database := helpers.CreateTestDB(t)
 	defer database.Close()
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	_ = helpers.CreateTestUser(t, database, "testuser")
 
 	// Create the blurdybloop mailbox
-	_, err := db.CreateMailbox(database, userID, "blurdybloop", "")
-	if err != nil {
-		t.Fatalf("Failed to create blurdybloop mailbox: %v", err)
-	}
+	helpers.CreateMailbox(t, database, "testuser", "blurdybloop")
 
 	// Create a mailbox with messages similar to RFC 3501 example
 	// Insert 7 seen messages
 	for i := 1; i <= 7; i++ {
 		messageID := helpers.InsertTestMail(t, database, "testuser", fmt.Sprintf("Msg %d", i), "sender@example.com", "recipient@example.com", "blurdybloop")
-		// Set as seen
-		_, err := database.Exec("UPDATE message_mailbox SET flags = ? WHERE message_id = ?", "\\Seen", messageID)
-		if err != nil {
-			t.Fatalf("Failed to set message %d as seen: %v", i, err)
-		}
+		// Set as seen using helper
+		helpers.UpdateMessageFlags(t, database, "testuser", messageID, "\\Seen")
 	}
 
 	// Insert message 8 - first unseen

@@ -28,11 +28,18 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 		return
 	}
 
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
 	folder := strings.Trim(parts[2], "\"")
 	state.SelectedFolder = folder
 
 	// Get mailbox ID using new schema
-	mailboxID, err := db.GetMailboxByName(s.db, state.UserID, folder)
+	mailboxID, err := db.GetMailboxByNamePerUser(userDB, state.UserID, folder)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Mailbox does not exist", tag))
 		return
@@ -41,7 +48,7 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 	state.SelectedMailboxID = mailboxID
 
 	// Get mailbox info (UID validity and next UID)
-	uidValidity, uidNext, err := db.GetMailboxInfo(s.db, mailboxID)
+	uidValidity, uidNext, err := db.GetMailboxInfoPerUser(userDB, mailboxID)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Server error: cannot get mailbox info", tag))
 		return
@@ -51,13 +58,13 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 	state.UIDNext = uidNext
 
 	// Get message count using new schema
-	count, err := db.GetMessageCount(s.db, mailboxID)
+	count, err := db.GetMessageCountPerUser(userDB, mailboxID)
 	if err != nil {
 		count = 0
 	}
 
 	// Get unseen (recent) count using new schema
-	recent, err := db.GetUnseenCount(s.db, mailboxID)
+	recent, err := db.GetUnseenCountPerUser(userDB, mailboxID)
 	if err != nil {
 		recent = 0
 	}
@@ -73,7 +80,7 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 		ORDER BY seq_num ASC
 		LIMIT 1
 	`
-	err = s.db.QueryRow(query, mailboxID).Scan(&unseenSeqNum)
+	err = userDB.QueryRow(query, mailboxID).Scan(&unseenSeqNum)
 	hasUnseen := (err == nil && unseenSeqNum > 0)
 
 	// Initialize state tracking for NOOP and other commands
@@ -122,13 +129,19 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 
 // handleFetchForUIDs handles FETCH for a list of UIDs (used by UID FETCH command)
 func (s *IMAPServer) handleFetchForUIDs(conn net.Conn, tag string, uids []int, items string, state *models.ClientState) {
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		return
+	}
+
 	for _, uid := range uids {
 		// Get message details by UID
 		var messageID int64
 		var seqNum int
 		var flags sql.NullString
 
-		err := s.db.QueryRow(`
+		err := userDB.QueryRow(`
 			SELECT mm.message_id, mm.flags,
 				(SELECT COUNT(*) FROM message_mailbox mm2
 				 WHERE mm2.mailbox_id = mm.mailbox_id AND mm2.uid <= mm.uid) as seq_num
@@ -162,6 +175,13 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		return
 	}
 
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
 	sequence := parts[2]
 	items := strings.Join(parts[3:], " ")
 
@@ -180,7 +200,6 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 	}
 
 	var rows *sql.Rows
-	var err error
 
 	// Support for sequence ranges (e.g., 1:2, 2:4, 1:*, *)
 	seqRange := strings.Split(sequence, ":")
@@ -200,7 +219,7 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		}
 		if seqRange[1] == "*" {
 			// Get max count for end using new schema
-			end, _ = db.GetMessageCount(s.db, state.SelectedMailboxID)
+			end, _ = db.GetMessageCountPerUser(userDB, state.SelectedMailboxID)
 		} else {
 			end, err = strconv.Atoi(seqRange[1])
 			if err != nil || end < 1 {
@@ -219,13 +238,13 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		          FROM message_mailbox mm
 		          WHERE mm.mailbox_id = ?
 		          ORDER BY mm.uid ASC LIMIT ? OFFSET ?`
-		rows, err = s.db.Query(query, state.SelectedMailboxID, end-start+1, start-1)
+		rows, err = userDB.Query(query, state.SelectedMailboxID, end-start+1, start-1)
 	} else if sequence == "1:*" || sequence == "*" {
 		query := `SELECT mm.message_id, mm.uid, mm.flags
 		          FROM message_mailbox mm
 		          WHERE mm.mailbox_id = ?
 		          ORDER BY mm.uid ASC`
-		rows, err = s.db.Query(query, state.SelectedMailboxID)
+		rows, err = userDB.Query(query, state.SelectedMailboxID)
 	} else {
 		msgNum, parseErr := strconv.Atoi(sequence)
 		if parseErr != nil {
@@ -236,7 +255,7 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		          FROM message_mailbox mm
 		          WHERE mm.mailbox_id = ?
 		          ORDER BY mm.uid ASC LIMIT 1 OFFSET ?`
-		rows, err = s.db.Query(query, state.SelectedMailboxID, msgNum-1)
+		rows, err = userDB.Query(query, state.SelectedMailboxID, msgNum-1)
 	}
 
 	if err != nil {
@@ -272,8 +291,14 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 
 // processFetchForMessage processes a single message for FETCH/UID FETCH
 func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64, seqNum int, flags, items string, state *models.ClientState) {
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		return
+	}
+
 	// Reconstruct message from new schema
-	rawMsg, err := parser.ReconstructMessage(s.db, messageID)
+	rawMsg, err := parser.ReconstructMessage(userDB, messageID)
 	if err != nil {
 		// If reconstruction fails, skip this message
 		return
@@ -302,7 +327,7 @@ func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64,
 			var internalDate time.Time
 			// Query message_mailbox for internal_date using new schema
 			query := "SELECT internal_date FROM message_mailbox WHERE message_id = ? AND mailbox_id = ?"
-			err := s.db.QueryRow(query, messageID, state.SelectedMailboxID).Scan(&internalDate)
+			err := userDB.QueryRow(query, messageID, state.SelectedMailboxID).Scan(&internalDate)
 
 			var dateStr string
 			if err != nil || internalDate.IsZero() {
@@ -540,6 +565,13 @@ func (s *IMAPServer) handleSearch(conn net.Conn, tag string, parts []string, sta
 		return
 	}
 
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
 	// Parse search criteria
 	if len(parts) < 3 {
 		s.sendResponse(conn, fmt.Sprintf("%s BAD SEARCH requires search criteria", tag))
@@ -574,7 +606,7 @@ func (s *IMAPServer) handleSearch(conn net.Conn, tag string, parts []string, sta
 		WHERE mm.mailbox_id = ?
 		ORDER BY mm.uid ASC
 	`
-	rows, err := s.db.Query(query, state.SelectedMailboxID)
+	rows, err := userDB.Query(query, state.SelectedMailboxID)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Search failed: %v", tag, err))
 		return
@@ -602,7 +634,7 @@ func (s *IMAPServer) handleSearch(conn net.Conn, tag string, parts []string, sta
 
 	// Parse and evaluate search criteria
 	criteria := strings.Join(parts[searchStart:], " ")
-	matchingSeqNums := s.evaluateSearchCriteria(messages, criteria, charset)
+	matchingSeqNums := s.evaluateSearchCriteria(messages, criteria, charset, state.UserID)
 
 	// Build response
 	if len(matchingSeqNums) > 0 {
@@ -618,7 +650,7 @@ func (s *IMAPServer) handleSearch(conn net.Conn, tag string, parts []string, sta
 }
 
 // evaluateSearchCriteria evaluates search criteria against messages
-func (s *IMAPServer) evaluateSearchCriteria(messages []messageInfo, criteria string, charset string) []int {
+func (s *IMAPServer) evaluateSearchCriteria(messages []messageInfo, criteria string, charset string, userID int64) []int {
 	var matchingSeqNums []int
 
 	// Default to ALL if no criteria specified
@@ -631,7 +663,7 @@ func (s *IMAPServer) evaluateSearchCriteria(messages []messageInfo, criteria str
 
 	// Evaluate each message
 	for _, msg := range messages {
-		if s.matchesSearchCriteria(msg, tokens, charset) {
+		if s.matchesSearchCriteria(msg, tokens, charset, userID) {
 			matchingSeqNums = append(matchingSeqNums, msg.seqNum)
 		}
 	}
@@ -683,18 +715,18 @@ func (s *IMAPServer) parseSearchTokens(criteria string) []string {
 }
 
 // matchesSearchCriteria checks if a message matches the search criteria
-func (s *IMAPServer) matchesSearchCriteria(msg messageInfo, tokens []string, charset string) bool {
+func (s *IMAPServer) matchesSearchCriteria(msg messageInfo, tokens []string, charset string, userID int64) bool {
 	// Default to ALL - match everything
 	if len(tokens) == 0 {
 		return true
 	}
 
 	// Process tokens (AND logic by default)
-	return s.evaluateTokens(msg, tokens, charset)
+	return s.evaluateTokens(msg, tokens, charset, userID)
 }
 
 // evaluateTokens evaluates a list of search tokens
-func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset string) bool {
+func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset string, userID int64) bool {
 	i := 0
 	for i < len(tokens) {
 		token := strings.ToUpper(tokens[i])
@@ -806,7 +838,7 @@ func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset st
 				i++
 				nextTokens = append(nextTokens, tokens[i])
 			}
-			if s.evaluateTokens(msg, nextTokens, charset) {
+			if s.evaluateTokens(msg, nextTokens, charset, userID) {
 				return false
 			}
 			i++
@@ -828,7 +860,7 @@ func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset st
 				i++
 				key2Tokens = append(key2Tokens, tokens[i])
 			}
-			if !s.evaluateTokens(msg, key1Tokens, charset) && !s.evaluateTokens(msg, key2Tokens, charset) {
+			if !s.evaluateTokens(msg, key1Tokens, charset, userID) && !s.evaluateTokens(msg, key2Tokens, charset, userID) {
 				return false
 			}
 			i++
@@ -840,7 +872,7 @@ func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset st
 			}
 			i++
 			searchStr := s.unquote(tokens[i])
-			if !s.matchesHeaderOrBody(msg, token, searchStr, charset) {
+			if !s.matchesHeaderOrBody(msg, token, searchStr, charset, userID) {
 				return false
 			}
 			i++
@@ -854,7 +886,7 @@ func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset st
 			fieldName := s.unquote(tokens[i])
 			i++
 			searchStr := s.unquote(tokens[i])
-			if !s.matchesHeader(msg, fieldName, searchStr, charset) {
+			if !s.matchesHeader(msg, fieldName, searchStr, charset, userID) {
 				return false
 			}
 			i++
@@ -890,7 +922,7 @@ func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset st
 			}
 			i++
 			size, err := strconv.Atoi(tokens[i])
-			if err != nil || !s.matchesSize(msg, size, true) {
+			if err != nil || !s.matchesSize(msg, size, true, userID) {
 				return false
 			}
 			i++
@@ -902,7 +934,7 @@ func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset st
 			}
 			i++
 			size, err := strconv.Atoi(tokens[i])
-			if err != nil || !s.matchesSize(msg, size, false) {
+			if err != nil || !s.matchesSize(msg, size, false, userID) {
 				return false
 			}
 			i++
@@ -937,7 +969,7 @@ func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset st
 			}
 			i++
 			dateStr := s.unquote(tokens[i])
-			if !s.matchesSentDate(msg, dateStr, token) {
+			if !s.matchesSentDate(msg, dateStr, token, userID) {
 				return false
 			}
 			i++
@@ -1005,9 +1037,15 @@ func (s *IMAPServer) matchesUIDSet(uid int, set string) bool {
 	return s.matchesSequenceSet(uid, set)
 }
 
-func (s *IMAPServer) matchesHeaderOrBody(msg messageInfo, field string, searchStr string, charset string) bool {
+func (s *IMAPServer) matchesHeaderOrBody(msg messageInfo, field string, searchStr string, charset string, userID int64) bool {
+	// Get user database
+	userDB, err := s.getUserDB(userID)
+	if err != nil {
+		return false
+	}
+
 	// Reconstruct message to search in headers/body
-	rawMsg, err := parser.ReconstructMessage(s.db, msg.messageID)
+	rawMsg, err := parser.ReconstructMessage(userDB, msg.messageID)
 	if err != nil {
 		return false
 	}
@@ -1044,8 +1082,14 @@ func (s *IMAPServer) matchesHeaderOrBody(msg messageInfo, field string, searchSt
 	return false
 }
 
-func (s *IMAPServer) matchesHeader(msg messageInfo, fieldName string, searchStr string, charset string) bool {
-	rawMsg, err := parser.ReconstructMessage(s.db, msg.messageID)
+func (s *IMAPServer) matchesHeader(msg messageInfo, fieldName string, searchStr string, charset string, userID int64) bool {
+	// Get user database
+	userDB, err := s.getUserDB(userID)
+	if err != nil {
+		return false
+	}
+
+	rawMsg, err := parser.ReconstructMessage(userDB, msg.messageID)
 	if err != nil {
 		return false
 	}
@@ -1112,8 +1156,14 @@ func (s *IMAPServer) headerContains(rawMsg string, fieldName string, searchStr s
 	return strings.Contains(strings.ToUpper(headerValue.String()), searchStrUpper)
 }
 
-func (s *IMAPServer) matchesSize(msg messageInfo, size int, larger bool) bool {
-	rawMsg, err := parser.ReconstructMessage(s.db, msg.messageID)
+func (s *IMAPServer) matchesSize(msg messageInfo, size int, larger bool, userID int64) bool {
+	// Get user database
+	userDB, err := s.getUserDB(userID)
+	if err != nil {
+		return false
+	}
+
+	rawMsg, err := parser.ReconstructMessage(userDB, msg.messageID)
 	if err != nil {
 		return false
 	}
@@ -1148,9 +1198,15 @@ func (s *IMAPServer) matchesDate(internalDate time.Time, dateStr string, compari
 	return false
 }
 
-func (s *IMAPServer) matchesSentDate(msg messageInfo, dateStr string, comparison string) bool {
+func (s *IMAPServer) matchesSentDate(msg messageInfo, dateStr string, comparison string, userID int64) bool {
+	// Get user database
+	userDB, err := s.getUserDB(userID)
+	if err != nil {
+		return false
+	}
+
 	// Get Date: header from message
-	rawMsg, err := parser.ReconstructMessage(s.db, msg.messageID)
+	rawMsg, err := parser.ReconstructMessage(userDB, msg.messageID)
 	if err != nil {
 		return false
 	}
@@ -1717,6 +1773,13 @@ func (s *IMAPServer) handleStatus(conn net.Conn, tag string, parts []string, sta
 		return
 	}
 
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
 	// Parse mailbox name (could be quoted)
 	mailboxName := s.parseQuotedString(parts[2])
 
@@ -1727,7 +1790,7 @@ func (s *IMAPServer) handleStatus(conn net.Conn, tag string, parts []string, sta
 	}
 
 	// Get mailbox ID using new schema
-	mailboxID, err := db.GetMailboxByName(s.db, state.UserID, mailboxName)
+	mailboxID, err := db.GetMailboxByNamePerUser(userDB, state.UserID, mailboxName)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO STATUS failure: no status for that name", tag))
 		return
@@ -1759,14 +1822,14 @@ func (s *IMAPServer) handleStatus(conn net.Conn, tag string, parts []string, sta
 	statusValues := make(map[string]int)
 
 	// Query total message count using new schema
-	messageCount, err := db.GetMessageCount(s.db, mailboxID)
+	messageCount, err := db.GetMessageCountPerUser(userDB, mailboxID)
 	if err != nil {
 		messageCount = 0
 	}
 	statusValues["MESSAGES"] = messageCount
 
 	// Query recent/unseen count using new schema
-	recentCount, err := db.GetUnseenCount(s.db, mailboxID)
+	recentCount, err := db.GetUnseenCountPerUser(userDB, mailboxID)
 	if err != nil {
 		recentCount = 0
 	}
@@ -1774,7 +1837,7 @@ func (s *IMAPServer) handleStatus(conn net.Conn, tag string, parts []string, sta
 	statusValues["UNSEEN"] = recentCount
 
 	// Get mailbox info for UID values
-	uidValidity, uidNext, err := db.GetMailboxInfo(s.db, mailboxID)
+	uidValidity, uidNext, err := db.GetMailboxInfoPerUser(userDB, mailboxID)
 	if err == nil {
 		statusValues["UIDNEXT"] = int(uidNext)
 		statusValues["UIDVALIDITY"] = int(uidValidity)

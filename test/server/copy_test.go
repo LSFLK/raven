@@ -4,12 +4,10 @@
 package server_test
 
 import (
-	"database/sql"
 	"fmt"
 	"strings"
 	"testing"
 
-	"go-imap/internal/db"
 	"go-imap/internal/models"
 	"go-imap/test/helpers"
 )
@@ -35,7 +33,7 @@ func TestCopyCommand_Unauthenticated(t *testing.T) {
 func TestCopyCommand_NoMailboxSelected(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "copyuser@example.com")
 
@@ -57,12 +55,12 @@ func TestCopyCommand_NoMailboxSelected(t *testing.T) {
 func TestCopyCommand_DestinationNotExists(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "copyuser")
 	helpers.InsertTestMail(t, database, "copyuser", "Test message", "sender@test.com", "copyuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -86,20 +84,21 @@ func TestCopyCommand_DestinationNotExists(t *testing.T) {
 func TestCopyCommand_SingleMessage(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "copyuser")
 	helpers.InsertTestMail(t, database, "copyuser", "Test message 1", "sender@test.com", "copyuser@localhost", "INBOX")
 	helpers.CreateMailbox(t, database, "copyuser", "Sent")
 
-	inboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
-	sentID, _ := db.GetMailboxByName(database, userID, "Sent")
+	inboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	sentID, _ := helpers.GetMailboxID(t, database, userID, "Sent")
 
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
 		SelectedMailboxID: inboxID,
 	}
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
 
 	// Copy message 1 to Sent
 	server.HandleCopy(conn, "C004", []string{"COPY", "1", "Sent"}, state)
@@ -111,13 +110,13 @@ func TestCopyCommand_SingleMessage(t *testing.T) {
 
 	// Verify message was copied to Sent folder
 	var count int
-	database.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", sentID).Scan(&count)
+	userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", sentID).Scan(&count)
 	if count != 1 {
 		t.Errorf("Expected 1 message in Sent folder, got %d", count)
 	}
 
 	// Verify original message still exists in INBOX
-	database.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", inboxID).Scan(&count)
+	userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", inboxID).Scan(&count)
 	if count != 1 {
 		t.Errorf("Expected 1 message in INBOX, got %d", count)
 	}
@@ -127,7 +126,7 @@ func TestCopyCommand_SingleMessage(t *testing.T) {
 func TestCopyCommand_RFC3501Example(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "copyuser")
 
@@ -139,14 +138,15 @@ func TestCopyCommand_RFC3501Example(t *testing.T) {
 
 	helpers.CreateMailbox(t, database, "copyuser", "MEETING")
 
-	inboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
-	meetingID, _ := db.GetMailboxByName(database, userID, "MEETING")
+	inboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	meetingID, _ := helpers.GetMailboxID(t, database, userID, "MEETING")
 
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
 		SelectedMailboxID: inboxID,
 	}
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
 
 	// Copy messages 2:4 to MEETING (RFC 3501 example)
 	server.HandleCopy(conn, "A003", []string{"COPY", "2:4", "MEETING"}, state)
@@ -158,13 +158,13 @@ func TestCopyCommand_RFC3501Example(t *testing.T) {
 
 	// Verify 3 messages were copied to MEETING folder
 	var count int
-	database.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", meetingID).Scan(&count)
+	userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", meetingID).Scan(&count)
 	if count != 3 {
 		t.Errorf("Expected 3 messages in MEETING folder, got %d", count)
 	}
 
 	// Verify original messages still exist in INBOX (4 messages)
-	database.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", inboxID).Scan(&count)
+	userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", inboxID).Scan(&count)
 	if count != 4 {
 		t.Errorf("Expected 4 messages in INBOX, got %d", count)
 	}
@@ -174,23 +174,24 @@ func TestCopyCommand_RFC3501Example(t *testing.T) {
 func TestCopyCommand_PreserveFlags(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "copyuser")
 	msgID := helpers.InsertTestMail(t, database, "copyuser", "Test message", "sender@test.com", "copyuser@localhost", "INBOX")
 	helpers.CreateMailbox(t, database, "copyuser", "Archive")
 
-	inboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
-	archiveID, _ := db.GetMailboxByName(database, userID, "Archive")
-
-	// Set specific flags
-	database.Exec(`UPDATE message_mailbox SET flags = '\Seen \Flagged' WHERE message_id = ? AND mailbox_id = ?`, msgID, inboxID)
+	inboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	archiveID, _ := helpers.GetMailboxID(t, database, userID, "Archive")
 
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
 		SelectedMailboxID: inboxID,
 	}
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+
+	// Set specific flags
+	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen \Flagged' WHERE message_id = ? AND mailbox_id = ?`, msgID, inboxID)
 
 	// Copy message to Archive
 	server.HandleCopy(conn, "C005", []string{"COPY", "1", "Archive"}, state)
@@ -202,7 +203,7 @@ func TestCopyCommand_PreserveFlags(t *testing.T) {
 
 	// Verify flags were preserved (and \Recent added)
 	var flags string
-	database.QueryRow("SELECT flags FROM message_mailbox WHERE mailbox_id = ?", archiveID).Scan(&flags)
+	userDB.QueryRow("SELECT flags FROM message_mailbox WHERE mailbox_id = ?", archiveID).Scan(&flags)
 	if !strings.Contains(flags, `\Seen`) || !strings.Contains(flags, `\Flagged`) {
 		t.Errorf("Expected flags to be preserved, got: %s", flags)
 	}
@@ -215,24 +216,25 @@ func TestCopyCommand_PreserveFlags(t *testing.T) {
 func TestCopyCommand_PreserveInternalDate(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "copyuser")
 	msgID := helpers.InsertTestMail(t, database, "copyuser", "Test message", "sender@test.com", "copyuser@localhost", "INBOX")
 	helpers.CreateMailbox(t, database, "copyuser", "Archive")
 
-	inboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
-	archiveID, _ := db.GetMailboxByName(database, userID, "Archive")
-
-	// Set specific internal date
-	specificDate := "2024-01-15 10:30:00"
-	database.Exec(`UPDATE message_mailbox SET internal_date = ? WHERE message_id = ? AND mailbox_id = ?`, specificDate, msgID, inboxID)
+	inboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	archiveID, _ := helpers.GetMailboxID(t, database, userID, "Archive")
 
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
 		SelectedMailboxID: inboxID,
 	}
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+
+	// Set specific internal date
+	specificDate := "2024-01-15 10:30:00"
+	userDB.Exec(`UPDATE message_mailbox SET internal_date = ? WHERE message_id = ? AND mailbox_id = ?`, specificDate, msgID, inboxID)
 
 	// Copy message to Archive
 	server.HandleCopy(conn, "C006", []string{"COPY", "1", "Archive"}, state)
@@ -244,7 +246,7 @@ func TestCopyCommand_PreserveInternalDate(t *testing.T) {
 
 	// Verify internal date was preserved (SQLite may format dates differently, so just check it exists and is similar)
 	var internalDate string
-	database.QueryRow("SELECT internal_date FROM message_mailbox WHERE mailbox_id = ?", archiveID).Scan(&internalDate)
+	userDB.QueryRow("SELECT internal_date FROM message_mailbox WHERE mailbox_id = ?", archiveID).Scan(&internalDate)
 	if !strings.Contains(internalDate, "2024-01-15") {
 		t.Errorf("Expected internal date containing %s, got: %s", "2024-01-15", internalDate)
 	}
@@ -254,7 +256,7 @@ func TestCopyCommand_PreserveInternalDate(t *testing.T) {
 func TestCopyCommand_MultipleMessages(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "copyuser")
 	helpers.InsertTestMail(t, database, "copyuser", "Message 1", "sender@test.com", "copyuser@localhost", "INBOX")
@@ -262,14 +264,15 @@ func TestCopyCommand_MultipleMessages(t *testing.T) {
 	helpers.InsertTestMail(t, database, "copyuser", "Message 3", "sender@test.com", "copyuser@localhost", "INBOX")
 	helpers.CreateMailbox(t, database, "copyuser", "Work")
 
-	inboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
-	workID, _ := db.GetMailboxByName(database, userID, "Work")
+	inboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	workID, _ := helpers.GetMailboxID(t, database, userID, "Work")
 
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
 		SelectedMailboxID: inboxID,
 	}
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
 
 	// Copy messages 1,3 to Work
 	server.HandleCopy(conn, "C007", []string{"COPY", "1,3", "Work"}, state)
@@ -281,7 +284,7 @@ func TestCopyCommand_MultipleMessages(t *testing.T) {
 
 	// Verify 2 messages were copied to Work folder
 	var count int
-	database.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", workID).Scan(&count)
+	userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", workID).Scan(&count)
 	if count != 2 {
 		t.Errorf("Expected 2 messages in Work folder, got %d", count)
 	}
@@ -291,12 +294,12 @@ func TestCopyCommand_MultipleMessages(t *testing.T) {
 func TestCopyCommand_InvalidSequenceSet(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "copyuser")
 	helpers.CreateMailbox(t, database, "copyuser", "Sent")
 
-	inboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
+	inboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -317,10 +320,10 @@ func TestCopyCommand_InvalidSequenceSet(t *testing.T) {
 func TestCopyCommand_BadSyntax(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "copyuser")
-	inboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
+	inboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -341,13 +344,13 @@ func TestCopyCommand_BadSyntax(t *testing.T) {
 func TestCopyCommand_QuotedMailboxName(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "copyuser")
 	helpers.InsertTestMail(t, database, "copyuser", "Test message", "sender@test.com", "copyuser@localhost", "INBOX")
 	helpers.CreateMailbox(t, database, "copyuser", "My Archive")
 
-	inboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
+	inboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -368,7 +371,7 @@ func TestCopyCommand_QuotedMailboxName(t *testing.T) {
 func TestCopyCommand_AllMessages(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "copyuser")
 	helpers.InsertTestMail(t, database, "copyuser", "Message 1", "sender@test.com", "copyuser@localhost", "INBOX")
@@ -376,14 +379,15 @@ func TestCopyCommand_AllMessages(t *testing.T) {
 	helpers.InsertTestMail(t, database, "copyuser", "Message 3", "sender@test.com", "copyuser@localhost", "INBOX")
 	helpers.CreateMailbox(t, database, "copyuser", "All")
 
-	inboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
-	allID, _ := db.GetMailboxByName(database, userID, "All")
+	inboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	allID, _ := helpers.GetMailboxID(t, database, userID, "All")
 
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
 		SelectedMailboxID: inboxID,
 	}
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
 
 	// Copy all messages using *
 	server.HandleCopy(conn, "C011", []string{"COPY", "*", "All"}, state)
@@ -395,7 +399,7 @@ func TestCopyCommand_AllMessages(t *testing.T) {
 
 	// Verify last message was copied
 	var count int
-	database.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", allID).Scan(&count)
+	userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", allID).Scan(&count)
 	if count != 1 {
 		t.Errorf("Expected 1 message in All folder (only last message), got %d", count)
 	}
@@ -405,7 +409,7 @@ func TestCopyCommand_AllMessages(t *testing.T) {
 func TestCopyCommand_RangeWithStar(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "copyuser")
 	helpers.InsertTestMail(t, database, "copyuser", "Message 1", "sender@test.com", "copyuser@localhost", "INBOX")
@@ -414,14 +418,15 @@ func TestCopyCommand_RangeWithStar(t *testing.T) {
 	helpers.InsertTestMail(t, database, "copyuser", "Message 4", "sender@test.com", "copyuser@localhost", "INBOX")
 	helpers.CreateMailbox(t, database, "copyuser", "Archive")
 
-	inboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
-	archiveID, _ := db.GetMailboxByName(database, userID, "Archive")
+	inboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	archiveID, _ := helpers.GetMailboxID(t, database, userID, "Archive")
 
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
 		SelectedMailboxID: inboxID,
 	}
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
 
 	// Copy messages 2:* to Archive
 	server.HandleCopy(conn, "C012", []string{"COPY", "2:*", "Archive"}, state)
@@ -433,7 +438,7 @@ func TestCopyCommand_RangeWithStar(t *testing.T) {
 
 	// Verify 3 messages were copied (2, 3, 4)
 	var count int
-	database.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", archiveID).Scan(&count)
+	userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", archiveID).Scan(&count)
 	if count != 3 {
 		t.Errorf("Expected 3 messages in Archive folder, got %d", count)
 	}
@@ -443,13 +448,13 @@ func TestCopyCommand_RangeWithStar(t *testing.T) {
 func TestCopyCommand_TagHandling(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "copyuser")
 	helpers.InsertTestMail(t, database, "copyuser", "Test message", "sender@test.com", "copyuser@localhost", "INBOX")
 	helpers.CreateMailbox(t, database, "copyuser", "Sent")
 
-	inboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
+	inboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -483,24 +488,25 @@ func TestCopyCommand_TagHandling(t *testing.T) {
 func TestCopyCommand_AtomicOperation(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "copyuser")
 	helpers.InsertTestMail(t, database, "copyuser", "Message 1", "sender@test.com", "copyuser@localhost", "INBOX")
 	helpers.CreateMailbox(t, database, "copyuser", "Destination")
 
-	inboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
-	destID, _ := db.GetMailboxByName(database, userID, "Destination")
+	inboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	destID, _ := helpers.GetMailboxID(t, database, userID, "Destination")
 
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
 		SelectedMailboxID: inboxID,
 	}
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
 
 	// Get initial count in destination
 	var initialCount int
-	database.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", destID).Scan(&initialCount)
+	userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", destID).Scan(&initialCount)
 
 	// Copy valid message
 	server.HandleCopy(conn, "C013", []string{"COPY", "1", "Destination"}, state)
@@ -512,7 +518,7 @@ func TestCopyCommand_AtomicOperation(t *testing.T) {
 
 	// Verify message was copied
 	var finalCount int
-	database.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", destID).Scan(&finalCount)
+	userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", destID).Scan(&finalCount)
 	if finalCount != initialCount+1 {
 		t.Errorf("Expected count to increase by 1, initial: %d, final: %d", initialCount, finalCount)
 	}

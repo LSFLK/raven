@@ -2,7 +2,6 @@ package lmtp
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log"
 	"net"
@@ -10,29 +9,30 @@ import (
 	"sync"
 	"time"
 
+	"go-imap/internal/db"
 	"go-imap/internal/delivery/config"
 	"go-imap/internal/delivery/storage"
 )
 
 // Server represents an LMTP server
 type Server struct {
-	db         *sql.DB
-	config     *config.Config
-	storage    *storage.Storage
+	dbManager    *db.DBManager
+	config       *config.Config
+	storage      *storage.Storage
 	unixListener net.Listener
 	tcpListener  net.Listener
-	wg          sync.WaitGroup
-	shutdown    chan struct{}
-	mu          sync.Mutex
+	wg           sync.WaitGroup
+	shutdown     chan struct{}
+	mu           sync.Mutex
 }
 
 // NewServer creates a new LMTP server
-func NewServer(db *sql.DB, cfg *config.Config) *Server {
+func NewServer(dbManager *db.DBManager, cfg *config.Config) *Server {
 	return &Server{
-		db:       db,
-		config:   cfg,
-		storage:  storage.NewStorage(db),
-		shutdown: make(chan struct{}),
+		dbManager: dbManager,
+		config:    cfg,
+		storage:   storage.NewStorage(dbManager),
+		shutdown:  make(chan struct{}),
 	}
 }
 

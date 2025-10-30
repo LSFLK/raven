@@ -57,7 +57,7 @@ func DefaultConfig() *Config {
 			MaxRecipients: 100,
 		},
 		Database: DatabaseConfig{
-			Path: "data/mails.db",
+			Path: "data/databases",
 		},
 		Delivery: DeliveryConfig{
 			DefaultFolder:     "INBOX",

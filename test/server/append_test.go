@@ -4,7 +4,6 @@
 package server
 
 import (
-	"database/sql"
 	"fmt"
 	"strings"
 	"testing"
@@ -187,7 +186,7 @@ func TestAppendCommand_RFC3501Example(t *testing.T) {
 	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Create the saved-messages mailbox first (as per RFC example)
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 	helpers.CreateMailbox(t, database, "testuser", "saved-messages")
 
 	// RFC 3501 example message

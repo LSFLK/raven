@@ -4,13 +4,11 @@
 package server_test
 
 import (
-	"database/sql"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
-	"go-imap/internal/db"
 	"go-imap/internal/models"
 	"go-imap/test/helpers"
 )
@@ -35,7 +33,7 @@ func TestSearchCommand_Unauthenticated(t *testing.T) {
 func TestSearchCommand_NoMailboxSelected(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 	state := &models.ClientState{
@@ -57,7 +55,7 @@ func TestSearchCommand_NoMailboxSelected(t *testing.T) {
 func TestSearchCommand_ALL(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	// Create test user and messages
 	userID := helpers.CreateTestUser(t, database, "testuser")
@@ -65,7 +63,7 @@ func TestSearchCommand_ALL(t *testing.T) {
 	helpers.InsertTestMail(t, database, "testuser", "Test Subject 2", "sender2@test.com", "testuser@localhost", "INBOX")
 	helpers.InsertTestMail(t, database, "testuser", "Test Subject 3", "sender3@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -88,10 +86,10 @@ func TestSearchCommand_ALL(t *testing.T) {
 func TestSearchCommand_EmptyMailbox(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -115,7 +113,7 @@ func TestSearchCommand_EmptyMailbox(t *testing.T) {
 func TestSearchCommand_FlaggedMessages(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 
@@ -124,10 +122,7 @@ func TestSearchCommand_FlaggedMessages(t *testing.T) {
 	msg2ID := helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
 	msg3ID := helpers.InsertTestMail(t, database, "testuser", "Message 3", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
-
-	// Flag message 2
-	database.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg2ID, mailboxID)
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -135,6 +130,10 @@ func TestSearchCommand_FlaggedMessages(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+
+	// Flag message 2
+	userDB.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg2ID, mailboxID)
 
 	server.HandleSearch(conn, "S005", []string{"S005", "SEARCH", "FLAGGED"}, state)
 
@@ -156,17 +155,14 @@ func TestSearchCommand_FlaggedMessages(t *testing.T) {
 func TestSearchCommand_DeletedMessages(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 
 	msg1ID := helpers.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
 	msg2ID := helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
-
-	// Mark message 1 as deleted
-	database.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -174,6 +170,10 @@ func TestSearchCommand_DeletedMessages(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+
+	// Mark message 1 as deleted
+	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
 
 	// Test DELETED
 	server.HandleSearch(conn, "S006", []string{"S006", "SEARCH", "DELETED"}, state)
@@ -198,17 +198,14 @@ func TestSearchCommand_DeletedMessages(t *testing.T) {
 func TestSearchCommand_SeenUnseen(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 
 	msg1ID := helpers.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
 	helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
-
-	// Mark message 1 as seen
-	database.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -216,6 +213,10 @@ func TestSearchCommand_SeenUnseen(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+
+	// Mark message 1 as seen
+	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
 
 	// Test SEEN
 	server.HandleSearch(conn, "S008", []string{"S008", "SEARCH", "SEEN"}, state)
@@ -238,7 +239,7 @@ func TestSearchCommand_SeenUnseen(t *testing.T) {
 func TestSearchCommand_FromHeader(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 
@@ -246,7 +247,7 @@ func TestSearchCommand_FromHeader(t *testing.T) {
 	helpers.InsertTestMail(t, database, "testuser", "Message 2", "jones@example.com", "testuser@localhost", "INBOX")
 	helpers.InsertTestMail(t, database, "testuser", "Message 3", "smithson@example.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -271,7 +272,7 @@ func TestSearchCommand_FromHeader(t *testing.T) {
 func TestSearchCommand_SubjectHeader(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 
@@ -279,7 +280,7 @@ func TestSearchCommand_SubjectHeader(t *testing.T) {
 	helpers.InsertTestMail(t, database, "testuser", "Project Update", "sender@test.com", "testuser@localhost", "INBOX")
 	helpers.InsertTestMail(t, database, "testuser", "Meeting Notes", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -301,14 +302,14 @@ func TestSearchCommand_SubjectHeader(t *testing.T) {
 func TestSearchCommand_ToHeader(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 
 	helpers.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "alice@example.com", "INBOX")
 	helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "bob@example.com", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -328,7 +329,7 @@ func TestSearchCommand_ToHeader(t *testing.T) {
 func TestSearchCommand_SequenceSet(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 
@@ -337,7 +338,7 @@ func TestSearchCommand_SequenceSet(t *testing.T) {
 	helpers.InsertTestMail(t, database, "testuser", "Message 3", "sender@test.com", "testuser@localhost", "INBOX")
 	helpers.InsertTestMail(t, database, "testuser", "Message 4", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -366,17 +367,14 @@ func TestSearchCommand_SequenceSet(t *testing.T) {
 func TestSearchCommand_NOT(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 
 	msg1ID := helpers.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
 	helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
-
-	// Mark message 1 as seen
-	database.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -384,6 +382,10 @@ func TestSearchCommand_NOT(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+
+	// Mark message 1 as seen
+	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
 
 	// Search for NOT SEEN (equivalent to UNSEEN)
 	server.HandleSearch(conn, "S015", []string{"S015", "SEARCH", "NOT", "SEEN"}, state)
@@ -401,7 +403,7 @@ func TestSearchCommand_NOT(t *testing.T) {
 func TestSearchCommand_OR(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 
@@ -409,11 +411,7 @@ func TestSearchCommand_OR(t *testing.T) {
 	msg2ID := helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
 	helpers.InsertTestMail(t, database, "testuser", "Message 3", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
-
-	// Mark message 1 as seen, message 2 as flagged
-	database.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
-	database.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg2ID, mailboxID)
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -421,6 +419,11 @@ func TestSearchCommand_OR(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+
+	// Mark message 1 as seen, message 2 as flagged
+	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
+	userDB.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg2ID, mailboxID)
 
 	// Search for SEEN OR FLAGGED
 	server.HandleSearch(conn, "S016", []string{"S016", "SEARCH", "OR", "SEEN", "FLAGGED"}, state)
@@ -436,7 +439,7 @@ func TestSearchCommand_OR(t *testing.T) {
 func TestSearchCommand_CombinedCriteria(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 
@@ -444,10 +447,7 @@ func TestSearchCommand_CombinedCriteria(t *testing.T) {
 	helpers.InsertTestMail(t, database, "testuser", "Meeting", "jones@example.com", "testuser@localhost", "INBOX")
 	helpers.InsertTestMail(t, database, "testuser", "Project", "smith@example.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
-
-	// Mark message 1 as flagged
-	database.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -455,6 +455,10 @@ func TestSearchCommand_CombinedCriteria(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+
+	// Mark message 1 as flagged
+	userDB.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
 
 	// Search for FLAGGED messages FROM "smith" with SUBJECT "Meeting"
 	// Should only match message 1
@@ -474,7 +478,7 @@ func TestSearchCommand_CombinedCriteria(t *testing.T) {
 func TestSearchCommand_RFC3501Example(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 
@@ -483,16 +487,7 @@ func TestSearchCommand_RFC3501Example(t *testing.T) {
 	msg2ID := helpers.InsertTestMail(t, database, "testuser", "From Smith", "smith@example.com", "testuser@localhost", "INBOX")
 	helpers.InsertTestMail(t, database, "testuser", "From Jones", "jones@example.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
-
-	// Set dates for messages (after 1-Feb-1994)
-	futureDate := time.Date(1994, 2, 15, 10, 0, 0, 0, time.UTC)
-	database.Exec(`UPDATE message_mailbox SET internal_date = ? WHERE message_id = ? AND mailbox_id = ?`, futureDate, msg1ID, mailboxID)
-	database.Exec(`UPDATE message_mailbox SET internal_date = ? WHERE message_id = ? AND mailbox_id = ?`, futureDate, msg2ID, mailboxID)
-
-	// Mark messages 1 and 2 as flagged (representing messages since Feb 1994 from Smith)
-	database.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
-	database.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg2ID, mailboxID)
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -500,6 +495,16 @@ func TestSearchCommand_RFC3501Example(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+
+	// Set dates for messages (after 1-Feb-1994)
+	futureDate := time.Date(1994, 2, 15, 10, 0, 0, 0, time.UTC)
+	userDB.Exec(`UPDATE message_mailbox SET internal_date = ? WHERE message_id = ? AND mailbox_id = ?`, futureDate, msg1ID, mailboxID)
+	userDB.Exec(`UPDATE message_mailbox SET internal_date = ? WHERE message_id = ? AND mailbox_id = ?`, futureDate, msg2ID, mailboxID)
+
+	// Mark messages 1 and 2 as flagged (representing messages since Feb 1994 from Smith)
+	userDB.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
+	userDB.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg2ID, mailboxID)
 
 	// RFC 3501 Example: SEARCH FLAGGED SINCE 1-Feb-1994 NOT FROM "Smith"
 	// Since our implementation doesn't have DELETED flag support in test data,
@@ -519,13 +524,13 @@ func TestSearchCommand_RFC3501Example(t *testing.T) {
 func TestSearchCommand_EmptyResult(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 
 	helpers.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -550,12 +555,12 @@ func TestSearchCommand_EmptyResult(t *testing.T) {
 func TestSearchCommand_CHARSET(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 	helpers.InsertTestMail(t, database, "testuser", "Test Message", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -585,7 +590,7 @@ func TestSearchCommand_CHARSET(t *testing.T) {
 func TestSearchCommand_LARGER_SMALLER(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 
@@ -593,7 +598,7 @@ func TestSearchCommand_LARGER_SMALLER(t *testing.T) {
 	helpers.InsertTestMail(t, database, "testuser", "A", "sender@test.com", "testuser@localhost", "INBOX")
 	helpers.InsertTestMail(t, database, "testuser", "This is a very long subject line that will make this message larger", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -622,21 +627,14 @@ func TestSearchCommand_LARGER_SMALLER(t *testing.T) {
 func TestSearchCommand_DateSearches(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 
 	msg1ID := helpers.InsertTestMail(t, database, "testuser", "Old Message", "sender@test.com", "testuser@localhost", "INBOX")
 	msg2ID := helpers.InsertTestMail(t, database, "testuser", "Recent Message", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
-
-	// Set different dates
-	oldDate := time.Date(2020, 1, 1, 10, 0, 0, 0, time.UTC)
-	recentDate := time.Date(2024, 12, 1, 10, 0, 0, 0, time.UTC)
-
-	database.Exec(`UPDATE message_mailbox SET internal_date = ? WHERE message_id = ? AND mailbox_id = ?`, oldDate, msg1ID, mailboxID)
-	database.Exec(`UPDATE message_mailbox SET internal_date = ? WHERE message_id = ? AND mailbox_id = ?`, recentDate, msg2ID, mailboxID)
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -644,6 +642,14 @@ func TestSearchCommand_DateSearches(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+
+	// Set different dates
+	oldDate := time.Date(2020, 1, 1, 10, 0, 0, 0, time.UTC)
+	recentDate := time.Date(2024, 12, 1, 10, 0, 0, 0, time.UTC)
+
+	userDB.Exec(`UPDATE message_mailbox SET internal_date = ? WHERE message_id = ? AND mailbox_id = ?`, oldDate, msg1ID, mailboxID)
+	userDB.Exec(`UPDATE message_mailbox SET internal_date = ? WHERE message_id = ? AND mailbox_id = ?`, recentDate, msg2ID, mailboxID)
 
 	// Test SINCE - should find recent messages
 	server.HandleSearch(conn, "S020", []string{"S020", "SEARCH", "SINCE", "1-Jan-2024"}, state)
@@ -666,20 +672,14 @@ func TestSearchCommand_DateSearches(t *testing.T) {
 func TestSearchCommand_NEW_OLD(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 
 	msg1ID := helpers.InsertTestMail(t, database, "testuser", "New Message", "sender@test.com", "testuser@localhost", "INBOX")
 	msg2ID := helpers.InsertTestMail(t, database, "testuser", "Old Message", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
-
-	// NEW = RECENT and UNSEEN
-	database.Exec(`UPDATE message_mailbox SET flags = '\Recent' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
-
-	// OLD = NOT RECENT
-	// Message 2 has no flags, so it's not recent
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -687,6 +687,13 @@ func TestSearchCommand_NEW_OLD(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+
+	// NEW = RECENT and UNSEEN
+	userDB.Exec(`UPDATE message_mailbox SET flags = '\Recent' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
+
+	// OLD = NOT RECENT
+	// Message 2 has no flags, so it's not recent
 
 	// Test NEW - should find recent unseen messages
 	server.HandleSearch(conn, "S022", []string{"S022", "SEARCH", "NEW"}, state)
@@ -711,17 +718,14 @@ func TestSearchCommand_NEW_OLD(t *testing.T) {
 func TestSearchCommand_ANSWERED(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 
 	msg1ID := helpers.InsertTestMail(t, database, "testuser", "Answered", "sender@test.com", "testuser@localhost", "INBOX")
 	helpers.InsertTestMail(t, database, "testuser", "Not Answered", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
-
-	// Mark message 1 as answered
-	database.Exec(`UPDATE message_mailbox SET flags = '\Answered' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -729,6 +733,10 @@ func TestSearchCommand_ANSWERED(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+
+	// Mark message 1 as answered
+	userDB.Exec(`UPDATE message_mailbox SET flags = '\Answered' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
 
 	// Test ANSWERED
 	server.HandleSearch(conn, "S024", []string{"S024", "SEARCH", "ANSWERED"}, state)
@@ -751,17 +759,14 @@ func TestSearchCommand_ANSWERED(t *testing.T) {
 func TestSearchCommand_DRAFT(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 
 	msg1ID := helpers.InsertTestMail(t, database, "testuser", "Draft", "sender@test.com", "testuser@localhost", "INBOX")
 	helpers.InsertTestMail(t, database, "testuser", "Not Draft", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
-
-	// Mark message 1 as draft
-	database.Exec(`UPDATE message_mailbox SET flags = '\Draft' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -769,6 +774,10 @@ func TestSearchCommand_DRAFT(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
+	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+
+	// Mark message 1 as draft
+	userDB.Exec(`UPDATE message_mailbox SET flags = '\Draft' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
 
 	// Test DRAFT
 	server.HandleSearch(conn, "S026", []string{"S026", "SEARCH", "DRAFT"}, state)
@@ -791,14 +800,14 @@ func TestSearchCommand_DRAFT(t *testing.T) {
 func TestSearchCommand_HEADER(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 
 	helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
 	helpers.InsertTestMail(t, database, "testuser", "Another Subject", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -818,7 +827,7 @@ func TestSearchCommand_HEADER(t *testing.T) {
 func TestSearchCommand_BODY_TEXT(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 
@@ -826,7 +835,7 @@ func TestSearchCommand_BODY_TEXT(t *testing.T) {
 	helpers.InsertTestMail(t, database, "testuser", "Subject One", "sender@test.com", "testuser@localhost", "INBOX")
 	helpers.InsertTestMail(t, database, "testuser", "Subject Two", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -855,7 +864,7 @@ func TestSearchCommand_BODY_TEXT(t *testing.T) {
 func TestSearchCommand_UID(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 
@@ -863,7 +872,7 @@ func TestSearchCommand_UID(t *testing.T) {
 	helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
 	helpers.InsertTestMail(t, database, "testuser", "Message 3", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -892,10 +901,10 @@ func TestSearchCommand_UID(t *testing.T) {
 func TestSearchCommand_BadSyntax(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -916,14 +925,14 @@ func TestSearchCommand_BadSyntax(t *testing.T) {
 func TestSearchCommand_ResponseFormat(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
 	conn := helpers.NewMockConn()
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 
 	helpers.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
 	helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -965,11 +974,11 @@ func TestSearchCommand_ResponseFormat(t *testing.T) {
 // TestSearchCommand_TagHandling tests various tag formats
 func TestSearchCommand_TagHandling(t *testing.T) {
 	server := helpers.SetupTestServerSimple(t)
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 
 	userID := helpers.CreateTestUser(t, database, "testuser")
 	helpers.InsertTestMail(t, database, "testuser", "Message", "sender@test.com", "testuser@localhost", "INBOX")
-	mailboxID, _ := db.GetMailboxByName(database, userID, "INBOX")
+	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,

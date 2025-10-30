@@ -408,6 +408,73 @@ func storeAddresses(database *sql.DB, messageID int64, addressType string, addre
 	return nil
 }
 
+// StoreMessagePerUser stores a message in a per-user database
+func StoreMessagePerUser(database *sql.DB, parsed *ParsedMessage) (int64, error) {
+	// Create message record
+	messageID, err := db.CreateMessage(database, parsed.Subject, parsed.InReplyTo, parsed.References, parsed.Date, parsed.SizeBytes)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create message: %v", err)
+	}
+
+	parsed.MessageID = messageID
+
+	// Store all headers
+	for _, header := range parsed.Headers {
+		if err := db.AddMessageHeader(database, messageID, header.Name, header.Value, header.Sequence); err != nil {
+			return 0, fmt.Errorf("failed to store header %s: %v", header.Name, err)
+		}
+	}
+
+	// Store addresses
+	if err := storeAddresses(database, messageID, "from", parsed.From); err != nil {
+		return 0, fmt.Errorf("failed to store from addresses: %v", err)
+	}
+	if err := storeAddresses(database, messageID, "to", parsed.To); err != nil {
+		return 0, fmt.Errorf("failed to store to addresses: %v", err)
+	}
+	if err := storeAddresses(database, messageID, "cc", parsed.Cc); err != nil {
+		return 0, fmt.Errorf("failed to store cc addresses: %v", err)
+	}
+	if err := storeAddresses(database, messageID, "bcc", parsed.Bcc); err != nil {
+		return 0, fmt.Errorf("failed to store bcc addresses: %v", err)
+	}
+
+	// Store message parts
+	for _, part := range parsed.Parts {
+		var blobID sql.NullInt64
+
+		// Store large content or attachments in blobs
+		if len(part.TextContent) > 1024 || part.Filename != "" {
+			id, err := db.StoreBlob(database, part.TextContent)
+			if err == nil {
+				blobID = sql.NullInt64{Valid: true, Int64: id}
+				// Clear text content since it's in blob
+				part.TextContent = ""
+			}
+		}
+
+		_, err := db.AddMessagePart(
+			database,
+			messageID,
+			part.PartNumber,
+			part.ParentPartID,
+			part.ContentType,
+			part.ContentDisposition,
+			part.ContentTransferEncoding,
+			part.Charset,
+			part.Filename,
+			blobID,
+			part.TextContent,
+			part.SizeBytes,
+		)
+		if err != nil {
+			return 0, fmt.Errorf("failed to store message part: %v", err)
+		}
+	}
+
+	return messageID, nil
+}
+
 // ReconstructMessage reconstructs the raw message from database parts
 func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 	// Get message parts

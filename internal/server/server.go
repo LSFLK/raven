@@ -12,16 +12,16 @@ import (
 )
 
 type IMAPServer struct {
-	db       *sql.DB
-	certPath string
-	keyPath  string
+	dbManager *db.DBManager
+	certPath  string
+	keyPath   string
 }
 
-func NewIMAPServer(database *sql.DB) *IMAPServer {
+func NewIMAPServer(dbManager *db.DBManager) *IMAPServer {
 	return &IMAPServer{
-		db:       database,
-		certPath: "/certs/fullchain.pem",
-		keyPath:  "/certs/privkey.pem",
+		dbManager: dbManager,
+		certPath:  "/certs/fullchain.pem",
+		keyPath:   "/certs/privkey.pem",
 	}
 }
 
@@ -49,42 +49,37 @@ func (s *IMAPServer) HandleConnection(conn net.Conn) {
 
 // ensureUserAndMailboxes ensures user exists in database and has default mailboxes
 func (s *IMAPServer) ensureUserAndMailboxes(username string, domain string) (int64, int64, error) {
+	sharedDB := s.dbManager.GetSharedDB()
+
 	// Get or create domain
-	domainID, err := db.GetOrCreateDomain(s.db, domain)
+	domainID, err := db.GetOrCreateDomain(sharedDB, domain)
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to get/create domain: %v", err)
 	}
 
 	// Get or create user
-	userID, err := db.GetOrCreateUser(s.db, username, domainID)
+	userID, err := db.GetOrCreateUser(sharedDB, username, domainID)
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to get/create user: %v", err)
 	}
 
-	// Ensure default mailboxes exist
-	defaultMailboxes := []struct {
-		name       string
-		specialUse string
-	}{
-		{"INBOX", "\\Inbox"},
-		{"Sent", "\\Sent"},
-		{"Drafts", "\\Drafts"},
-		{"Trash", "\\Trash"},
-	}
-
-	for _, mbx := range defaultMailboxes {
-		// Check if mailbox exists
-		exists, _ := db.MailboxExists(s.db, userID, mbx.name)
-		if !exists {
-			// Create mailbox
-			_, err := db.CreateMailbox(s.db, userID, mbx.name, mbx.specialUse)
-			if err != nil && !strings.Contains(err.Error(), "already exists") {
-				return 0, 0, fmt.Errorf("failed to create mailbox %s: %v", mbx.name, err)
-			}
-		}
+	// Get user database (this will create default mailboxes if it's a new user)
+	_, err = s.dbManager.GetUserDB(userID)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to initialize user database: %v", err)
 	}
 
 	return userID, domainID, nil
+}
+
+// getUserDB returns the database connection for a user
+func (s *IMAPServer) getUserDB(userID int64) (*sql.DB, error) {
+	return s.dbManager.GetUserDB(userID)
+}
+
+// getSharedDB returns the shared database connection
+func (s *IMAPServer) getSharedDB() *sql.DB {
+	return s.dbManager.GetSharedDB()
 }
 
 // getUserDomain extracts domain from username or uses default from config

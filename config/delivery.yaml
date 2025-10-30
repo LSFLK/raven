@@ -22,8 +22,8 @@ lmtp:
   max_recipients: 100
 
 database:
-  # Path to SQLite database (shared with IMAP server)
-  path: "data/mails.db"
+  # Path to the database directory
+  path: "data/databases"
 
 delivery:
   # Default folder for delivered messages

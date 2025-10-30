@@ -166,9 +166,15 @@ func (t *TestInterface) SetTLSCertificates(certPath, keyPath string) {
 	t.server.SetTLSCertificates(certPath, keyPath)
 }
 
-// GetDB exposes the database connection for testing
+// GetDBManager exposes the database manager for testing
+func (t *TestInterface) GetDBManager() interface{} {
+	return t.server.dbManager
+}
+
+// GetDB provides backward compatibility - returns the DBManager
+// Note: Tests should migrate to using GetDBManager() and per-user databases
 func (t *TestInterface) GetDB() interface{} {
-	return t.server.db
+	return t.server.dbManager
 }
 
 // SendResponse exposes the sendResponse method for testing

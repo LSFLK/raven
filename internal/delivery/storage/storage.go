@@ -12,13 +12,13 @@ import (
 
 // Storage handles message storage operations
 type Storage struct {
-	db *sql.DB
+	dbManager *db.DBManager
 }
 
 // NewStorage creates a new storage handler
-func NewStorage(database *sql.DB) *Storage {
+func NewStorage(dbManager *db.DBManager) *Storage {
 	return &Storage{
-		db: database,
+		dbManager: dbManager,
 	}
 }
 
@@ -35,26 +35,32 @@ func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder s
 		return fmt.Errorf("failed to extract domain: %w", err)
 	}
 
+	// Get shared database for domain and user operations
+	sharedDB := s.dbManager.GetSharedDB()
+
 	// Get or create domain
-	domainID, err := db.GetOrCreateDomain(s.db, domain)
+	domainID, err := db.GetOrCreateDomain(sharedDB, domain)
 	if err != nil {
 		return fmt.Errorf("failed to get/create domain: %w", err)
 	}
 
 	// Get or create user
-	userID, err := db.GetOrCreateUser(s.db, username, domainID)
+	userID, err := db.GetOrCreateUser(sharedDB, username, domainID)
 	if err != nil {
 		return fmt.Errorf("failed to get/create user: %w", err)
 	}
 
-	// Ensure default mailboxes exist for the user
-	s.ensureDefaultMailboxes(userID)
+	// Get user database
+	userDB, err := s.dbManager.GetUserDB(userID)
+	if err != nil {
+		return fmt.Errorf("failed to get user database: %w", err)
+	}
 
 	// Get or create the target mailbox
-	mailboxID, err := db.GetMailboxByName(s.db, userID, folder)
+	mailboxID, err := db.GetMailboxByNamePerUser(userDB, userID, folder)
 	if err != nil {
 		// Mailbox doesn't exist, create it
-		mailboxID, err = db.CreateMailbox(s.db, userID, folder, "")
+		mailboxID, err = db.CreateMailboxPerUser(userDB, userID, folder, "")
 		if err != nil {
 			return fmt.Errorf("failed to create mailbox: %w", err)
 		}
@@ -66,8 +72,8 @@ func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder s
 		return fmt.Errorf("failed to parse message: %w", err)
 	}
 
-	// Store the message in the database
-	messageID, err := parser.StoreMessage(s.db, parsed)
+	// Store the message in the user database
+	messageID, err := parser.StoreMessagePerUser(userDB, parsed)
 	if err != nil {
 		return fmt.Errorf("failed to store message: %w", err)
 	}
@@ -78,13 +84,13 @@ func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder s
 		internalDate = time.Now()
 	}
 
-	err = db.AddMessageToMailbox(s.db, messageID, mailboxID, "", internalDate)
+	err = db.AddMessageToMailboxPerUser(userDB, messageID, mailboxID, "", internalDate)
 	if err != nil {
 		return fmt.Errorf("failed to add message to mailbox: %w", err)
 	}
 
 	// Record delivery
-	err = db.RecordDelivery(s.db, messageID, recipient, msg.From, "delivered", sql.NullInt64{Valid: true, Int64: userID}, "250 OK")
+	err = db.RecordDeliveryPerUser(userDB, messageID, recipient, msg.From, "delivered", sql.NullInt64{Valid: true, Int64: userID}, "250 OK")
 	if err != nil {
 		// Log but don't fail - delivery tracking is not critical
 		fmt.Printf("Warning: failed to record delivery: %v\n", err)
@@ -94,25 +100,10 @@ func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder s
 }
 
 // ensureDefaultMailboxes creates default mailboxes if they don't exist
+// Note: This is now handled automatically when creating a new user database
 func (s *Storage) ensureDefaultMailboxes(userID int64) {
-	defaultMailboxes := []struct {
-		name       string
-		specialUse string
-	}{
-		{"INBOX", "\\Inbox"},
-		{"Sent", "\\Sent"},
-		{"Drafts", "\\Drafts"},
-		{"Trash", "\\Trash"},
-	}
-
-	for _, mbx := range defaultMailboxes {
-		// Check if mailbox exists
-		exists, _ := db.MailboxExists(s.db, userID, mbx.name)
-		if !exists {
-			// Create mailbox
-			db.CreateMailbox(s.db, userID, mbx.name, mbx.specialUse)
-		}
-	}
+	// Default mailboxes are created automatically by DBManager.GetUserDB()
+	// when initializing a new user database, so this is now a no-op
 }
 
 // DeliverToMultipleRecipients delivers a message to multiple recipients
@@ -133,8 +124,9 @@ func (s *Storage) DeliverToMultipleRecipients(recipients []string, msg *parser.M
 
 // CheckUserExists checks if a user exists in the system
 func (s *Storage) CheckUserExists(username string) (bool, error) {
+	sharedDB := s.dbManager.GetSharedDB()
 	var count int
-	err := s.db.QueryRow(
+	err := sharedDB.QueryRow(
 		"SELECT COUNT(*) FROM users WHERE username = ?",
 		username,
 	).Scan(&count)
@@ -163,14 +155,22 @@ func (s *Storage) CheckRecipientExists(recipient string) (bool, error) {
 
 // GetUserQuota retrieves the current quota usage for a user
 func (s *Storage) GetUserQuota(username string) (int64, error) {
+	sharedDB := s.dbManager.GetSharedDB()
+
 	// Get user ID (from any domain - we'll sum across all)
 	var userID int64
-	err := s.db.QueryRow("SELECT id FROM users WHERE username = ? LIMIT 1", username).Scan(&userID)
+	err := sharedDB.QueryRow("SELECT id FROM users WHERE username = ? LIMIT 1", username).Scan(&userID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return 0, nil // User doesn't exist yet
 		}
 		return 0, err
+	}
+
+	// Get user database
+	userDB, err := s.dbManager.GetUserDB(userID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get user database: %w", err)
 	}
 
 	// Calculate total size of all messages for this user
@@ -184,7 +184,7 @@ func (s *Storage) GetUserQuota(username string) (int64, error) {
 	`
 
 	var totalSize int64
-	err = s.db.QueryRow(query, userID).Scan(&totalSize)
+	err = userDB.QueryRow(query, userID).Scan(&totalSize)
 	if err != nil {
 		return 0, fmt.Errorf("failed to calculate quota: %w", err)
 	}
@@ -209,14 +209,22 @@ func (s *Storage) CheckQuota(username string, messageSize int64, quotaLimit int6
 
 // GetMessageCount returns the total number of messages for a user
 func (s *Storage) GetMessageCount(username string) (int, error) {
+	sharedDB := s.dbManager.GetSharedDB()
+
 	// Get user ID (from any domain)
 	var userID int64
-	err := s.db.QueryRow("SELECT id FROM users WHERE username = ? LIMIT 1", username).Scan(&userID)
+	err := sharedDB.QueryRow("SELECT id FROM users WHERE username = ? LIMIT 1", username).Scan(&userID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return 0, nil
 		}
 		return 0, err
+	}
+
+	// Get user database
+	userDB, err := s.dbManager.GetUserDB(userID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get user database: %w", err)
 	}
 
 	// Count messages in all mailboxes for this user
@@ -228,7 +236,7 @@ func (s *Storage) GetMessageCount(username string) (int, error) {
 	`
 
 	var count int
-	err = s.db.QueryRow(query, userID).Scan(&count)
+	err = userDB.QueryRow(query, userID).Scan(&count)
 	if err != nil {
 		return 0, err
 	}
@@ -238,9 +246,11 @@ func (s *Storage) GetMessageCount(username string) (int, error) {
 
 // GetMessageCountInFolder returns the number of messages in a specific folder
 func (s *Storage) GetMessageCountInFolder(username string, folder string) (int, error) {
+	sharedDB := s.dbManager.GetSharedDB()
+
 	// Get user ID (from any domain)
 	var userID int64
-	err := s.db.QueryRow("SELECT id FROM users WHERE username = ? LIMIT 1", username).Scan(&userID)
+	err := sharedDB.QueryRow("SELECT id FROM users WHERE username = ? LIMIT 1", username).Scan(&userID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return 0, nil
@@ -248,14 +258,20 @@ func (s *Storage) GetMessageCountInFolder(username string, folder string) (int, 
 		return 0, err
 	}
 
+	// Get user database
+	userDB, err := s.dbManager.GetUserDB(userID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get user database: %w", err)
+	}
+
 	// Get mailbox ID
-	mailboxID, err := db.GetMailboxByName(s.db, userID, folder)
+	mailboxID, err := db.GetMailboxByNamePerUser(userDB, userID, folder)
 	if err != nil {
 		return 0, nil // Mailbox doesn't exist
 	}
 
 	// Count messages in the mailbox
-	count, err := db.GetMessageCount(s.db, mailboxID)
+	count, err := db.GetMessageCountPerUser(userDB, mailboxID)
 	if err != nil {
 		return 0, err
 	}
@@ -265,6 +281,8 @@ func (s *Storage) GetMessageCountInFolder(username string, folder string) (int, 
 
 // CreateUserIfNotExists creates a user if they don't exist
 func (s *Storage) CreateUserIfNotExists(username string) error {
+	sharedDB := s.dbManager.GetSharedDB()
+
 	// Use "localhost" as default domain if none specified
 	domain := "localhost"
 	if strings.Contains(username, "@") {
@@ -274,15 +292,21 @@ func (s *Storage) CreateUserIfNotExists(username string) error {
 	}
 
 	// Get or create domain
-	domainID, err := db.GetOrCreateDomain(s.db, domain)
+	domainID, err := db.GetOrCreateDomain(sharedDB, domain)
 	if err != nil {
 		return fmt.Errorf("failed to get/create domain: %w", err)
 	}
 
 	// Get or create user
-	_, err = db.GetOrCreateUser(s.db, username, domainID)
+	userID, err := db.GetOrCreateUser(sharedDB, username, domainID)
 	if err != nil {
 		return fmt.Errorf("failed to get/create user: %w", err)
+	}
+
+	// Initialize user database (will create default mailboxes)
+	_, err = s.dbManager.GetUserDB(userID)
+	if err != nil {
+		return fmt.Errorf("failed to initialize user database: %w", err)
 	}
 
 	return nil

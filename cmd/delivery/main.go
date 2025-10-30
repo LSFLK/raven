@@ -17,7 +17,7 @@ func main() {
 	configPath := flag.String("config", "/etc/raven/delivery.yaml", "Path to configuration file")
 	unixSocket := flag.String("socket", "/var/run/raven/lmtp.sock", "Path to UNIX socket")
 	tcpAddr := flag.String("tcp", "", "TCP address to bind (e.g., 127.0.0.1:24 or :24)")
-	dbPath := flag.String("db", "data/mails.db", "Path to SQLite database")
+	dbPath := flag.String("db", "data", "Path to database directory")
 	flag.Parse()
 
 	log.Println("Starting Raven Delivery Service (LMTP)...")
@@ -41,17 +41,17 @@ func main() {
 		cfg.Database.Path = *dbPath
 	}
 
-	// Initialize database
-	database, err := db.InitDB(cfg.Database.Path)
+	// Initialize database manager
+	dbManager, err := db.NewDBManager(cfg.Database.Path)
 	if err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+		log.Fatalf("Failed to initialize database manager: %v", err)
 	}
-	defer database.Close()
+	defer dbManager.Close()
 
-	log.Printf("Database initialized: %s", cfg.Database.Path)
+	log.Printf("Database manager initialized: %s", cfg.Database.Path)
 
 	// Create LMTP server
-	server := lmtp.NewServer(database, cfg)
+	server := lmtp.NewServer(dbManager, cfg)
 
 	// Setup graceful shutdown
 	sigChan := make(chan os.Signal, 1)
