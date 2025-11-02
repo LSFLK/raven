@@ -61,7 +61,7 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 	}
 
 	// Parse UID sequence set
-	uids := s.parseUIDSequenceSet(uidSequence, state.SelectedMailboxID)
+	uids := s.parseUIDSequenceSet(uidSequence, state.SelectedMailboxID, state.UserID)
 	if len(uids) == 0 {
 		// Non-existent UIDs are ignored without error - just return OK
 		s.sendResponse(conn, fmt.Sprintf("%s OK UID FETCH completed", tag))
@@ -83,11 +83,18 @@ func (s *IMAPServer) handleUIDSearch(conn net.Conn, tag string, parts []string, 
 		return
 	}
 
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
 	// Get search criteria (everything after "UID SEARCH")
 	searchCriteria := strings.Join(parts[3:], " ")
 
 	// Query all messages in mailbox with UIDs
-	rows, err := s.db.Query(`
+	rows, err := userDB.Query(`
 		SELECT mm.message_id, mm.uid, mm.flags, mm.internal_date,
 			(SELECT COUNT(*) FROM message_mailbox mm2
 			 WHERE mm2.mailbox_id = mm.mailbox_id AND mm2.uid <= mm.uid) as seq_num
@@ -170,6 +177,13 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 		return
 	}
 
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
 	uidSequence := parts[3]
 	dataItem := strings.ToUpper(parts[4])
 	flagsParts := parts[5:]
@@ -192,7 +206,7 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 	}
 
 	// Parse UID sequence set
-	uids := s.parseUIDSequenceSet(uidSequence, state.SelectedMailboxID)
+	uids := s.parseUIDSequenceSet(uidSequence, state.SelectedMailboxID, state.UserID)
 	if len(uids) == 0 {
 		// Non-existent UIDs are ignored without error
 		s.sendResponse(conn, fmt.Sprintf("%s OK UID STORE completed", tag))
@@ -205,7 +219,7 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 		var currentFlags string
 		var seqNum int
 
-		err := s.db.QueryRow(`
+		err := userDB.QueryRow(`
 			SELECT mm.flags,
 				(SELECT COUNT(*) FROM message_mailbox mm2
 				 WHERE mm2.mailbox_id = mm.mailbox_id AND mm2.uid <= mm.uid) as seq_num
@@ -222,7 +236,7 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 		updatedFlags := s.calculateNewFlags(currentFlags, newFlags, dataItem)
 
 		// Update flags in database
-		_, err = s.db.Exec(`
+		_, err = userDB.Exec(`
 			UPDATE message_mailbox
 			SET flags = ?
 			WHERE mailbox_id = ? AND uid = ?
@@ -254,11 +268,18 @@ func (s *IMAPServer) handleUIDCopy(conn net.Conn, tag string, parts []string, st
 		return
 	}
 
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
 	uidSequence := parts[3]
 	destMailbox := strings.Trim(strings.Join(parts[4:], " "), "\"")
 
 	// Parse UID sequence set
-	uids := s.parseUIDSequenceSet(uidSequence, state.SelectedMailboxID)
+	uids := s.parseUIDSequenceSet(uidSequence, state.SelectedMailboxID, state.UserID)
 	if len(uids) == 0 {
 		// Non-existent UIDs are ignored without error
 		s.sendResponse(conn, fmt.Sprintf("%s OK UID COPY completed", tag))
@@ -267,7 +288,7 @@ func (s *IMAPServer) handleUIDCopy(conn net.Conn, tag string, parts []string, st
 
 	// Check if destination mailbox exists
 	var destMailboxID int64
-	err := s.db.QueryRow(`
+	err = userDB.QueryRow(`
 		SELECT id FROM mailboxes
 		WHERE name = ? AND user_id = ?
 	`, destMailbox, state.UserID).Scan(&destMailboxID)
@@ -278,7 +299,7 @@ func (s *IMAPServer) handleUIDCopy(conn net.Conn, tag string, parts []string, st
 	}
 
 	// Begin transaction
-	tx, err := s.db.Begin()
+	tx, err := userDB.Begin()
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO UID COPY failed: %v", tag, err))
 		return
@@ -350,12 +371,18 @@ func (s *IMAPServer) handleUIDCopy(conn net.Conn, tag string, parts []string, st
 
 // parseUIDSequenceSet parses a UID sequence set and returns list of UIDs
 // Handles: single (443), ranges (100:200), star (*), ranges with star (559:*)
-func (s *IMAPServer) parseUIDSequenceSet(sequenceSet string, mailboxID int64) []int {
+func (s *IMAPServer) parseUIDSequenceSet(sequenceSet string, mailboxID int64, userID int64) []int {
 	var uids []int
+
+	// Get user database
+	userDB, err := s.getUserDB(userID)
+	if err != nil {
+		return uids
+	}
 
 	// Get highest UID in mailbox for * handling
 	var maxUID int
-	err := s.db.QueryRow(`
+	err = userDB.QueryRow(`
 		SELECT COALESCE(MAX(uid), 0)
 		FROM message_mailbox
 		WHERE mailbox_id = ?
@@ -401,7 +428,7 @@ func (s *IMAPServer) parseUIDSequenceSet(sequenceSet string, mailboxID int64) []
 			}
 
 			// Get all UIDs in range
-			rows, err := s.db.Query(`
+			rows, err := userDB.Query(`
 				SELECT uid
 				FROM message_mailbox
 				WHERE mailbox_id = ? AND uid >= ? AND uid <= ?
@@ -427,7 +454,7 @@ func (s *IMAPServer) parseUIDSequenceSet(sequenceSet string, mailboxID int64) []
 
 			// Check if UID exists
 			var count int
-			s.db.QueryRow(`
+			userDB.QueryRow(`
 				SELECT COUNT(*)
 				FROM message_mailbox
 				WHERE mailbox_id = ? AND uid = ?

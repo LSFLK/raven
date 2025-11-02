@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/tls"
+	"database/sql"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -118,8 +119,15 @@ func (s *IMAPServer) handleList(conn net.Conn, tag string, parts []string, state
 		return
 	}
 
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
 	// Get all mailboxes for the user
-	mailboxes, err := db.GetUserMailboxes(s.db, state.UserID)
+	mailboxes, err := db.GetUserMailboxesPerUser(userDB, state.UserID)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO LIST failure: can't list mailboxes", tag))
 		return
@@ -166,8 +174,15 @@ func (s *IMAPServer) handleLsub(conn net.Conn, tag string, parts []string, state
 		return
 	}
 
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
 	// Get subscribed mailboxes from database
-	subscriptions, err := db.GetUserSubscriptions(s.db, state.UserID)
+	subscriptions, err := db.GetUserSubscriptionsPerUser(userDB, state.UserID)
 	if err != nil {
 		fmt.Printf("Failed to get subscriptions for user %s: %v\n", state.Username, err)
 		s.sendResponse(conn, fmt.Sprintf("%s NO LSUB failure: can't list that reference or name", tag))
@@ -178,7 +193,7 @@ func (s *IMAPServer) handleLsub(conn net.Conn, tag string, parts []string, state
 	if len(subscriptions) == 0 {
 		defaultMailboxes := []string{"INBOX", "Sent", "Drafts", "Trash"}
 		for _, mailbox := range defaultMailboxes {
-			db.SubscribeToMailbox(s.db, state.UserID, mailbox)
+			db.SubscribeToMailboxPerUser(userDB, state.UserID, mailbox)
 		}
 		subscriptions = defaultMailboxes
 	}
@@ -275,8 +290,15 @@ func (s *IMAPServer) handleCreate(conn net.Conn, tag string, parts []string, sta
 		return
 	}
 
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
 	// Check if mailbox already exists
-	exists, err := db.MailboxExists(s.db, state.UserID, mailboxName)
+	exists, err := db.MailboxExistsPerUser(userDB, state.UserID, mailboxName)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Server error: cannot check mailbox existence", tag))
 		return
@@ -306,16 +328,16 @@ func (s *IMAPServer) handleCreate(conn net.Conn, tag string, parts []string, sta
 			}
 
 			// Check if this intermediate mailbox exists
-			intermediateExists, checkErr := db.MailboxExists(s.db, state.UserID, currentPath)
+			intermediateExists, checkErr := db.MailboxExistsPerUser(userDB, state.UserID, currentPath)
 			if checkErr == nil && !intermediateExists {
 				// Create intermediate mailbox - ignore errors as per RFC 3501
-				db.CreateMailbox(s.db, state.UserID, currentPath, "")
+				db.CreateMailboxPerUser(userDB, state.UserID, currentPath, "")
 			}
 		}
 	}
 
 	// Create the target mailbox
-	_, err = db.CreateMailbox(s.db, state.UserID, mailboxName, "")
+	_, err = db.CreateMailboxPerUser(userDB, state.UserID, mailboxName, "")
 	if err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			s.sendResponse(conn, fmt.Sprintf("%s NO Mailbox already exists", tag))
@@ -354,8 +376,15 @@ func (s *IMAPServer) handleDelete(conn net.Conn, tag string, parts []string, sta
 		return
 	}
 
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
 	// Attempt to delete the mailbox
-	err := db.DeleteMailbox(s.db, state.UserID, mailboxName)
+	err = db.DeleteMailboxPerUser(userDB, state.UserID, mailboxName)
 	if err != nil {
 		if strings.Contains(err.Error(), "does not exist") {
 			s.sendResponse(conn, fmt.Sprintf("%s NO Mailbox does not exist", tag))
@@ -393,8 +422,15 @@ func (s *IMAPServer) handleRename(conn net.Conn, tag string, parts []string, sta
 		return
 	}
 
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
 	// Attempt to rename the mailbox
-	err := db.RenameMailbox(s.db, state.UserID, oldName, newName)
+	err = db.RenameMailboxPerUser(userDB, state.UserID, oldName, newName)
 	if err != nil {
 		if strings.Contains(err.Error(), "source mailbox does not exist") {
 			s.sendResponse(conn, fmt.Sprintf("%s NO Source mailbox does not exist", tag))
@@ -421,15 +457,22 @@ func (s *IMAPServer) handleNoop(conn net.Conn, tag string, state *models.ClientS
 	// If authenticated and a folder is selected, check for mailbox updates
 	// and send untagged responses per RFC 3501
 	if state.Authenticated && state.SelectedMailboxID > 0 {
+		// Get user database
+		userDB, err := s.getUserDB(state.UserID)
+		if err != nil {
+			s.sendResponse(conn, fmt.Sprintf("%s OK NOOP completed", tag))
+			return
+		}
+
 		// Get current mailbox state using new schema
-		currentCount, err := db.GetMessageCount(s.db, state.SelectedMailboxID)
+		currentCount, err := db.GetMessageCountPerUser(userDB, state.SelectedMailboxID)
 		if err != nil {
 			// If there's a database error, just complete normally
 			s.sendResponse(conn, fmt.Sprintf("%s OK NOOP completed", tag))
 			return
 		}
 
-		currentRecent, err := db.GetUnseenCount(s.db, state.SelectedMailboxID)
+		currentRecent, err := db.GetUnseenCountPerUser(userDB, state.SelectedMailboxID)
 		if err != nil {
 			currentRecent = 0
 		}
@@ -492,12 +535,19 @@ func (s *IMAPServer) handleCheck(conn net.Conn, tag string, state *models.Client
 		return
 	}
 
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s OK CHECK completed", tag))
+		return
+	}
+
 	// Perform checkpoint operations for the currently selected mailbox
 	// This involves resolving the server's in-memory state with the state on disk
 	// In our implementation, this is similar to NOOP but emphasizes housekeeping
 
 	// Get current mailbox state
-	currentCount, err := db.GetMessageCount(s.db, state.SelectedMailboxID)
+	currentCount, err := db.GetMessageCountPerUser(userDB, state.SelectedMailboxID)
 	if err != nil {
 		// If there's a database error, still complete normally per RFC 3501
 		// CHECK should always succeed even if housekeeping fails
@@ -505,7 +555,7 @@ func (s *IMAPServer) handleCheck(conn net.Conn, tag string, state *models.Client
 		return
 	}
 
-	currentRecent, err := db.GetUnseenCount(s.db, state.SelectedMailboxID)
+	currentRecent, err := db.GetUnseenCountPerUser(userDB, state.SelectedMailboxID)
 	if err != nil {
 		currentRecent = 0
 	}
@@ -549,9 +599,19 @@ func (s *IMAPServer) handleClose(conn net.Conn, tag string, state *models.Client
 	// we always perform the expunge operation.
 	// TODO: Add ReadOnly field to ClientState to properly handle EXAMINE
 
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		// Clear selection and return
+		state.SelectedMailboxID = 0
+		state.SelectedFolder = ""
+		s.sendResponse(conn, fmt.Sprintf("%s OK CLOSE completed", tag))
+		return
+	}
+
 	// Delete all messages with \Deleted flag from the mailbox
 	// Query for all messages with \Deleted flag in the current mailbox
-	rows, err := s.db.Query(`
+	rows, err := userDB.Query(`
 		SELECT id FROM message_mailbox
 		WHERE mailbox_id = ? AND flags LIKE '%\Deleted%'
 	`, state.SelectedMailboxID)
@@ -571,7 +631,7 @@ func (s *IMAPServer) handleClose(conn net.Conn, tag string, state *models.Client
 		// Delete the messages from message_mailbox table
 		// This removes them from the mailbox but keeps the message data
 		for _, id := range idsToDelete {
-			s.db.Exec(`DELETE FROM message_mailbox WHERE id = ?`, id)
+			userDB.Exec(`DELETE FROM message_mailbox WHERE id = ?`, id)
 		}
 	}
 
@@ -610,9 +670,16 @@ func (s *IMAPServer) handleExpunge(conn net.Conn, tag string, state *models.Clie
 	// EXPUNGE should return NO
 	// TODO: Add ReadOnly field to ClientState to properly handle EXAMINE
 
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
 	// Query for all messages with \Deleted flag, ordered by sequence number
 	// We need to get the sequence numbers before deletion
-	rows, err := s.db.Query(`
+	rows, err := userDB.Query(`
 		SELECT id, uid FROM message_mailbox
 		WHERE mailbox_id = ? AND flags LIKE '%\Deleted%'
 		ORDER BY uid ASC
@@ -645,7 +712,7 @@ func (s *IMAPServer) handleExpunge(conn net.Conn, tag string, state *models.Clie
 	}
 
 	// Get all messages in the mailbox to calculate sequence numbers
-	allRows, err := s.db.Query(`
+	allRows, err := userDB.Query(`
 		SELECT id, uid FROM message_mailbox
 		WHERE mailbox_id = ?
 		ORDER BY uid ASC
@@ -685,7 +752,7 @@ func (s *IMAPServer) handleExpunge(conn net.Conn, tag string, state *models.Clie
 		s.sendResponse(conn, fmt.Sprintf("* %d EXPUNGE", adjustedSeqNum))
 
 		// Delete the message from the mailbox
-		s.db.Exec(`DELETE FROM message_mailbox WHERE id = ?`, msg.id)
+		userDB.Exec(`DELETE FROM message_mailbox WHERE id = ?`, msg.id)
 
 		deletedCount++
 	}
@@ -738,8 +805,15 @@ func (s *IMAPServer) handleStore(conn net.Conn, tag string, parts []string, stat
 		return
 	}
 
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
 	// Parse sequence set
-	sequences := s.parseSequenceSet(sequenceSet, state.SelectedMailboxID)
+	sequences := s.parseSequenceSet(sequenceSet, state.SelectedMailboxID, state)
 	if len(sequences) == 0 {
 		s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence set", tag))
 		return
@@ -757,7 +831,7 @@ func (s *IMAPServer) handleStore(conn net.Conn, tag string, parts []string, stat
 		`
 		var messageID, uid int64
 		var currentFlags string
-		err := s.db.QueryRow(query, state.SelectedMailboxID, seqNum-1).Scan(&messageID, &uid, &currentFlags)
+		err := userDB.QueryRow(query, state.SelectedMailboxID, seqNum-1).Scan(&messageID, &uid, &currentFlags)
 		if err != nil {
 			// Message not found - skip
 			continue
@@ -768,7 +842,7 @@ func (s *IMAPServer) handleStore(conn net.Conn, tag string, parts []string, stat
 
 		// Update flags in database
 		updateQuery := "UPDATE message_mailbox SET flags = ? WHERE message_id = ? AND mailbox_id = ?"
-		_, err = s.db.Exec(updateQuery, updatedFlags, messageID, state.SelectedMailboxID)
+		_, err = userDB.Exec(updateQuery, updatedFlags, messageID, state.SelectedMailboxID)
 		if err != nil {
 			log.Printf("Failed to update flags for message %d: %v", messageID, err)
 			continue
@@ -834,11 +908,11 @@ func (s *IMAPServer) calculateNewFlags(currentFlags string, newFlags []string, o
 }
 
 // parseSequenceSet parses a sequence set and returns message sequence numbers
-func (s *IMAPServer) parseSequenceSet(sequenceSet string, mailboxID int64) []int {
+func (s *IMAPServer) parseSequenceSetWithDB(sequenceSet string, mailboxID int64, userDB *sql.DB) []int {
 	var sequences []int
 
 	// Get total message count
-	totalMessages, err := db.GetMessageCount(s.db, mailboxID)
+	totalMessages, err := db.GetMessageCountPerUser(userDB, mailboxID)
 	if err != nil || totalMessages == 0 {
 		return sequences
 	}
@@ -880,6 +954,15 @@ func (s *IMAPServer) parseSequenceSet(sequenceSet string, mailboxID int64) []int
 	return sequences
 }
 
+// parseSequenceSet is a wrapper that gets userDB from state
+func (s *IMAPServer) parseSequenceSet(sequenceSet string, mailboxID int64, state *models.ClientState) []int {
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		return []int{}
+	}
+	return s.parseSequenceSetWithDB(sequenceSet, mailboxID, userDB)
+}
+
 // handleCopy implements the COPY command (RFC 3501 Section 6.4.7)
 // Syntax: COPY sequence-set mailbox-name
 func (s *IMAPServer) handleCopy(conn net.Conn, tag string, parts []string, state *models.ClientState) {
@@ -904,8 +987,15 @@ func (s *IMAPServer) handleCopy(conn net.Conn, tag string, parts []string, state
 	sequenceSet := parts[1]
 	destMailbox := strings.Trim(strings.Join(parts[2:], " "), "\"")
 
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
 	// Parse sequence set
-	sequences := s.parseSequenceSet(sequenceSet, state.SelectedMailboxID)
+	sequences := s.parseSequenceSet(sequenceSet, state.SelectedMailboxID, state)
 	if len(sequences) == 0 {
 		s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence set", tag))
 		return
@@ -913,7 +1003,7 @@ func (s *IMAPServer) handleCopy(conn net.Conn, tag string, parts []string, state
 
 	// Check if destination mailbox exists
 	var destMailboxID int64
-	err := s.db.QueryRow(`
+	err = userDB.QueryRow(`
 		SELECT id FROM mailboxes
 		WHERE name = ? AND user_id = ?
 	`, destMailbox, state.UserID).Scan(&destMailboxID)
@@ -925,7 +1015,7 @@ func (s *IMAPServer) handleCopy(conn net.Conn, tag string, parts []string, state
 	}
 
 	// Begin transaction to ensure atomicity
-	tx, err := s.db.Begin()
+	tx, err := userDB.Begin()
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
 		return
@@ -1014,17 +1104,24 @@ func (s *IMAPServer) handleIdle(conn net.Conn, tag string, state *models.ClientS
 
 	buf := make([]byte, 4096)
 
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
 	// Track previous state of the folder using new schema
-	prevCount, _ := db.GetMessageCount(s.db, state.SelectedMailboxID)
-	prevUnseen, _ := db.GetUnseenCount(s.db, state.SelectedMailboxID)
+	prevCount, _ := db.GetMessageCountPerUser(userDB, state.SelectedMailboxID)
+	prevUnseen, _ := db.GetUnseenCountPerUser(userDB, state.SelectedMailboxID)
 
 	for {
 		// Poll every 500ms for changes to ensure responsive notifications
 		time.Sleep(500 * time.Millisecond)
 
 		// Check current mailbox state using new schema
-		count, _ := db.GetMessageCount(s.db, state.SelectedMailboxID)
-		unseen, _ := db.GetUnseenCount(s.db, state.SelectedMailboxID)
+		count, _ := db.GetMessageCountPerUser(userDB, state.SelectedMailboxID)
+		unseen, _ := db.GetUnseenCountPerUser(userDB, state.SelectedMailboxID)
 
 		// Notify about new messages
 		if count > prevCount {
@@ -1106,11 +1203,18 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 		return
 	}
 
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
 	// Parse folder name (could be quoted)
 	folder := strings.Trim(parts[2], "\"")
 
 	// Validate folder exists using the database with new schema
-	mailboxID, err := db.GetMailboxByName(s.db, state.UserID, folder)
+	mailboxID, err := db.GetMailboxByNamePerUser(userDB, state.UserID, folder)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Folder does not exist", tag))
 		return
@@ -1204,7 +1308,7 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 	}
 
 	// Store message in database
-	messageID, err := parser.StoreMessage(s.db, parsed)
+	messageID, err := parser.StoreMessagePerUser(userDB, parsed)
 	if err != nil {
 		log.Printf("Failed to store message: %v", err)
 		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to save message", tag))
@@ -1213,7 +1317,7 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 
 	// Add message to mailbox
 	internalDate := time.Now()
-	err = db.AddMessageToMailbox(s.db, messageID, mailboxID, flags, internalDate)
+	err = db.AddMessageToMailboxPerUser(userDB, messageID, mailboxID, flags, internalDate)
 	if err != nil {
 		log.Printf("Failed to add message to mailbox: %v", err)
 		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to add message to mailbox", tag))
@@ -1221,7 +1325,7 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 	}
 
 	// Get UID validity for APPENDUID response
-	uidValidity, _, err := db.GetMailboxInfo(s.db, mailboxID)
+	uidValidity, _, err := db.GetMailboxInfoPerUser(userDB, mailboxID)
 	if err != nil {
 		uidValidity = 1
 	}
@@ -1229,7 +1333,7 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 	// Get the UID assigned to the message
 	var newUID int64
 	query := "SELECT uid FROM message_mailbox WHERE message_id = ? AND mailbox_id = ?"
-	err = s.db.QueryRow(query, messageID, mailboxID).Scan(&newUID)
+	err = userDB.QueryRow(query, messageID, mailboxID).Scan(&newUID)
 	if err != nil {
 		log.Printf("Failed to get new UID: %v", err)
 		newUID = 1
@@ -1509,8 +1613,15 @@ func (s *IMAPServer) handleSubscribe(conn net.Conn, tag string, parts []string, 
 		return
 	}
 
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
 	// Subscribe to the mailbox
-	err := db.SubscribeToMailbox(s.db, state.UserID, mailboxName)
+	err = db.SubscribeToMailboxPerUser(userDB, state.UserID, mailboxName)
 	if err != nil {
 		fmt.Printf("Failed to subscribe to mailbox %s for user %s: %v\n", mailboxName, state.Username, err)
 		s.sendResponse(conn, fmt.Sprintf("%s NO SUBSCRIBE failure: server error", tag))
@@ -1527,9 +1638,8 @@ func (s *IMAPServer) handleUnsubscribe(conn net.Conn, tag string, parts []string
 		return
 	}
 
-	// UNSUBSCRIBE command format: tag UNSUBSCRIBE mailbox
 	if len(parts) < 3 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD UNSUBSCRIBE command requires a mailbox argument", tag))
+		s.sendResponse(conn, fmt.Sprintf("%s BAD UNSUBSCRIBE requires mailbox name", tag))
 		return
 	}
 
@@ -1546,8 +1656,15 @@ func (s *IMAPServer) handleUnsubscribe(conn net.Conn, tag string, parts []string
 		return
 	}
 
+	// Get user database
+	userDB, err := s.getUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
 	// Unsubscribe from the mailbox
-	err := db.UnsubscribeFromMailbox(s.db, state.UserID, mailboxName)
+	err = db.UnsubscribeFromMailboxPerUser(userDB, state.UserID, mailboxName)
 	if err != nil {
 		if strings.Contains(err.Error(), "subscription does not exist") {
 			s.sendResponse(conn, fmt.Sprintf("%s NO UNSUBSCRIBE failure: can't unsubscribe that name", tag))

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"net"
 
@@ -12,15 +13,22 @@ const SERVER_IP = "0.0.0.0:143"
 const SERVER_IP_SSL = "0.0.0.0:993"
 
 func main() {
+	// Command-line flags
+	dbPath := flag.String("db", "data", "Path to database directory")
+	flag.Parse()
+
 	log.Println("Starting SQLite IMAP server (no-auth mode)...")
 
-	// Init DB
-	database, err := db.InitDB("data/mails.db")
+	// Initialize database manager
+	dbManager, err := db.NewDBManager(*dbPath)
 	if err != nil {
-		log.Fatal("Failed to initialize database:", err)
+		log.Fatal("Failed to initialize database manager:", err)
 	}
+	defer dbManager.Close()
 
-	imapServer := server.NewIMAPServer(database)
+	log.Printf("Database manager initialized: %s", *dbPath)
+
+	imapServer := server.NewIMAPServer(dbManager)
 
 	// Start plain IMAP (143)
 	go func() {

@@ -4,12 +4,10 @@
 package server_test
 
 import (
-	"database/sql"
 	"fmt"
 	"strings"
 	"testing"
 
-	"go-imap/internal/db"
 	"go-imap/internal/models"
 	"go-imap/test/helpers"
 )
@@ -83,7 +81,7 @@ func TestStatusCommand_NonExistentMailbox(t *testing.T) {
 	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Ensure user table exists
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 	helpers.CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with non-existent mailbox
@@ -143,7 +141,7 @@ func TestStatusCommand_MultipleItems(t *testing.T) {
 	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Ensure user table exists
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 	helpers.CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with multiple items (as per RFC 3501 example)
@@ -184,7 +182,7 @@ func TestStatusCommand_AllItems(t *testing.T) {
 	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Ensure user table exists
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 	helpers.CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with all status items
@@ -225,7 +223,7 @@ func TestStatusCommand_RecentItem(t *testing.T) {
 	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Ensure user table exists
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 	helpers.CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with RECENT item
@@ -258,7 +256,7 @@ func TestStatusCommand_UidnextItem(t *testing.T) {
 	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Ensure user table exists
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 	helpers.CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with UIDNEXT item
@@ -296,7 +294,7 @@ func TestStatusCommand_UidvalidityItem(t *testing.T) {
 	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Ensure user table exists
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 	helpers.CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with UIDVALIDITY item
@@ -329,7 +327,7 @@ func TestStatusCommand_UnseenItem(t *testing.T) {
 	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Ensure user table exists
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 	helpers.CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with UNSEEN item
@@ -362,12 +360,9 @@ func TestStatusCommand_QuotedMailboxName(t *testing.T) {
 	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Ensure user table exists and create a mailbox
-	database := server.GetDB().(*sql.DB)
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	_, err := db.CreateMailbox(database, userID, "Test Folder", "")
-	if err != nil {
-		t.Fatalf("Failed to create mailbox: %v", err)
-	}
+	database := helpers.GetDatabaseFromServer(server)
+	helpers.CreateTestUser(t, database, "testuser")
+	helpers.CreateMailbox(t, database, "testuser", "Test Folder")
 
 	// Test STATUS command with quoted mailbox name
 	server.HandleStatus(conn, "A001", []string{"A001", "STATUS", `"Test Folder"`, "(MESSAGES)"}, state)
@@ -399,12 +394,9 @@ func TestStatusCommand_CustomMailbox(t *testing.T) {
 	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Ensure user table exists and create a mailbox
-	database := server.GetDB().(*sql.DB)
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	_, err := db.CreateMailbox(database, userID, "Projects", "")
-	if err != nil {
-		t.Fatalf("Failed to create mailbox: %v", err)
-	}
+	database := helpers.GetDatabaseFromServer(server)
+	helpers.CreateTestUser(t, database, "testuser")
+	helpers.CreateMailbox(t, database, "testuser", "Projects")
 
 	// Test STATUS command on custom mailbox
 	server.HandleStatus(conn, "A001", []string{"A001", "STATUS", "Projects", "(MESSAGES", "UIDNEXT)"}, state)
@@ -436,7 +428,7 @@ func TestStatusCommand_WithMessages(t *testing.T) {
 	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Ensure user table exists
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 	helpers.CreateTestUser(t, database, "testuser")
 
 	// Insert test messages into INBOX using helpers
@@ -481,7 +473,7 @@ func TestStatusCommand_InvalidStatusItem(t *testing.T) {
 	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Ensure user table exists
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 	helpers.CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with invalid status item
@@ -535,12 +527,9 @@ func TestStatusCommand_RFC3501Example(t *testing.T) {
 	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Ensure user table exists and create the mailbox
-	database := server.GetDB().(*sql.DB)
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	_, err := db.CreateMailbox(database, userID, "blurdybloop", "")
-	if err != nil {
-		t.Fatalf("Failed to create mailbox: %v", err)
-	}
+	database := helpers.GetDatabaseFromServer(server)
+	helpers.CreateTestUser(t, database, "testuser")
+	helpers.CreateMailbox(t, database, "testuser", "blurdybloop")
 
 	// Test STATUS command as per RFC 3501 example: STATUS blurdybloop (UIDNEXT MESSAGES)
 	server.HandleStatus(conn, "A042", []string{"A042", "STATUS", "blurdybloop", "(UIDNEXT", "MESSAGES)"}, state)
@@ -580,7 +569,7 @@ func TestStatusCommand_CaseInsensitiveItems(t *testing.T) {
 	state := helpers.SetupAuthenticatedState(t, server, "testuser")
 
 	// Ensure user table exists
-	database := server.GetDB().(*sql.DB)
+	database := helpers.GetDatabaseFromServer(server)
 	helpers.CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with mixed case items

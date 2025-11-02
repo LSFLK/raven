@@ -53,12 +53,12 @@ RUN echo '#!/bin/sh' > /app/start.sh && \
     echo 'echo "SASL service started with PID: $SASL_PID"' >> /app/start.sh && \
     echo 'sleep 1' >> /app/start.sh && \
     echo 'echo "Starting IMAP server..."' >> /app/start.sh && \
-    echo './imap-server &' >> /app/start.sh && \
+    echo './imap-server -db ${DB_PATH:-/app/data/databases} &' >> /app/start.sh && \
     echo 'IMAP_PID=$!' >> /app/start.sh && \
     echo 'echo "IMAP server started with PID: $IMAP_PID"' >> /app/start.sh && \
     echo 'sleep 1' >> /app/start.sh && \
     echo 'echo "Starting Delivery service (LMTP)..."' >> /app/start.sh && \
-    echo './raven-delivery &' >> /app/start.sh && \
+    echo './raven-delivery -db ${DB_PATH:-/app/data/databases} &' >> /app/start.sh && \
     echo 'DELIVERY_PID=$!' >> /app/start.sh && \
     echo 'echo "Delivery service started with PID: $DELIVERY_PID"' >> /app/start.sh && \
     echo 'echo ""' >> /app/start.sh && \
@@ -67,6 +67,7 @@ RUN echo '#!/bin/sh' > /app/start.sh && \
     echo 'echo "  SASL Auth: PID $SASL_PID"' >> /app/start.sh && \
     echo 'echo "  IMAP:      PID $IMAP_PID"' >> /app/start.sh && \
     echo 'echo "  LMTP:      PID $DELIVERY_PID"' >> /app/start.sh && \
+    echo 'echo "  DB Path:   ${DB_PATH:-/app/data/databases}"' >> /app/start.sh && \
     echo 'echo "==================================="' >> /app/start.sh && \
     echo 'wait' >> /app/start.sh && \
     chmod +x /app/start.sh && \
@@ -81,8 +82,8 @@ USER ravenuser
 # SASL: Uses Unix socket (no port needed)
 EXPOSE 143 993 24
 
-# Set environment variables
-ENV DB_FILE=/app/data/mails.db
+# Set environment variables - use directory path for DBManager
+ENV DB_PATH=/app/data/databases
 
 # Health check - check IMAP and LMTP services (SASL uses Unix socket)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

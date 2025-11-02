@@ -162,7 +162,7 @@ func TestUnsubscribeCommand_MissingArgument(t *testing.T) {
 	server.HandleUnsubscribe(conn, "A004", []string{"A004", "UNSUBSCRIBE"}, state)
 
 	response := conn.GetWrittenData()
-	expectedResponse := "A004 BAD UNSUBSCRIBE command requires a mailbox argument"
+	expectedResponse := "A004 BAD UNSUBSCRIBE requires mailbox name"
 
 	if !strings.Contains(response, expectedResponse) {
 		t.Errorf("Expected response to contain '%s', got: %s", expectedResponse, response)
