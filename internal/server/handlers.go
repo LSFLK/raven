@@ -1515,7 +1515,14 @@ func (s *IMAPServer) authenticateUser(conn net.Conn, tag string, username string
 		return
 	}
 
-	email := username + "@" + cfg.Domain
+	// Determine the email address to use for authentication
+	var email string
+	if strings.Contains(username, "@") {
+		email = username
+	} else {
+		// Username doesn't contain domain - append configured domain
+		email = username + "@" + cfg.Domain
+	}
 
 	// Prepare JSON body
 	requestBody := fmt.Sprintf(`{"email":"%s","password":"%s"}`, email, password)
