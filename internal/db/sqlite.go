@@ -32,6 +32,14 @@ func InitDB(file string) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to create users table: %v", err)
 	}
 
+	if err = createRoleMailboxesTable(db); err != nil {
+		return nil, fmt.Errorf("failed to create role_mailboxes table: %v", err)
+	}
+
+	if err = createUserRoleAssignmentsTable(db); err != nil {
+		return nil, fmt.Errorf("failed to create user_role_assignments table: %v", err)
+	}
+
 	if err = createBlobsTable(db); err != nil {
 		return nil, fmt.Errorf("failed to create blobs table: %v", err)
 	}
@@ -109,6 +117,42 @@ func createUsersTable(db *sql.DB) error {
 		enabled BOOLEAN DEFAULT TRUE,
 		FOREIGN KEY (domain_id) REFERENCES domains(id),
 		UNIQUE(username, domain_id)
+	);
+	`
+	_, err := db.Exec(schema)
+	return err
+}
+
+func createRoleMailboxesTable(db *sql.DB) error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS role_mailboxes (
+		id INTEGER PRIMARY KEY,
+		email TEXT NOT NULL,
+		domain_id INTEGER NOT NULL,
+		description TEXT,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		enabled BOOLEAN DEFAULT TRUE,
+		FOREIGN KEY (domain_id) REFERENCES domains(id),
+		UNIQUE(email)
+	);
+	`
+	_, err := db.Exec(schema)
+	return err
+}
+
+func createUserRoleAssignmentsTable(db *sql.DB) error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS user_role_assignments (
+		id INTEGER PRIMARY KEY,
+		user_id INTEGER NOT NULL,
+		role_mailbox_id INTEGER NOT NULL,
+		assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		assigned_by INTEGER,
+		is_active BOOLEAN DEFAULT TRUE,
+		FOREIGN KEY (user_id) REFERENCES users(id),
+		FOREIGN KEY (role_mailbox_id) REFERENCES role_mailboxes(id),
+		FOREIGN KEY (assigned_by) REFERENCES users(id),
+		UNIQUE(user_id, role_mailbox_id)
 	);
 	`
 	_, err := db.Exec(schema)
@@ -318,6 +362,11 @@ func createIndexes(db *sql.DB) error {
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_users_username_domain ON users(username, domain_id)",
 		"CREATE INDEX IF NOT EXISTS idx_users_domain ON users(domain_id)",
+		"CREATE INDEX IF NOT EXISTS idx_role_mailboxes_domain ON role_mailboxes(domain_id)",
+		"CREATE INDEX IF NOT EXISTS idx_role_mailboxes_email ON role_mailboxes(email)",
+		"CREATE INDEX IF NOT EXISTS idx_role_assignments_user ON user_role_assignments(user_id)",
+		"CREATE INDEX IF NOT EXISTS idx_role_assignments_role ON user_role_assignments(role_mailbox_id)",
+		"CREATE INDEX IF NOT EXISTS idx_role_assignments_active ON user_role_assignments(is_active)",
 		"CREATE INDEX IF NOT EXISTS idx_mailboxes_user ON mailboxes(user_id)",
 		"CREATE INDEX IF NOT EXISTS idx_mailboxes_parent ON mailboxes(parent_id)",
 		"CREATE INDEX IF NOT EXISTS idx_messages_date ON messages(date)",
@@ -1117,4 +1166,151 @@ func GetMessageHeaders(db *sql.DB, messageID int64) ([]map[string]string, error)
 	}
 
 	return headers, rows.Err()
+}
+
+// Role mailbox management functions
+
+func CreateRoleMailbox(db *sql.DB, email string, domainID int64, description string) (int64, error) {
+	result, err := db.Exec(`
+		INSERT INTO role_mailboxes (email, domain_id, description, enabled)
+		VALUES (?, ?, ?, ?)
+	`, email, domainID, description, true)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			return 0, fmt.Errorf("role mailbox already exists")
+		}
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+func GetRoleMailboxByEmail(db *sql.DB, email string) (int64, int64, error) {
+	var id, domainID int64
+	err := db.QueryRow(`
+		SELECT id, domain_id FROM role_mailboxes
+		WHERE email = ? AND enabled = ?
+	`, email, true).Scan(&id, &domainID)
+	if err == sql.ErrNoRows {
+		return 0, 0, fmt.Errorf("role mailbox not found")
+	}
+	return id, domainID, err
+}
+
+func GetRoleMailboxByID(db *sql.DB, roleMailboxID int64) (string, int64, error) {
+	var email string
+	var domainID int64
+	err := db.QueryRow(`
+		SELECT email, domain_id FROM role_mailboxes
+		WHERE id = ? AND enabled = ?
+	`, roleMailboxID, true).Scan(&email, &domainID)
+	if err == sql.ErrNoRows {
+		return "", 0, fmt.Errorf("role mailbox not found")
+	}
+	return email, domainID, err
+}
+
+func GetOrCreateRoleMailbox(db *sql.DB, email string, domainID int64, description string) (int64, error) {
+	id, _, err := GetRoleMailboxByEmail(db, email)
+	if err == nil {
+		return id, nil
+	}
+	return CreateRoleMailbox(db, email, domainID, description)
+}
+
+func RoleMailboxExists(db *sql.DB, email string) (bool, error) {
+	var count int
+	err := db.QueryRow(`
+		SELECT COUNT(*) FROM role_mailboxes
+		WHERE email = ? AND enabled = ?
+	`, email, true).Scan(&count)
+	return count > 0, err
+}
+
+// User role assignment management functions
+
+func AssignUserToRoleMailbox(db *sql.DB, userID, roleMailboxID, assignedBy int64) error {
+	// Start transaction to ensure consistency
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Deactivate any existing active assignments for this role mailbox
+	_, err = tx.Exec(`
+		UPDATE user_role_assignments
+		SET is_active = FALSE
+		WHERE role_mailbox_id = ? AND is_active = TRUE
+	`, roleMailboxID)
+	if err != nil {
+		return err
+	}
+
+	// Insert or update the assignment
+	_, err = tx.Exec(`
+		INSERT INTO user_role_assignments (user_id, role_mailbox_id, assigned_by, is_active)
+		VALUES (?, ?, ?, TRUE)
+		ON CONFLICT(user_id, role_mailbox_id)
+		DO UPDATE SET is_active = TRUE, assigned_at = CURRENT_TIMESTAMP, assigned_by = ?
+	`, userID, roleMailboxID, assignedBy, assignedBy)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func UnassignUserFromRoleMailbox(db *sql.DB, userID, roleMailboxID int64) error {
+	_, err := db.Exec(`
+		UPDATE user_role_assignments
+		SET is_active = FALSE
+		WHERE user_id = ? AND role_mailbox_id = ?
+	`, userID, roleMailboxID)
+	return err
+}
+
+func GetUserRoleAssignments(db *sql.DB, userID int64) ([]int64, error) {
+	rows, err := db.Query(`
+		SELECT role_mailbox_id
+		FROM user_role_assignments
+		WHERE user_id = ? AND is_active = TRUE
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var roleMailboxIDs []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err == nil {
+			roleMailboxIDs = append(roleMailboxIDs, id)
+		}
+	}
+
+	return roleMailboxIDs, rows.Err()
+}
+
+func GetRoleMailboxAssignedUser(db *sql.DB, roleMailboxID int64) (int64, error) {
+	var userID int64
+	err := db.QueryRow(`
+		SELECT user_id
+		FROM user_role_assignments
+		WHERE role_mailbox_id = ? AND is_active = TRUE
+		LIMIT 1
+	`, roleMailboxID).Scan(&userID)
+	if err == sql.ErrNoRows {
+		return 0, fmt.Errorf("no active user assigned to this role mailbox")
+	}
+	return userID, err
+}
+
+func IsUserAssignedToRoleMailbox(db *sql.DB, userID, roleMailboxID int64) (bool, error) {
+	var count int
+	err := db.QueryRow(`
+		SELECT COUNT(*)
+		FROM user_role_assignments
+		WHERE user_id = ? AND role_mailbox_id = ? AND is_active = TRUE
+	`, userID, roleMailboxID).Scan(&count)
+	return count > 0, err
 }
