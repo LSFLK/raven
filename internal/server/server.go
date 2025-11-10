@@ -45,10 +45,10 @@ func (s *IMAPServer) HandleConnection(conn net.Conn) {
 	handleClient(s, conn, state)
 }
 
-// Helper functions for new schema
+// ===== Helper functions for new schema =====
 
-// ensureUserAndMailboxes ensures user exists in database and has default mailboxes
-func (s *IMAPServer) ensureUserAndMailboxes(username string, domain string) (int64, int64, error) {
+// EnsureUserAndMailboxes ensures user exists in database and has default mailboxes (exported for commands)
+func (s *IMAPServer) EnsureUserAndMailboxes(username string, domain string) (int64, int64, error) {
 	sharedDB := s.dbManager.GetSharedDB()
 
 	// Get or create domain
@@ -72,15 +72,15 @@ func (s *IMAPServer) ensureUserAndMailboxes(username string, domain string) (int
 	return userID, domainID, nil
 }
 
-// getUserDB returns the database connection for a user
-func (s *IMAPServer) getUserDB(userID int64) (*sql.DB, error) {
+// GetUserDB returns the database connection for a user (exported for commands)
+func (s *IMAPServer) GetUserDB(userID int64) (*sql.DB, error) {
 	return s.dbManager.GetUserDB(userID)
 }
 
-// getSelectedDB returns the appropriate database based on client state
+// GetSelectedDB returns the appropriate database based on client state (exported for commands)
 // If a role mailbox is selected, returns the role mailbox database
 // Otherwise returns the user's database
-func (s *IMAPServer) getSelectedDB(state *models.ClientState) (*sql.DB, int64, error) {
+func (s *IMAPServer) GetSelectedDB(state *models.ClientState) (*sql.DB, int64, error) {
 	if state.IsRoleMailbox {
 		roleDB, err := s.dbManager.GetRoleMailboxDB(state.SelectedRoleMailboxID)
 		return roleDB, 0, err // userID is 0 for role mailboxes
@@ -89,13 +89,28 @@ func (s *IMAPServer) getSelectedDB(state *models.ClientState) (*sql.DB, int64, e
 	return userDB, state.UserID, err
 }
 
-// getSharedDB returns the shared database connection
-func (s *IMAPServer) getSharedDB() *sql.DB {
+// GetSharedDB returns the shared database connection (exported for commands)
+func (s *IMAPServer) GetSharedDB() *sql.DB {
 	return s.dbManager.GetSharedDB()
 }
 
-// getUserDomain extracts domain from username or uses default from config
-func (s *IMAPServer) getUserDomain(username string) string {
+// GetDBManager returns the database manager (exported for commands)
+func (s *IMAPServer) GetDBManager() *db.DBManager {
+	return s.dbManager
+}
+
+// GetCertPath returns the TLS certificate path (exported for commands)
+func (s *IMAPServer) GetCertPath() string {
+	return s.certPath
+}
+
+// GetKeyPath returns the TLS key path (exported for commands)
+func (s *IMAPServer) GetKeyPath() string {
+	return s.keyPath
+}
+
+// GetUserDomain extracts domain from username or uses default from config (exported for commands)
+func (s *IMAPServer) GetUserDomain(username string) string {
 	// If username contains @, extract domain
 	if strings.Contains(username, "@") {
 		parts := strings.Split(username, "@")
@@ -114,8 +129,8 @@ func (s *IMAPServer) getUserDomain(username string) string {
 	return "localhost"
 }
 
-// extractUsername removes domain from username if present
-func (s *IMAPServer) extractUsername(email string) string {
+// ExtractUsername removes domain from username if present (exported for commands)
+func (s *IMAPServer) ExtractUsername(email string) string {
 	if strings.Contains(email, "@") {
 		parts := strings.Split(email, "@")
 		return parts[0]

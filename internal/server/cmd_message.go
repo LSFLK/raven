@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"log"
 	"mime"
 	"mime/multipart"
 	"net"
@@ -14,172 +15,15 @@ import (
 	"raven/internal/db"
 	"raven/internal/delivery/parser"
 	"raven/internal/models"
+	"raven/internal/server/utils"
 )
 
-func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, state *models.ClientState) {
-	if !state.Authenticated {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
-		return
-	}
-
-	if len(parts) < 3 {
-		cmd := strings.ToUpper(parts[1])
-		s.sendResponse(conn, fmt.Sprintf("%s BAD %s requires folder name", tag, cmd))
-		return
-	}
-
-	folder := strings.Trim(parts[2], "\"")
-	state.SelectedFolder = folder
-
-	// Check if this is a role mailbox path (e.g., "Roles/ceo@openmail.lk/INBOX")
-	var targetDB *sql.DB
-	var targetUserID int64
-	var actualMailboxName string
-
-	if strings.HasPrefix(folder, "Roles/") {
-		// Parse role mailbox path: Roles/email@domain.com/MAILBOX
-		pathParts := strings.SplitN(folder, "/", 3)
-		if len(pathParts) < 3 {
-			s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Invalid role mailbox path", tag))
-			return
-		}
-
-		roleEmail := pathParts[1]
-		actualMailboxName = pathParts[2]
-
-		// Get role mailbox ID from email
-		sharedDB := s.dbManager.GetSharedDB()
-		roleMailboxID, _, err := db.GetRoleMailboxByEmail(sharedDB, roleEmail)
-		if err != nil {
-			s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Role mailbox does not exist", tag))
-			return
-		}
-
-		// Check if user is assigned to this role mailbox
-		isAssigned, err := db.IsUserAssignedToRoleMailbox(sharedDB, state.UserID, roleMailboxID)
-		if err != nil || !isAssigned {
-			s.sendResponse(conn, fmt.Sprintf("%s NO [AUTHORIZATIONFAILED] Not authorized to access this role mailbox", tag))
-			return
-		}
-
-		// Get role mailbox database
-		targetDB, err = s.dbManager.GetRoleMailboxDB(roleMailboxID)
-		if err != nil {
-			s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
-			return
-		}
-
-		// Role mailboxes use userID 0
-		targetUserID = 0
-		state.IsRoleMailbox = true
-		state.SelectedRoleMailboxID = roleMailboxID
-	} else {
-		// Regular user mailbox
-		var err error
-		targetDB, err = s.getUserDB(state.UserID)
-		if err != nil {
-			s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
-			return
-		}
-		targetUserID = state.UserID
-		actualMailboxName = folder
-		state.IsRoleMailbox = false
-		state.SelectedRoleMailboxID = 0
-	}
-
-	// Get mailbox ID using new schema
-	mailboxID, err := db.GetMailboxByNamePerUser(targetDB, targetUserID, actualMailboxName)
-	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Mailbox does not exist", tag))
-		return
-	}
-
-	state.SelectedMailboxID = mailboxID
-
-	// Get mailbox info (UID validity and next UID)
-	uidValidity, uidNext, err := db.GetMailboxInfoPerUser(targetDB, mailboxID)
-	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Server error: cannot get mailbox info", tag))
-		return
-	}
-
-	state.UIDValidity = uidValidity
-	state.UIDNext = uidNext
-
-	// Get message count using new schema
-	count, err := db.GetMessageCountPerUser(targetDB, mailboxID)
-	if err != nil {
-		count = 0
-	}
-
-	// Get unseen (recent) count using new schema
-	recent, err := db.GetUnseenCountPerUser(targetDB, mailboxID)
-	if err != nil {
-		recent = 0
-	}
-
-	// Get the first unseen message sequence number (RFC 3501 requirement)
-	var unseenSeqNum int
-	query := `
-		SELECT seq_num FROM (
-			SELECT ROW_NUMBER() OVER (ORDER BY uid ASC) as seq_num, flags
-			FROM message_mailbox
-			WHERE mailbox_id = ?
-		) WHERE flags IS NULL OR flags NOT LIKE '%\Seen%'
-		ORDER BY seq_num ASC
-		LIMIT 1
-	`
-	err = targetDB.QueryRow(query, mailboxID).Scan(&unseenSeqNum)
-	hasUnseen := (err == nil && unseenSeqNum > 0)
-
-	// Initialize state tracking for NOOP and other commands
-	state.LastMessageCount = count
-	state.LastRecentCount = recent
-
-	// Determine if this is SELECT or EXAMINE
-	cmd := strings.ToUpper(parts[1])
-	isExamine := (cmd == "EXAMINE")
-
-	// Send REQUIRED untagged responses in the correct order per RFC 3501
-	// For SELECT: FLAGS, EXISTS, RECENT
-	// For EXAMINE: EXISTS, RECENT, then FLAGS (per RFC 3501 example)
-	if !isExamine {
-		s.sendResponse(conn, "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
-	}
-	s.sendResponse(conn, fmt.Sprintf("* %d EXISTS", count))
-	s.sendResponse(conn, fmt.Sprintf("* %d RECENT", recent))
-
-	// Send REQUIRED OK untagged responses
-	if hasUnseen {
-		s.sendResponse(conn, fmt.Sprintf("* OK [UNSEEN %d] Message %d is first unseen", unseenSeqNum, unseenSeqNum))
-	}
-	s.sendResponse(conn, fmt.Sprintf("* OK [UIDVALIDITY %d] UIDs valid", uidValidity))
-	s.sendResponse(conn, fmt.Sprintf("* OK [UIDNEXT %d] Predicted next UID", uidNext))
-
-	// FLAGS for EXAMINE comes after OK untagged responses
-	if isExamine {
-		s.sendResponse(conn, "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
-	}
-
-	// PERMANENTFLAGS: Empty for EXAMINE (read-only), full for SELECT
-	if isExamine {
-		s.sendResponse(conn, "* OK [PERMANENTFLAGS ()] No permanent flags permitted")
-	} else {
-		s.sendResponse(conn, "* OK [PERMANENTFLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft \\*)] Limited")
-	}
-
-	// Send tagged completion response
-	if cmd == "SELECT" {
-		s.sendResponse(conn, fmt.Sprintf("%s OK [READ-WRITE] SELECT completed", tag))
-	} else {
-		s.sendResponse(conn, fmt.Sprintf("%s OK [READ-ONLY] EXAMINE completed", tag))
-	}
-}
+// ===== FETCH =====
 
 // handleFetchForUIDs handles FETCH for a list of UIDs (used by UID FETCH command)
 func (s *IMAPServer) handleFetchForUIDs(conn net.Conn, tag string, uids []int, items string, state *models.ClientState) {
 	// Get appropriate database (user or role mailbox)
-	targetDB, _, err := s.getSelectedDB(state)
+	targetDB, _, err := s.GetSelectedDB(state)
 	if err != nil {
 		return
 	}
@@ -225,7 +69,7 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 	}
 
 	// Get appropriate database (user or role mailbox)
-	targetDB, _, err := s.getSelectedDB(state)
+	targetDB, _, err := s.GetSelectedDB(state)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -341,7 +185,7 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 // processFetchForMessage processes a single message for FETCH/UID FETCH
 func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64, seqNum int, flags, items string, state *models.ClientState) {
 	// Get appropriate database (user or role mailbox)
-	targetDB, _, err := s.getSelectedDB(state)
+	targetDB, _, err := s.GetSelectedDB(state)
 	if err != nil {
 		return
 	}
@@ -442,7 +286,7 @@ func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64,
 					}
 				}
 			}
-			
+
 			// Extract only the requested headers from the message
 			headersMap := map[string]string{}
 			lines := strings.Split(rawMsg, "\r\n")
@@ -471,7 +315,7 @@ func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64,
 					}
 				}
 			}
-			
+
 			// Build response with requested headers in order
 			var headerLines []string
 			for _, h := range requestedHeaders {
@@ -489,7 +333,7 @@ func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64,
 		responseParts = append(responseParts, fmt.Sprintf("BODY[HEADER.FIELDS (%s)]", fieldList))
 		literalData = fmt.Sprintf("{%d}\r\n%s", len(headersStr), headersStr)
 	}
-	
+
 	// Handle BODY.PEEK[TEXT] or BODY[TEXT] - message body only (can be combined with other parts)
 	if strings.Contains(itemsUpper, "BODY.PEEK[TEXT]") || strings.Contains(itemsUpper, "BODY[TEXT]") {
 		headerEnd := strings.Index(rawMsg, "\r\n\r\n")
@@ -497,7 +341,7 @@ func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64,
 		if headerEnd != -1 {
 			body = rawMsg[headerEnd+4:] // skip the double CRLF
 		}
-		
+
 		// Check for partial fetch like BODY.PEEK[TEXT]<0.2048>
 		partialStart := 0
 		partialLength := len(body)
@@ -518,16 +362,16 @@ func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64,
 				}
 			}
 		}
-		
+
 		if literalData != "" {
 			literalData += " "
 		}
 		responseParts = append(responseParts, "BODY[TEXT]")
 		literalData += fmt.Sprintf("{%d}\r\n%s", len(body), body)
 	}
-	
+
 	// Handle BODY.PEEK[HEADER] or BODY[HEADER] - all headers (check it's not HEADER.FIELDS)
-	if (strings.Contains(itemsUpper, "BODY.PEEK[HEADER]") || strings.Contains(itemsUpper, "BODY[HEADER]")) && 
+	if (strings.Contains(itemsUpper, "BODY.PEEK[HEADER]") || strings.Contains(itemsUpper, "BODY[HEADER]")) &&
 	   !strings.Contains(itemsUpper, "HEADER.FIELDS") {
 		headerEnd := strings.Index(rawMsg, "\r\n\r\n")
 		headers := rawMsg
@@ -540,7 +384,7 @@ func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64,
 		responseParts = append(responseParts, "BODY[HEADER]")
 		literalData += fmt.Sprintf("{%d}\r\n%s", len(headers), headers)
 	}
-	
+
 	// Handle RFC822.HEADER - return only the header portion
 	if strings.Contains(itemsUpper, "RFC822.HEADER") {
 		headerEnd := strings.Index(rawMsg, "\r\n\r\n")
@@ -554,7 +398,7 @@ func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64,
 		responseParts = append(responseParts, "RFC822.HEADER")
 		literalData += fmt.Sprintf("{%d}\r\n%s", len(headers), headers)
 	}
-	
+
 	// Handle RFC822.TEXT - body text only (excluding headers)
 	if strings.Contains(itemsUpper, "RFC822.TEXT") {
 		headerEnd := strings.Index(rawMsg, "\r\n\r\n")
@@ -568,11 +412,11 @@ func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64,
 		responseParts = append(responseParts, "RFC822.TEXT")
 		literalData += fmt.Sprintf("{%d}\r\n%s", len(body), body)
 	}
-	
+
 	// Handle BODY[] / BODY.PEEK[] / RFC822 / RFC822.PEEK - full message
-	if strings.Contains(itemsUpper, "BODY[]") || strings.Contains(itemsUpper, "BODY.PEEK[]") || 
-	   strings.Contains(itemsUpper, "RFC822.PEEK") || 
-	   (strings.Contains(itemsUpper, "RFC822") && !strings.Contains(itemsUpper, "RFC822.SIZE") && 
+	if strings.Contains(itemsUpper, "BODY[]") || strings.Contains(itemsUpper, "BODY.PEEK[]") ||
+	   strings.Contains(itemsUpper, "RFC822.PEEK") ||
+	   (strings.Contains(itemsUpper, "RFC822") && !strings.Contains(itemsUpper, "RFC822.SIZE") &&
 	    !strings.Contains(itemsUpper, "RFC822.HEADER") && !strings.Contains(itemsUpper, "RFC822.TEXT") && !strings.Contains(itemsUpper, "RFC822.PEEK")) {
 		if literalData != "" {
 			literalData += " "
@@ -580,7 +424,7 @@ func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64,
 		responseParts = append(responseParts, "BODY[]")
 		literalData += fmt.Sprintf("{%d}\r\n%s", len(rawMsg), rawMsg)
 	}
-	
+
 	if len(responseParts) > 0 {
 		responseStr := fmt.Sprintf("* %d FETCH (%s", seqNum, strings.Join(responseParts, " "))
 		if literalData != "" {
@@ -593,6 +437,8 @@ func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64,
 		s.sendResponse(conn, fmt.Sprintf("* %d FETCH (FLAGS ())", seqNum))
 	}
 }
+
+// ===== SEARCH =====
 
 // messageInfo holds metadata about a message for search operations
 type messageInfo struct {
@@ -615,7 +461,7 @@ func (s *IMAPServer) handleSearch(conn net.Conn, tag string, parts []string, sta
 	}
 
 	// Get appropriate database (user or role mailbox)
-	targetDB, targetUserID, err := s.getSelectedDB(state)
+	targetDB, targetUserID, err := s.GetSelectedDB(state)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -1088,7 +934,7 @@ func (s *IMAPServer) matchesUIDSet(uid int, set string) bool {
 
 func (s *IMAPServer) matchesHeaderOrBody(msg messageInfo, field string, searchStr string, charset string, userID int64) bool {
 	// Get user database
-	userDB, err := s.getUserDB(userID)
+	userDB, err := s.GetUserDB(userID)
 	if err != nil {
 		return false
 	}
@@ -1133,7 +979,7 @@ func (s *IMAPServer) matchesHeaderOrBody(msg messageInfo, field string, searchSt
 
 func (s *IMAPServer) matchesHeader(msg messageInfo, fieldName string, searchStr string, charset string, userID int64) bool {
 	// Get user database
-	userDB, err := s.getUserDB(userID)
+	userDB, err := s.GetUserDB(userID)
 	if err != nil {
 		return false
 	}
@@ -1207,7 +1053,7 @@ func (s *IMAPServer) headerContains(rawMsg string, fieldName string, searchStr s
 
 func (s *IMAPServer) matchesSize(msg messageInfo, size int, larger bool, userID int64) bool {
 	// Get user database
-	userDB, err := s.getUserDB(userID)
+	userDB, err := s.GetUserDB(userID)
 	if err != nil {
 		return false
 	}
@@ -1249,7 +1095,7 @@ func (s *IMAPServer) matchesDate(internalDate time.Time, dateStr string, compari
 
 func (s *IMAPServer) matchesSentDate(msg messageInfo, dateStr string, comparison string, userID int64) bool {
 	// Get user database
-	userDB, err := s.getUserDB(userID)
+	userDB, err := s.GetUserDB(userID)
 	if err != nil {
 		return false
 	}
@@ -1325,6 +1171,618 @@ func (s *IMAPServer) requiresArgument(token string) bool {
 	}
 	return false
 }
+
+// ===== STORE =====
+
+func (s *IMAPServer) handleStore(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	// RFC 3501: STORE requires authentication and selected mailbox
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	if state.SelectedMailboxID == 0 {
+		s.sendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
+		return
+	}
+
+	// Parse command: STORE sequence data-item value
+	if len(parts) < 4 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD STORE requires sequence set, data item, and value", tag))
+		return
+	}
+
+	sequenceSet := parts[2]
+	dataItem := strings.ToUpper(parts[3])
+
+	// Check if .SILENT suffix is used
+	silent := strings.HasSuffix(dataItem, ".SILENT")
+	if silent {
+		dataItem = strings.TrimSuffix(dataItem, ".SILENT")
+	}
+
+	// Parse flags from remaining parts
+	flagsPart := strings.Join(parts[4:], " ")
+	flagsPart = strings.Trim(flagsPart, "()")
+	newFlags := strings.Fields(flagsPart)
+
+	// Validate data item
+	if dataItem != "FLAGS" && dataItem != "+FLAGS" && dataItem != "-FLAGS" {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid data item: %s", tag, parts[3]))
+		return
+	}
+
+	// Get user database
+	userDB, err := s.GetUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
+	// Parse sequence set
+	sequences := utils.ParseSequenceSetWithDB(sequenceSet, state.SelectedMailboxID, userDB)
+	if len(sequences) == 0 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence set", tag))
+		return
+	}
+
+	// Process each message in the sequence
+	for _, seqNum := range sequences {
+		// Get message by sequence number
+		query := `
+			SELECT mm.message_id, mm.uid, mm.flags
+			FROM message_mailbox mm
+			WHERE mm.mailbox_id = ?
+			ORDER BY mm.uid ASC
+			LIMIT 1 OFFSET ?
+		`
+		var messageID, uid int64
+		var currentFlags string
+		err := userDB.QueryRow(query, state.SelectedMailboxID, seqNum-1).Scan(&messageID, &uid, &currentFlags)
+		if err != nil {
+			// Message not found - skip
+			continue
+		}
+
+		// Calculate new flags based on operation
+		updatedFlags := s.calculateNewFlags(currentFlags, newFlags, dataItem)
+
+		// Update flags in database
+		updateQuery := "UPDATE message_mailbox SET flags = ? WHERE message_id = ? AND mailbox_id = ?"
+		_, err = userDB.Exec(updateQuery, updatedFlags, messageID, state.SelectedMailboxID)
+		if err != nil {
+			log.Printf("Failed to update flags for message %d: %v", messageID, err)
+			continue
+		}
+
+		// Send untagged FETCH response unless .SILENT
+		if !silent {
+			flagsFormatted := "()"
+			if updatedFlags != "" {
+				flagsFormatted = fmt.Sprintf("(%s)", updatedFlags)
+			}
+			s.sendResponse(conn, fmt.Sprintf("* %d FETCH (FLAGS %s)", seqNum, flagsFormatted))
+		}
+	}
+
+	s.sendResponse(conn, fmt.Sprintf("%s OK STORE completed", tag))
+}
+
+// calculateNewFlags determines the new flags based on the operation
+func (s *IMAPServer) calculateNewFlags(currentFlags string, newFlags []string, operation string) string {
+	// Parse current flags into a map
+	flagMap := make(map[string]bool)
+	if currentFlags != "" {
+		for _, flag := range strings.Fields(currentFlags) {
+			flagMap[flag] = true
+		}
+	}
+
+	switch operation {
+	case "FLAGS":
+		// Replace all flags (except \Recent which server manages)
+		flagMap = make(map[string]bool)
+		for _, flag := range newFlags {
+			if flag != "\\Recent" {
+				flagMap[flag] = true
+			}
+		}
+
+	case "+FLAGS":
+		// Add flags
+		for _, flag := range newFlags {
+			if flag != "\\Recent" {
+				flagMap[flag] = true
+			}
+		}
+
+	case "-FLAGS":
+		// Remove flags
+		for _, flag := range newFlags {
+			if flag != "\\Recent" {
+				delete(flagMap, flag)
+			}
+		}
+	}
+
+	// Convert map back to string
+	var flags []string
+	for flag := range flagMap {
+		flags = append(flags, flag)
+	}
+
+	return strings.Join(flags, " ")
+}
+
+// ===== COPY =====
+
+// handleCopy implements the COPY command (RFC 3501 Section 6.4.7)
+// Syntax: COPY sequence-set mailbox-name
+func (s *IMAPServer) handleCopy(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	// Check authentication
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	// Check if mailbox is selected
+	if state.SelectedMailboxID == 0 {
+		s.sendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
+		return
+	}
+
+	// Parse command: COPY sequence-set mailbox-name
+	if len(parts) < 3 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid COPY command syntax", tag))
+		return
+	}
+
+	sequenceSet := parts[1]
+	destMailbox := strings.Trim(strings.Join(parts[2:], " "), "\"")
+
+	// Get user database
+	userDB, err := s.GetUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
+	// Parse sequence set
+	sequences := utils.ParseSequenceSetWithDB(sequenceSet, state.SelectedMailboxID, userDB)
+	if len(sequences) == 0 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence set", tag))
+		return
+	}
+
+	// Check if destination mailbox exists
+	var destMailboxID int64
+	err = userDB.QueryRow(`
+		SELECT id FROM mailboxes
+		WHERE name = ? AND user_id = ?
+	`, destMailbox, state.UserID).Scan(&destMailboxID)
+
+	if err != nil {
+		// Destination mailbox doesn't exist - return NO with [TRYCREATE]
+		s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Destination mailbox does not exist", tag))
+		return
+	}
+
+	// Begin transaction to ensure atomicity
+	tx, err := userDB.Begin()
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
+		return
+	}
+	defer tx.Rollback()
+
+	// Get the next UID for destination mailbox
+	var nextUID int64
+	err = tx.QueryRow(`
+		SELECT COALESCE(MAX(uid), 0) + 1
+		FROM message_mailbox
+		WHERE mailbox_id = ?
+	`, destMailboxID).Scan(&nextUID)
+
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
+		return
+	}
+
+	// Copy each message in the sequence
+	for _, seqNum := range sequences {
+		// Get message details from source mailbox
+		var messageID int64
+		var flags, internalDate string
+
+		err = tx.QueryRow(`
+			SELECT mm.message_id, mm.flags, mm.internal_date
+			FROM message_mailbox mm
+			WHERE mm.mailbox_id = ?
+			ORDER BY mm.uid
+			LIMIT 1 OFFSET ?
+		`, state.SelectedMailboxID, seqNum-1).Scan(&messageID, &flags, &internalDate)
+
+		if err != nil {
+			s.sendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
+			return
+		}
+
+		// Prepare flags for copy - preserve existing flags and add \Recent
+		copyFlags := flags
+		if !strings.Contains(copyFlags, `\Recent`) {
+			if copyFlags == "" {
+				copyFlags = `\Recent`
+			} else {
+				copyFlags = copyFlags + ` \Recent`
+			}
+		}
+
+		// Insert message into destination mailbox
+		_, err = tx.Exec(`
+			INSERT INTO message_mailbox (message_id, mailbox_id, uid, flags, internal_date)
+			VALUES (?, ?, ?, ?, ?)
+		`, messageID, destMailboxID, nextUID, copyFlags, internalDate)
+
+		if err != nil {
+			s.sendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
+			return
+		}
+
+		nextUID++
+	}
+
+	// Commit transaction
+	err = tx.Commit()
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
+		return
+	}
+
+	s.sendResponse(conn, fmt.Sprintf("%s OK COPY completed", tag))
+}
+
+// ===== APPEND =====
+
+// handleAppend handles the APPEND command to add a message to a mailbox
+func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, fullLine string, state *models.ClientState) {
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	if len(parts) < 3 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD APPEND requires folder name", tag))
+		return
+	}
+
+	// Get user database
+	userDB, err := s.GetUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
+	// Parse folder name (could be quoted)
+	folder := strings.Trim(parts[2], "\"")
+
+	// Validate folder exists using the database with new schema
+	mailboxID, err := db.GetMailboxByNamePerUser(userDB, state.UserID, folder)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Folder does not exist", tag))
+		return
+	}
+
+	// Parse optional flags and date/time
+	// Format: tag APPEND folder [(flags)] [date-time] {size}
+	var flags string
+
+	// Look for flags in parentheses
+	if strings.Contains(fullLine, "(") && strings.Contains(fullLine, ")") {
+		startIdx := strings.Index(fullLine, "(")
+		endIdx := strings.Index(fullLine, ")")
+		if startIdx < endIdx {
+			flags = fullLine[startIdx+1 : endIdx]
+		}
+	}
+
+	// Look for literal size indicator {size} or {size+}
+	literalStartIdx := strings.Index(fullLine, "{")
+	literalEndIdx := strings.Index(fullLine, "}")
+
+	if literalStartIdx == -1 || literalEndIdx == -1 || literalStartIdx > literalEndIdx {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD APPEND requires message size", tag))
+		return
+	}
+
+	// Extract the size and check for LITERAL+ (RFC 4466)
+	sizeStr := fullLine[literalStartIdx+1 : literalEndIdx]
+	isLiteralPlus := strings.HasSuffix(sizeStr, "+")
+	if isLiteralPlus {
+		sizeStr = strings.TrimSuffix(sizeStr, "+")
+	}
+
+	var messageSize int
+	fmt.Sscanf(sizeStr, "%d", &messageSize)
+
+	if messageSize <= 0 || messageSize > 50*1024*1024 { // Max 50MB
+		s.sendResponse(conn, fmt.Sprintf("%s NO Message size invalid or too large", tag))
+		return
+	}
+
+	// Send continuation response only for synchronizing literals
+	// RFC 4466: LITERAL+ ({size+}) means client sends data immediately without waiting
+	if !isLiteralPlus {
+		s.sendResponse(conn, "+ Ready for literal data")
+	}
+
+	// Read the message data using io.ReadFull to ensure we read exactly messageSize bytes
+	messageData := make([]byte, messageSize)
+
+	conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
+	log.Printf("APPEND expecting %d bytes literal", messageSize)
+
+	n, err := io.ReadFull(conn, messageData)
+	if err != nil {
+		log.Printf("Error reading message data: expected %d bytes, read %d bytes, error: %v", messageSize, n, err)
+		s.sendResponse(conn, fmt.Sprintf("%s NO Failed to read message data", tag))
+		return
+	}
+
+	log.Printf("APPEND successfully read %d bytes", n)
+
+	// Read and discard the trailing CRLF after the literal data
+	// RFC 3501: The client sends CRLF after the literal data
+	// Use a short timeout to avoid delays
+	crlfBuf := make([]byte, 2)
+	conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	n, err = conn.Read(crlfBuf)
+	if err != nil {
+		log.Printf("Warning: Failed to read trailing CRLF after literal data: %v", err)
+		// Continue anyway - some clients might not send it
+	} else if n > 0 && !(crlfBuf[0] == '\r' || crlfBuf[0] == '\n') {
+		log.Printf("Warning: Expected CRLF after literal data, got: %v", crlfBuf[:n])
+		// Continue anyway - be lenient with protocol violations
+	}
+
+	rawMessage := string(messageData)
+
+	// Ensure message has CRLF line endings
+	if !strings.Contains(rawMessage, "\r\n") {
+		rawMessage = strings.ReplaceAll(rawMessage, "\n", "\r\n")
+	}
+
+	// Parse and store message using new schema
+	parsed, err := parser.ParseMIMEMessage(rawMessage)
+	if err != nil {
+		log.Printf("Failed to parse message: %v", err)
+		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to parse message", tag))
+		return
+	}
+
+	// Store message in database
+	messageID, err := parser.StoreMessagePerUser(userDB, parsed)
+	if err != nil {
+		log.Printf("Failed to store message: %v", err)
+		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to save message", tag))
+		return
+	}
+
+	// Add message to mailbox
+	internalDate := time.Now()
+	err = db.AddMessageToMailboxPerUser(userDB, messageID, mailboxID, flags, internalDate)
+	if err != nil {
+		log.Printf("Failed to add message to mailbox: %v", err)
+		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to add message to mailbox", tag))
+		return
+	}
+
+	// Get UID validity for APPENDUID response
+	uidValidity, _, err := db.GetMailboxInfoPerUser(userDB, mailboxID)
+	if err != nil {
+		uidValidity = 1
+	}
+
+	// Get the UID assigned to the message
+	var newUID int64
+	query := "SELECT uid FROM message_mailbox WHERE message_id = ? AND mailbox_id = ?"
+	err = userDB.QueryRow(query, messageID, mailboxID).Scan(&newUID)
+	if err != nil {
+		log.Printf("Failed to get new UID: %v", err)
+		newUID = 1
+	}
+
+	log.Printf("Message appended to folder '%s' with UID %d", folder, newUID)
+
+	// Send success response with APPENDUID (RFC 4315 - UIDPLUS extension)
+	s.sendResponse(conn, fmt.Sprintf("%s OK [APPENDUID %d %d] APPEND completed", tag, uidValidity, newUID))
+}
+
+// ===== EXPUNGE =====
+
+func (s *IMAPServer) handleExpunge(conn net.Conn, tag string, state *models.ClientState) {
+	// EXPUNGE command requires authentication
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	// EXPUNGE command requires a selected mailbox (Selected state)
+	// Per RFC 3501: EXPUNGE is only valid in Selected state
+	if state.SelectedMailboxID == 0 {
+		s.sendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
+		return
+	}
+
+	// Per RFC 3501: EXPUNGE permanently removes all messages with \Deleted flag
+	// Before returning OK, an untagged EXPUNGE response is sent for each message removed
+	// The key difference from CLOSE: EXPUNGE sends untagged responses showing which
+	// messages were deleted
+
+	// Important: Per RFC 3501, if mailbox is read-only (selected with EXAMINE),
+	// EXPUNGE should return NO
+	// TODO: Add ReadOnly field to ClientState to properly handle EXAMINE
+
+	// Get user database
+	userDB, err := s.GetUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
+	// Query for all messages with \Deleted flag, ordered by sequence number
+	// We need to get the sequence numbers before deletion
+	rows, err := userDB.Query(`
+		SELECT id, uid FROM message_mailbox
+		WHERE mailbox_id = ? AND flags LIKE '%\Deleted%'
+		ORDER BY uid ASC
+	`, state.SelectedMailboxID)
+
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO EXPUNGE failed: %v", tag, err))
+		return
+	}
+	defer rows.Close()
+
+	// Collect messages to delete with their UIDs
+	type messageToDelete struct {
+		id  int64
+		uid int64
+	}
+	var messagesToDelete []messageToDelete
+	for rows.Next() {
+		var msg messageToDelete
+		if err := rows.Scan(&msg.id, &msg.uid); err == nil {
+			messagesToDelete = append(messagesToDelete, msg)
+		}
+	}
+	rows.Close()
+
+	// If no messages to delete, just return OK
+	if len(messagesToDelete) == 0 {
+		s.sendResponse(conn, fmt.Sprintf("%s OK EXPUNGE completed", tag))
+		return
+	}
+
+	// Get all messages in the mailbox to calculate sequence numbers
+	allRows, err := userDB.Query(`
+		SELECT id, uid FROM message_mailbox
+		WHERE mailbox_id = ?
+		ORDER BY uid ASC
+	`, state.SelectedMailboxID)
+
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO EXPUNGE failed: %v", tag, err))
+		return
+	}
+	defer allRows.Close()
+
+	// Build a map of message IDs to sequence numbers
+	sequenceMap := make(map[int64]int)
+	seqNum := 1
+	for allRows.Next() {
+		var id, uid int64
+		if err := allRows.Scan(&id, &uid); err == nil {
+			sequenceMap[id] = seqNum
+			seqNum++
+		}
+	}
+	allRows.Close()
+
+	// Delete messages and send EXPUNGE responses
+	// Important: As we delete messages, sequence numbers change for subsequent messages
+	// We need to account for this by tracking how many messages we've deleted
+	deletedCount := 0
+	for _, msg := range messagesToDelete {
+		// Get the original sequence number for this message
+		originalSeqNum := sequenceMap[msg.id]
+
+		// Adjust for previously deleted messages in this EXPUNGE operation
+		// When we delete message N, all messages after it shift down by 1
+		adjustedSeqNum := originalSeqNum - deletedCount
+
+		// Send untagged EXPUNGE response with the adjusted sequence number
+		s.sendResponse(conn, fmt.Sprintf("* %d EXPUNGE", adjustedSeqNum))
+
+		// Delete the message from the mailbox
+		userDB.Exec(`DELETE FROM message_mailbox WHERE id = ?`, msg.id)
+
+		deletedCount++
+	}
+
+	// Update state tracking
+	state.LastMessageCount -= len(messagesToDelete)
+	if state.LastMessageCount < 0 {
+		state.LastMessageCount = 0
+	}
+
+	// Send completion response
+	s.sendResponse(conn, fmt.Sprintf("%s OK EXPUNGE completed", tag))
+}
+
+// ===== CHECK =====
+
+func (s *IMAPServer) handleCheck(conn net.Conn, tag string, state *models.ClientState) {
+	// CHECK command requires authentication
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	// CHECK command requires a selected mailbox (Selected state)
+	// Per RFC 3501: CHECK is only valid in Selected state
+	if state.SelectedMailboxID == 0 {
+		s.sendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
+		return
+	}
+
+	// Get user database
+	userDB, err := s.GetUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s OK CHECK completed", tag))
+		return
+	}
+
+	// Perform checkpoint operations for the currently selected mailbox
+	// This involves resolving the server's in-memory state with the state on disk
+	// In our implementation, this is similar to NOOP but emphasizes housekeeping
+
+	// Get current mailbox state
+	currentCount, err := db.GetMessageCountPerUser(userDB, state.SelectedMailboxID)
+	if err != nil {
+		// If there's a database error, still complete normally per RFC 3501
+		// CHECK should always succeed even if housekeeping fails
+		s.sendResponse(conn, fmt.Sprintf("%s OK CHECK completed", tag))
+		return
+	}
+
+	currentRecent, err := db.GetUnseenCountPerUser(userDB, state.SelectedMailboxID)
+	if err != nil {
+		currentRecent = 0
+	}
+
+	// Update state tracking to ensure in-memory state matches database
+	// This is the "checkpoint" - synchronizing cached state with actual state
+	state.LastMessageCount = currentCount
+	state.LastRecentCount = currentRecent
+
+	// Note: Unlike NOOP, CHECK does not guarantee sending EXISTS responses
+	// Per RFC 3501: "There is no guarantee that an EXISTS untagged response
+	// will happen as a result of CHECK. NOOP, not CHECK, SHOULD be used for
+	// new message polling."
+	// Therefore, we do NOT send untagged responses here
+
+	// Always complete successfully per RFC 3501
+	s.sendResponse(conn, fmt.Sprintf("%s OK CHECK completed", tag))
+}
+
+// ===== EXPORTED METHODS FOR TESTING =====
+
+// HandleCheck exports the check handler for testing
+func (s *IMAPServer) HandleCheck(conn net.Conn, tag string, state *models.ClientState) {
+	s.handleCheck(conn, tag, state)
+}
+
+// ===== HELPER METHODS FOR FETCH =====
 
 // buildEnvelope builds an ENVELOPE structure from a message
 // ENVELOPE: (date subject from sender reply-to to cc bcc in-reply-to message-id)
@@ -1809,106 +2267,4 @@ func (s *IMAPServer) buildFallbackMultipartBodyStructure(rawMsg, mainType, subTy
 
 	// Return the multipart structure
 	return fmt.Sprintf("BODYSTRUCTURE (%s %s)", strings.Join(parts, " "), s.quoteOrNIL(subType))
-}
-
-func (s *IMAPServer) handleStatus(conn net.Conn, tag string, parts []string, state *models.ClientState) {
-	if !state.Authenticated {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
-		return
-	}
-
-	if len(parts) < 4 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD STATUS requires mailbox name and status data items", tag))
-		return
-	}
-
-	// Get user database
-	userDB, err := s.getUserDB(state.UserID)
-	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
-		return
-	}
-
-	// Parse mailbox name (could be quoted)
-	mailboxName := s.parseQuotedString(parts[2])
-
-	// Validate mailbox name
-	if mailboxName == "" {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid mailbox name", tag))
-		return
-	}
-
-	// Get mailbox ID using new schema
-	mailboxID, err := db.GetMailboxByNamePerUser(userDB, state.UserID, mailboxName)
-	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO STATUS failure: no status for that name", tag))
-		return
-	}
-
-	// Parse status data items - they are enclosed in parentheses
-	// Example: STATUS mailbox (MESSAGES RECENT)
-	// Build the full items string from remaining parts
-	itemsStr := strings.Join(parts[3:], " ")
-
-	// Remove parentheses if present
-	itemsStr = strings.Trim(itemsStr, "()")
-	itemsStr = strings.TrimSpace(itemsStr)
-
-	if itemsStr == "" {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD STATUS requires status data items", tag))
-		return
-	}
-
-	// Split items by whitespace
-	requestedItems := strings.Fields(strings.ToUpper(itemsStr))
-
-	if len(requestedItems) == 0 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD STATUS requires status data items", tag))
-		return
-	}
-
-	// Initialize status values
-	statusValues := make(map[string]int)
-
-	// Query total message count using new schema
-	messageCount, err := db.GetMessageCountPerUser(userDB, mailboxID)
-	if err != nil {
-		messageCount = 0
-	}
-	statusValues["MESSAGES"] = messageCount
-
-	// Query recent/unseen count using new schema
-	recentCount, err := db.GetUnseenCountPerUser(userDB, mailboxID)
-	if err != nil {
-		recentCount = 0
-	}
-	statusValues["RECENT"] = recentCount
-	statusValues["UNSEEN"] = recentCount
-
-	// Get mailbox info for UID values
-	uidValidity, uidNext, err := db.GetMailboxInfoPerUser(userDB, mailboxID)
-	if err == nil {
-		statusValues["UIDNEXT"] = int(uidNext)
-		statusValues["UIDVALIDITY"] = int(uidValidity)
-	} else {
-		statusValues["UIDNEXT"] = 1
-		statusValues["UIDVALIDITY"] = 1
-	}
-
-	// Build response with only requested items
-	var responseItems []string
-	for _, item := range requestedItems {
-		itemUpper := strings.ToUpper(item)
-		if value, ok := statusValues[itemUpper]; ok {
-			responseItems = append(responseItems, fmt.Sprintf("%s %d", itemUpper, value))
-		} else {
-			// Unknown status item - return BAD response
-			s.sendResponse(conn, fmt.Sprintf("%s BAD Unknown status data item: %s", tag, item))
-			return
-		}
-	}
-
-	// Send STATUS response
-	s.sendResponse(conn, fmt.Sprintf("* STATUS \"%s\" (%s)", mailboxName, strings.Join(responseItems, " ")))
-	s.sendResponse(conn, fmt.Sprintf("%s OK STATUS completed", tag))
 }

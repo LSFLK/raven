@@ -1,14 +1,16 @@
 package server
 
 import (
-	"database/sql"
 	"fmt"
 	"net"
 	"strconv"
 	"strings"
 
 	"raven/internal/models"
+	"raven/internal/server/utils"
 )
+
+// ===== UID (Main Dispatcher) =====
 
 // handleUID implements the UID command (RFC 3501 Section 6.4.8)
 // Syntax: UID <command> <arguments>
@@ -44,6 +46,8 @@ func (s *IMAPServer) handleUID(conn net.Conn, tag string, parts []string, state 
 	}
 }
 
+// ===== UID FETCH =====
+
 // handleUIDFetch implements UID FETCH command
 // Note: UID is always included in FETCH response, even if not requested
 func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, state *models.ClientState) {
@@ -62,14 +66,14 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 	}
 
 	// Get appropriate database (user or role mailbox)
-	targetDB, _, err := s.getSelectedDB(state)
+	targetDB, _, err := s.GetSelectedDB(state)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
 
 	// Parse UID sequence set using the correct database
-	uids := s.parseUIDSequenceSetWithDB(uidSequence, state.SelectedMailboxID, targetDB)
+	uids := utils.ParseUIDSequenceSetWithDB(uidSequence, state.SelectedMailboxID, targetDB)
 	if len(uids) == 0 {
 		// Non-existent UIDs are ignored without error - just return OK
 		s.sendResponse(conn, fmt.Sprintf("%s OK UID FETCH completed", tag))
@@ -83,6 +87,8 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 	s.sendResponse(conn, fmt.Sprintf("%s OK UID FETCH completed", tag))
 }
 
+// ===== UID SEARCH =====
+
 // handleUIDSearch implements UID SEARCH command
 // Returns UIDs instead of message sequence numbers
 func (s *IMAPServer) handleUIDSearch(conn net.Conn, tag string, parts []string, state *models.ClientState) {
@@ -92,7 +98,7 @@ func (s *IMAPServer) handleUIDSearch(conn net.Conn, tag string, parts []string, 
 	}
 
 	// Get appropriate database (user or role mailbox)
-	targetDB, _, err := s.getSelectedDB(state)
+	targetDB, _, err := s.GetSelectedDB(state)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -177,6 +183,8 @@ func (s *IMAPServer) handleUIDSearch(conn net.Conn, tag string, parts []string, 
 	s.sendResponse(conn, fmt.Sprintf("%s OK UID SEARCH completed", tag))
 }
 
+// ===== UID STORE =====
+
 // handleUIDStore implements UID STORE command
 // Updates flags for messages by UID
 func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, state *models.ClientState) {
@@ -186,7 +194,7 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 	}
 
 	// Get appropriate database (user or role mailbox)
-	targetDB, _, err := s.getSelectedDB(state)
+	targetDB, _, err := s.GetSelectedDB(state)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -214,7 +222,7 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 	}
 
 	// Parse UID sequence set using the correct database
-	uids := s.parseUIDSequenceSetWithDB(uidSequence, state.SelectedMailboxID, targetDB)
+	uids := utils.ParseUIDSequenceSetWithDB(uidSequence, state.SelectedMailboxID, targetDB)
 	if len(uids) == 0 {
 		// Non-existent UIDs are ignored without error
 		s.sendResponse(conn, fmt.Sprintf("%s OK UID STORE completed", tag))
@@ -268,6 +276,8 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 	s.sendResponse(conn, fmt.Sprintf("%s OK UID STORE completed", tag))
 }
 
+// ===== UID COPY =====
+
 // handleUIDCopy implements UID COPY command
 // Copies messages by UID to destination mailbox
 func (s *IMAPServer) handleUIDCopy(conn net.Conn, tag string, parts []string, state *models.ClientState) {
@@ -277,7 +287,7 @@ func (s *IMAPServer) handleUIDCopy(conn net.Conn, tag string, parts []string, st
 	}
 
 	// Get appropriate database (user or role mailbox)
-	targetDB, targetUserID, err := s.getSelectedDB(state)
+	targetDB, targetUserID, err := s.GetSelectedDB(state)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -287,7 +297,7 @@ func (s *IMAPServer) handleUIDCopy(conn net.Conn, tag string, parts []string, st
 	destMailbox := strings.Trim(strings.Join(parts[4:], " "), "\"")
 
 	// Parse UID sequence set using the correct database
-	uids := s.parseUIDSequenceSetWithDB(uidSequence, state.SelectedMailboxID, targetDB)
+	uids := utils.ParseUIDSequenceSetWithDB(uidSequence, state.SelectedMailboxID, targetDB)
 	if len(uids) == 0 {
 		// Non-existent UIDs are ignored without error
 		s.sendResponse(conn, fmt.Sprintf("%s OK UID COPY completed", tag))
@@ -377,110 +387,19 @@ func (s *IMAPServer) handleUIDCopy(conn net.Conn, tag string, parts []string, st
 	s.sendResponse(conn, fmt.Sprintf("%s OK UID COPY completed", tag))
 }
 
+// ===== UID Sequence Set Parsing (Wrapper Helper) =====
+
 // parseUIDSequenceSet parses a UID sequence set and returns list of UIDs
 // Handles: single (443), ranges (100:200), star (*), ranges with star (559:*)
+// This is a wrapper that gets the user database and delegates to utils.ParseUIDSequenceSetWithDB
 func (s *IMAPServer) parseUIDSequenceSet(sequenceSet string, mailboxID int64, userID int64) []int {
 	var uids []int
 
 	// Get user database
-	userDB, err := s.getUserDB(userID)
+	userDB, err := s.GetUserDB(userID)
 	if err != nil {
 		return uids
 	}
 
-	return s.parseUIDSequenceSetWithDB(sequenceSet, mailboxID, userDB)
-}
-
-// parseUIDSequenceSetWithDB parses a UID sequence set using a provided database connection
-// Handles: single (443), ranges (100:200), star (*), ranges with star (559:*)
-func (s *IMAPServer) parseUIDSequenceSetWithDB(sequenceSet string, mailboxID int64, db *sql.DB) []int {
-	var uids []int
-
-	// Get highest UID in mailbox for * handling
-	var maxUID int
-	err := db.QueryRow(`
-		SELECT COALESCE(MAX(uid), 0)
-		FROM message_mailbox
-		WHERE mailbox_id = ?
-	`, mailboxID).Scan(&maxUID)
-
-	if err != nil || maxUID == 0 {
-		return uids
-	}
-
-	// Split by comma for multiple sequences
-	parts := strings.Split(sequenceSet, ",")
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-
-		if part == "*" {
-			// * means highest UID
-			uids = append(uids, maxUID)
-		} else if strings.Contains(part, ":") {
-			// Range
-			rangeParts := strings.Split(part, ":")
-			if len(rangeParts) != 2 {
-				continue
-			}
-
-			start := 0
-			end := 0
-
-			if rangeParts[0] == "*" {
-				start = maxUID
-			} else {
-				start, _ = strconv.Atoi(rangeParts[0])
-			}
-
-			if rangeParts[1] == "*" {
-				end = maxUID
-			} else {
-				end, _ = strconv.Atoi(rangeParts[1])
-			}
-
-			// Ensure start <= end (RFC 3501: contents of range independent of order)
-			if start > end {
-				start, end = end, start
-			}
-
-			// Get all UIDs in range
-			rows, err := db.Query(`
-				SELECT uid
-				FROM message_mailbox
-				WHERE mailbox_id = ? AND uid >= ? AND uid <= ?
-				ORDER BY uid
-			`, mailboxID, start, end)
-
-			if err != nil {
-				continue
-			}
-
-			for rows.Next() {
-				var uid int
-				rows.Scan(&uid)
-				uids = append(uids, uid)
-			}
-			rows.Close()
-		} else {
-			// Single UID
-			uid, err := strconv.Atoi(part)
-			if err != nil {
-				continue
-			}
-
-			// Check if UID exists
-			var count int
-			db.QueryRow(`
-				SELECT COUNT(*)
-				FROM message_mailbox
-				WHERE mailbox_id = ? AND uid = ?
-			`, mailboxID, uid).Scan(&count)
-
-			if count > 0 {
-				uids = append(uids, uid)
-			}
-		}
-	}
-
-	return uids
+	return utils.ParseUIDSequenceSetWithDB(sequenceSet, mailboxID, userDB)
 }
