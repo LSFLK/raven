@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"go-imap/internal/models"
-	"go-imap/test/helpers"
+	"raven/internal/models"
+	"raven/test/helpers"
 )
 
 // TestLoginCommand_BasicFlow tests the basic LOGIN command flow with valid credentials

@@ -6,7 +6,7 @@ package server
 import (
 	"net"
 
-	"go-imap/internal/models"
+	"raven/internal/models"
 )
 
 // TestInterface provides access to internal methods for testing

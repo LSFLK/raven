@@ -7,8 +7,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"go-imap/internal/conf"
-	"go-imap/internal/sasl"
+	"raven/internal/conf"
+	"raven/internal/sasl"
 )
 
 func main() {

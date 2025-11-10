@@ -5,8 +5,8 @@ import (
 	"log"
 	"net"
 
-	"go-imap/internal/db"
-	"go-imap/internal/server"
+	"raven/internal/db"
+	"raven/internal/server"
 )
 
 const SERVER_IP = "0.0.0.0:143"

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"go-imap/internal/models"
-	"go-imap/test/helpers"
+	"raven/internal/models"
+	"raven/test/helpers"
 )
 
 // TestCapabilityCommand_RFCCompliance tests RFC 3501 compliance

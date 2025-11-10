@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"go-imap/internal/delivery/config"
+	"raven/internal/delivery/config"
 )
 
 func TestDefaultConfig(t *testing.T) {

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"go-imap/internal/models"
-	"go-imap/test/helpers"
+	"raven/internal/models"
+	"raven/test/helpers"
 )
 
 // Helper to check capability tokens exactly (avoids substring matches like LOGIN in LOGINDISABLED)

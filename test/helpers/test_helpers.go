@@ -23,10 +23,10 @@ import (
 	"testing"
 	"time"
 
-	"go-imap/internal/db"
-	"go-imap/internal/delivery/parser"
-	"go-imap/internal/models"
-	"go-imap/internal/server"
+	"raven/internal/db"
+	"raven/internal/delivery/parser"
+	"raven/internal/models"
+	"raven/internal/server"
 
 	_ "github.com/mattn/go-sqlite3"
 )

@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"go-imap/internal/db"
-	"go-imap/internal/delivery/parser"
-	"go-imap/internal/models"
+	"raven/internal/db"
+	"raven/internal/delivery/parser"
+	"raven/internal/models"
 )
 
 func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, state *models.ClientState) {

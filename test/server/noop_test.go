@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"go-imap/internal/models"
-	"go-imap/test/helpers"
+	"raven/internal/models"
+	"raven/test/helpers"
 )
 
 // TestNoopCommand_Unauthenticated tests NOOP before authentication

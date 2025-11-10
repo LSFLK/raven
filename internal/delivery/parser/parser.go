@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"go-imap/internal/db"
+	"raven/internal/db"
 )
 
 // Message represents a parsed email message (simple format for LMTP)

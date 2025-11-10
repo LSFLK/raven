@@ -6,9 +6,9 @@ import (
 	"net"
 	"strings"
 
-	"go-imap/internal/conf"
-	"go-imap/internal/db"
-	"go-imap/internal/models"
+	"raven/internal/conf"
+	"raven/internal/db"
+	"raven/internal/models"
 )
 
 type IMAPServer struct {
