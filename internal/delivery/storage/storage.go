@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -44,23 +45,41 @@ func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder s
 		return fmt.Errorf("failed to get/create domain: %w", err)
 	}
 
-	// Get or create user
-	userID, err := db.GetOrCreateUser(sharedDB, username, domainID)
-	if err != nil {
-		return fmt.Errorf("failed to get/create user: %w", err)
-	}
+	// Check if this is a role mailbox
+	roleMailboxID, _, roleErr := db.GetRoleMailboxByEmail(sharedDB, recipient)
 
-	// Get user database
-	userDB, err := s.dbManager.GetUserDB(userID)
-	if err != nil {
-		return fmt.Errorf("failed to get user database: %w", err)
+	var targetDB *sql.DB
+	var targetUserID int64
+
+	if roleErr == nil {
+		// This is a role mailbox - deliver to role mailbox database
+		targetDB, err = s.dbManager.GetRoleMailboxDB(roleMailboxID)
+		if err != nil {
+			return fmt.Errorf("failed to get role mailbox database: %w", err)
+		}
+		targetUserID = 0 // Role mailboxes use userID 0
+		log.Printf("Delivering to role mailbox: %s (ID: %d)", recipient, roleMailboxID)
+	} else {
+		// Not a role mailbox - deliver to regular user mailbox
+		// Get or create user
+		userID, err := db.GetOrCreateUser(sharedDB, username, domainID)
+		if err != nil {
+			return fmt.Errorf("failed to get/create user: %w", err)
+		}
+
+		// Get user database
+		targetDB, err = s.dbManager.GetUserDB(userID)
+		if err != nil {
+			return fmt.Errorf("failed to get user database: %w", err)
+		}
+		targetUserID = userID
 	}
 
 	// Get or create the target mailbox
-	mailboxID, err := db.GetMailboxByNamePerUser(userDB, userID, folder)
+	mailboxID, err := db.GetMailboxByNamePerUser(targetDB, targetUserID, folder)
 	if err != nil {
 		// Mailbox doesn't exist, create it
-		mailboxID, err = db.CreateMailboxPerUser(userDB, userID, folder, "")
+		mailboxID, err = db.CreateMailboxPerUser(targetDB, targetUserID, folder, "")
 		if err != nil {
 			return fmt.Errorf("failed to create mailbox: %w", err)
 		}
@@ -72,8 +91,8 @@ func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder s
 		return fmt.Errorf("failed to parse message: %w", err)
 	}
 
-	// Store the message in the user database
-	messageID, err := parser.StoreMessagePerUser(userDB, parsed)
+	// Store the message in the target database (user or role mailbox)
+	messageID, err := parser.StoreMessagePerUser(targetDB, parsed)
 	if err != nil {
 		return fmt.Errorf("failed to store message: %w", err)
 	}
@@ -84,13 +103,19 @@ func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder s
 		internalDate = time.Now()
 	}
 
-	err = db.AddMessageToMailboxPerUser(userDB, messageID, mailboxID, "", internalDate)
+	err = db.AddMessageToMailboxPerUser(targetDB, messageID, mailboxID, "", internalDate)
 	if err != nil {
 		return fmt.Errorf("failed to add message to mailbox: %w", err)
 	}
 
 	// Record delivery
-	err = db.RecordDeliveryPerUser(userDB, messageID, recipient, msg.From, "delivered", sql.NullInt64{Valid: true, Int64: userID}, "250 OK")
+	var userIDNull sql.NullInt64
+	if targetUserID > 0 {
+		userIDNull = sql.NullInt64{Valid: true, Int64: targetUserID}
+	} else {
+		userIDNull = sql.NullInt64{Valid: false}
+	}
+	err = db.RecordDeliveryPerUser(targetDB, messageID, recipient, msg.From, "delivered", userIDNull, "250 OK")
 	if err != nil {
 		// Log but don't fail - delivery tracking is not critical
 		fmt.Printf("Warning: failed to record delivery: %v\n", err)

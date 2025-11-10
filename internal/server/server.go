@@ -77,6 +77,18 @@ func (s *IMAPServer) getUserDB(userID int64) (*sql.DB, error) {
 	return s.dbManager.GetUserDB(userID)
 }
 
+// getSelectedDB returns the appropriate database based on client state
+// If a role mailbox is selected, returns the role mailbox database
+// Otherwise returns the user's database
+func (s *IMAPServer) getSelectedDB(state *models.ClientState) (*sql.DB, int64, error) {
+	if state.IsRoleMailbox {
+		roleDB, err := s.dbManager.GetRoleMailboxDB(state.SelectedRoleMailboxID)
+		return roleDB, 0, err // userID is 0 for role mailboxes
+	}
+	userDB, err := s.dbManager.GetUserDB(state.UserID)
+	return userDB, state.UserID, err
+}
+
 // getSharedDB returns the shared database connection
 func (s *IMAPServer) getSharedDB() *sql.DB {
 	return s.dbManager.GetSharedDB()

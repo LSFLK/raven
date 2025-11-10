@@ -28,18 +28,67 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 		return
 	}
 
-	// Get user database
-	userDB, err := s.getUserDB(state.UserID)
-	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
-		return
-	}
-
 	folder := strings.Trim(parts[2], "\"")
 	state.SelectedFolder = folder
 
+	// Check if this is a role mailbox path (e.g., "Roles/ceo@openmail.lk/INBOX")
+	var targetDB *sql.DB
+	var targetUserID int64
+	var actualMailboxName string
+
+	if strings.HasPrefix(folder, "Roles/") {
+		// Parse role mailbox path: Roles/email@domain.com/MAILBOX
+		pathParts := strings.SplitN(folder, "/", 3)
+		if len(pathParts) < 3 {
+			s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Invalid role mailbox path", tag))
+			return
+		}
+
+		roleEmail := pathParts[1]
+		actualMailboxName = pathParts[2]
+
+		// Get role mailbox ID from email
+		sharedDB := s.dbManager.GetSharedDB()
+		roleMailboxID, _, err := db.GetRoleMailboxByEmail(sharedDB, roleEmail)
+		if err != nil {
+			s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Role mailbox does not exist", tag))
+			return
+		}
+
+		// Check if user is assigned to this role mailbox
+		isAssigned, err := db.IsUserAssignedToRoleMailbox(sharedDB, state.UserID, roleMailboxID)
+		if err != nil || !isAssigned {
+			s.sendResponse(conn, fmt.Sprintf("%s NO [AUTHORIZATIONFAILED] Not authorized to access this role mailbox", tag))
+			return
+		}
+
+		// Get role mailbox database
+		targetDB, err = s.dbManager.GetRoleMailboxDB(roleMailboxID)
+		if err != nil {
+			s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+			return
+		}
+
+		// Role mailboxes use userID 0
+		targetUserID = 0
+		state.IsRoleMailbox = true
+		state.SelectedRoleMailboxID = roleMailboxID
+	} else {
+		// Regular user mailbox
+		var err error
+		targetDB, err = s.getUserDB(state.UserID)
+		if err != nil {
+			s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+			return
+		}
+		targetUserID = state.UserID
+		actualMailboxName = folder
+		state.IsRoleMailbox = false
+		state.SelectedRoleMailboxID = 0
+	}
+
 	// Get mailbox ID using new schema
-	mailboxID, err := db.GetMailboxByNamePerUser(userDB, state.UserID, folder)
+	mailboxID, err := db.GetMailboxByNamePerUser(targetDB, targetUserID, actualMailboxName)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Mailbox does not exist", tag))
 		return
@@ -48,7 +97,7 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 	state.SelectedMailboxID = mailboxID
 
 	// Get mailbox info (UID validity and next UID)
-	uidValidity, uidNext, err := db.GetMailboxInfoPerUser(userDB, mailboxID)
+	uidValidity, uidNext, err := db.GetMailboxInfoPerUser(targetDB, mailboxID)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Server error: cannot get mailbox info", tag))
 		return
@@ -58,13 +107,13 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 	state.UIDNext = uidNext
 
 	// Get message count using new schema
-	count, err := db.GetMessageCountPerUser(userDB, mailboxID)
+	count, err := db.GetMessageCountPerUser(targetDB, mailboxID)
 	if err != nil {
 		count = 0
 	}
 
 	// Get unseen (recent) count using new schema
-	recent, err := db.GetUnseenCountPerUser(userDB, mailboxID)
+	recent, err := db.GetUnseenCountPerUser(targetDB, mailboxID)
 	if err != nil {
 		recent = 0
 	}
@@ -80,7 +129,7 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 		ORDER BY seq_num ASC
 		LIMIT 1
 	`
-	err = userDB.QueryRow(query, mailboxID).Scan(&unseenSeqNum)
+	err = targetDB.QueryRow(query, mailboxID).Scan(&unseenSeqNum)
 	hasUnseen := (err == nil && unseenSeqNum > 0)
 
 	// Initialize state tracking for NOOP and other commands
@@ -129,8 +178,8 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 
 // handleFetchForUIDs handles FETCH for a list of UIDs (used by UID FETCH command)
 func (s *IMAPServer) handleFetchForUIDs(conn net.Conn, tag string, uids []int, items string, state *models.ClientState) {
-	// Get user database
-	userDB, err := s.getUserDB(state.UserID)
+	// Get appropriate database (user or role mailbox)
+	targetDB, _, err := s.getSelectedDB(state)
 	if err != nil {
 		return
 	}
@@ -141,7 +190,7 @@ func (s *IMAPServer) handleFetchForUIDs(conn net.Conn, tag string, uids []int, i
 		var seqNum int
 		var flags sql.NullString
 
-		err := userDB.QueryRow(`
+		err := targetDB.QueryRow(`
 			SELECT mm.message_id, mm.flags,
 				(SELECT COUNT(*) FROM message_mailbox mm2
 				 WHERE mm2.mailbox_id = mm.mailbox_id AND mm2.uid <= mm.uid) as seq_num
@@ -175,8 +224,8 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		return
 	}
 
-	// Get user database
-	userDB, err := s.getUserDB(state.UserID)
+	// Get appropriate database (user or role mailbox)
+	targetDB, _, err := s.getSelectedDB(state)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -219,7 +268,7 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		}
 		if seqRange[1] == "*" {
 			// Get max count for end using new schema
-			end, _ = db.GetMessageCountPerUser(userDB, state.SelectedMailboxID)
+			end, _ = db.GetMessageCountPerUser(targetDB, state.SelectedMailboxID)
 		} else {
 			end, err = strconv.Atoi(seqRange[1])
 			if err != nil || end < 1 {
@@ -238,13 +287,13 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		          FROM message_mailbox mm
 		          WHERE mm.mailbox_id = ?
 		          ORDER BY mm.uid ASC LIMIT ? OFFSET ?`
-		rows, err = userDB.Query(query, state.SelectedMailboxID, end-start+1, start-1)
+		rows, err = targetDB.Query(query, state.SelectedMailboxID, end-start+1, start-1)
 	} else if sequence == "1:*" || sequence == "*" {
 		query := `SELECT mm.message_id, mm.uid, mm.flags
 		          FROM message_mailbox mm
 		          WHERE mm.mailbox_id = ?
 		          ORDER BY mm.uid ASC`
-		rows, err = userDB.Query(query, state.SelectedMailboxID)
+		rows, err = targetDB.Query(query, state.SelectedMailboxID)
 	} else {
 		msgNum, parseErr := strconv.Atoi(sequence)
 		if parseErr != nil {
@@ -255,7 +304,7 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		          FROM message_mailbox mm
 		          WHERE mm.mailbox_id = ?
 		          ORDER BY mm.uid ASC LIMIT 1 OFFSET ?`
-		rows, err = userDB.Query(query, state.SelectedMailboxID, msgNum-1)
+		rows, err = targetDB.Query(query, state.SelectedMailboxID, msgNum-1)
 	}
 
 	if err != nil {
@@ -291,14 +340,14 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 
 // processFetchForMessage processes a single message for FETCH/UID FETCH
 func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64, seqNum int, flags, items string, state *models.ClientState) {
-	// Get user database
-	userDB, err := s.getUserDB(state.UserID)
+	// Get appropriate database (user or role mailbox)
+	targetDB, _, err := s.getSelectedDB(state)
 	if err != nil {
 		return
 	}
 
 	// Reconstruct message from new schema
-	rawMsg, err := parser.ReconstructMessage(userDB, messageID)
+	rawMsg, err := parser.ReconstructMessage(targetDB, messageID)
 	if err != nil {
 		// If reconstruction fails, skip this message
 		return
@@ -327,7 +376,7 @@ func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64,
 			var internalDate time.Time
 			// Query message_mailbox for internal_date using new schema
 			query := "SELECT internal_date FROM message_mailbox WHERE message_id = ? AND mailbox_id = ?"
-			err := userDB.QueryRow(query, messageID, state.SelectedMailboxID).Scan(&internalDate)
+			err := targetDB.QueryRow(query, messageID, state.SelectedMailboxID).Scan(&internalDate)
 
 			var dateStr string
 			if err != nil || internalDate.IsZero() {
@@ -565,8 +614,8 @@ func (s *IMAPServer) handleSearch(conn net.Conn, tag string, parts []string, sta
 		return
 	}
 
-	// Get user database
-	userDB, err := s.getUserDB(state.UserID)
+	// Get appropriate database (user or role mailbox)
+	targetDB, targetUserID, err := s.getSelectedDB(state)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -606,7 +655,7 @@ func (s *IMAPServer) handleSearch(conn net.Conn, tag string, parts []string, sta
 		WHERE mm.mailbox_id = ?
 		ORDER BY mm.uid ASC
 	`
-	rows, err := userDB.Query(query, state.SelectedMailboxID)
+	rows, err := targetDB.Query(query, state.SelectedMailboxID)
 	if err != nil {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Search failed: %v", tag, err))
 		return
@@ -634,7 +683,7 @@ func (s *IMAPServer) handleSearch(conn net.Conn, tag string, parts []string, sta
 
 	// Parse and evaluate search criteria
 	criteria := strings.Join(parts[searchStart:], " ")
-	matchingSeqNums := s.evaluateSearchCriteria(messages, criteria, charset, state.UserID)
+	matchingSeqNums := s.evaluateSearchCriteria(messages, criteria, charset, targetUserID)
 
 	// Build response
 	if len(matchingSeqNums) > 0 {
