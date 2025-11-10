@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"go-imap/internal/models"
-	"go-imap/test/helpers"
+	"raven/internal/models"
+	"raven/test/helpers"
 )
 
 // TestUIDCommand_Unauthenticated tests UID command without authentication

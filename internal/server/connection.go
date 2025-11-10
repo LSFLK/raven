@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"go-imap/internal/models"
+	"raven/internal/models"
 )
 
 func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {

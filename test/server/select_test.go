@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"go-imap/internal/models"
-	"go-imap/test/helpers"
+	"raven/internal/models"
+	"raven/test/helpers"
 )
 
 // TestSelectCommand_BasicFlow tests the basic SELECT command with an existing mailbox

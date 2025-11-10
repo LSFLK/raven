@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"go-imap/internal/db"
-	"go-imap/internal/delivery/config"
-	"go-imap/internal/delivery/storage"
+	"raven/internal/db"
+	"raven/internal/delivery/config"
+	"raven/internal/delivery/storage"
 )
 
 // Server represents an LMTP server

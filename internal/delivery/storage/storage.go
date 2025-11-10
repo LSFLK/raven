@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"go-imap/internal/db"
-	"go-imap/internal/delivery/parser"
+	"raven/internal/db"
+	"raven/internal/delivery/parser"
 )
 
 // Storage handles message storage operations

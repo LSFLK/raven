@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"go-imap/internal/models"
-	"go-imap/test/helpers"
+	"raven/internal/models"
+	"raven/test/helpers"
 )
 
 // TestStartTLS_BasicFlow tests the basic STARTTLS command flow per RFC 3501

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"go-imap/internal/models"
-	"go-imap/test/helpers"
+	"raven/internal/models"
+	"raven/test/helpers"
 )
 
 // TestSearchCommand_Unauthenticated tests SEARCH without authentication

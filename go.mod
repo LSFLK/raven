@@ -1,4 +1,4 @@
-module go-imap
+module raven
 
 go 1.25
 

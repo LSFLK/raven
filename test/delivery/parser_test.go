@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"go-imap/internal/delivery/parser"
+	"raven/internal/delivery/parser"
 )
 
 func TestParseMessage(t *testing.T) {

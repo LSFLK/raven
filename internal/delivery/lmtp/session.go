@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"go-imap/internal/delivery/config"
-	"go-imap/internal/delivery/parser"
-	"go-imap/internal/delivery/storage"
+	"raven/internal/delivery/config"
+	"raven/internal/delivery/parser"
+	"raven/internal/delivery/storage"
 )
 
 // Session represents an LMTP session

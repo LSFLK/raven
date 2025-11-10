@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go-imap/internal/models"
+	"raven/internal/models"
 )
 
 // handleUID implements the UID command (RFC 3501 Section 6.4.8)

@@ -7,9 +7,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"go-imap/internal/db"
-	"go-imap/internal/delivery/config"
-	"go-imap/internal/delivery/lmtp"
+	"raven/internal/db"
+	"raven/internal/delivery/config"
+	"raven/internal/delivery/lmtp"
 )
 
 func main() {

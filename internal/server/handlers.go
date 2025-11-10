@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"go-imap/internal/conf"
-	"go-imap/internal/db"
-	"go-imap/internal/delivery/parser"
-	"go-imap/internal/models"
+	"raven/internal/conf"
+	"raven/internal/db"
+	"raven/internal/delivery/parser"
+	"raven/internal/models"
 )
 
 func (s *IMAPServer) handleCapability(conn net.Conn, tag string, state *models.ClientState) {
