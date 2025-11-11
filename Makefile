@@ -42,11 +42,11 @@ run-delivery:
 
 # Test delivery service
 test-delivery:
-	go test -tags=test -v ./test/delivery
+	go test -tags=test -v ./internal/delivery/...
 
 # Test SASL authentication service
 test-sasl:
-	go test -tags=test -v ./test/sasl
+	go test -tags=test -v ./internal/sasl
 
 # Build SASL authentication service
 build-sasl:
@@ -65,166 +65,166 @@ test:
 
 # Run only capability-related tests
 test-capability:
-	go test -tags=test -v ./test/server -run "TestCapabilityCommand"
+	go test -tags=test -v ./internal/server -run "TestCapabilityCommand"
 
 # Run only NOOP-related tests
 test-noop:
-	go test -tags=test -v ./test/server -run "TestNoopCommand"
+	go test -tags=test -v ./internal/server -run "TestNoopCommand"
 
 # Run only CHECK-related tests
 test-check:
-	go test -tags=test -v ./test/server -run "TestCheckCommand"
+	go test -tags=test -v ./internal/server -run "TestCheckCommand"
 
 # Run only CLOSE-related tests
 test-close:
-	go test -tags=test -v ./test/server -run "TestCloseCommand"
+	go test -tags=test -v ./internal/server -run "TestCloseCommand"
 
 # Run only EXPUNGE-related tests
 test-expunge:
-	go test -tags=test -v ./test/server -run "TestExpungeCommand"
+	go test -tags=test -v ./internal/server -run "TestExpungeCommand"
 
 # Run only LOGOUT-related tests
 test-logout:
-	go test -tags=test -v ./test/server -run "TestLogoutCommand"
+	go test -tags=test -v ./internal/server -run "TestLogoutCommand"
 
 # Run only APPEND-related tests
 test-append:
-	go test -tags=test -v ./test/server -run "TestAppendCommand"
+	go test -tags=test -v ./internal/server -run "TestAppendCommand"
 
 # Run only AUTHENTICATE-related tests
 test-authenticate:
-	go test -tags=test -v ./test/server -run "TestAuthenticate"
+	go test -tags=test -v ./internal/server -run "TestAuthenticate"
 
 # Run AUTHENTICATE benchmarks
 bench-authenticate:
-	go test -tags=test -bench=BenchmarkAuthenticate -benchmem ./test/server
+	go test -tags=test -bench=BenchmarkAuthenticate -benchmem ./internal/server
 
 # Run only LOGIN-related tests
 test-login:
-	go test -tags=test -v ./test/server -run "TestLoginCommand"
+	go test -tags=test -v ./internal/server -run "TestLoginCommand"
 
 # Run only STARTTLS-related tests
 test-starttls:
-	go test -tags=test -v ./test/server -run "TestStartTLS"
+	go test -tags=test -v ./internal/server -run "TestStartTLS"
 
 # Run only SELECT-related tests
 test-select:
-	go test -tags=test -v ./test/server -run "TestSelectCommand"
+	go test -tags=test -v ./internal/server -run "TestSelectCommand"
 
 # Run only EXAMINE-related tests
 test-examine:
-	go test -tags=test -v ./test/server -run "TestExamineCommand"
+	go test -tags=test -v ./internal/server -run "TestExamineCommand"
 
 # Run only CREATE-related tests
 test-create:
-	go test -tags=test -v ./test/server -run "TestCreateCommand"
+	go test -tags=test -v ./internal/server -run "TestCreateCommand"
 
 # Run only LIST-related tests
 test-list:
-	go test -tags=test -v ./test/server -run "TestListCommand"
+	go test -tags=test -v ./internal/server -run "TestListCommand"
 
 # Run LIST extended tests (RFC3501, wildcards, hierarchy, etc.)
 test-list-extended:
-	go test -tags=test -v ./test/server -run "TestListCommand.*RFC3501|TestListCommand.*Wildcard|TestListCommand.*Hierarchy|TestListCommand.*Reference|TestListCommand.*Error|TestListCommand.*Special"
+	go test -tags=test -v ./internal/server -run "TestListCommand.*RFC3501|TestListCommand.*Wildcard|TestListCommand.*Hierarchy|TestListCommand.*Reference|TestListCommand.*Error|TestListCommand.*Special"
 
 # Run only DELETE-related tests
 test-delete:
-	go test -tags=test -v ./test/server -run "TestDeleteCommand"
+	go test -tags=test -v ./internal/server -run "TestDeleteCommand"
 
 # Run only SUBSCRIBE-related tests
 test-subscribe:
-	go test -tags=test -v ./test/server -run "TestSubscribeCommand"
+	go test -tags=test -v ./internal/server -run "TestSubscribeCommand"
 
 # Run only UNSUBSCRIBE-related tests
 test-unsubscribe:
-	go test -tags=test -v ./test/server -run "TestUnsubscribeCommand"
+	go test -tags=test -v ./internal/server -run "TestUnsubscribeCommand"
 
 # Run only LSUB-related tests
 test-lsub:
-	go test -tags=test -v ./test/server -run "TestLsubCommand"
+	go test -tags=test -v ./internal/server -run "TestLsubCommand"
 
 # Run only STATUS-related tests
 test-status:
-	go test -tags=test -v ./test/server -run "TestStatusCommand"
+	go test -tags=test -v ./internal/server -run "TestStatusCommand"
 
 # Run only RENAME-related tests
 test-rename:
-	go test -tags=test -v ./test/server -run "TestRenameCommand"
+	go test -tags=test -v ./internal/server -run "TestRenameCommand"
 
 # Run only SEARCH-related tests
 test-search:
-	go test -tags=test -v ./test/server -run "TestSearchCommand"
+	go test -tags=test -v ./internal/server -run "TestSearchCommand"
 
 # Run only FETCH-related tests
 test-fetch:
-	go test -tags=test -v ./test/server -run "TestFetchCommand"
+	go test -tags=test -v ./internal/server -run "TestFetchCommand"
 
 # Run only STORE-related tests
 test-store:
-	go test -tags=test -v ./test/server -run "TestStoreCommand"
+	go test -tags=test -v ./internal/server -run "TestStoreCommand"
 
 # Run only COPY-related tests
 test-copy:
-	go test -tags=test -v ./test/server -run "TestCopyCommand"
+	go test -tags=test -v ./internal/server -run "TestCopyCommand"
 
 # Run only UID-related tests
 test-uid:
-	go test -tags=test -v ./test/server -run "TestUID"
+	go test -tags=test -v ./internal/server -run "TestUID"
 
 # Run all command tests (CAPABILITY + NOOP + CHECK + CLOSE + EXPUNGE + LOGOUT + APPEND + AUTHENTICATE + LOGIN + STARTTLS + SELECT + EXAMINE + CREATE + LIST + LIST-EXTENDED + DELETE + SUBSCRIBE + UNSUBSCRIBE + LSUB + STATUS + RENAME + SEARCH + FETCH + STORE + COPY + UID)
 test-commands:
 	@echo "Running CAPABILITY tests..."
-	@go test -tags=test -v ./test/server -run "TestCapabilityCommand"
+	@go test -tags=test -v ./internal/server -run "TestCapabilityCommand"
 	@echo "\nRunning NOOP tests..."
-	@go test -tags=test -v ./test/server -run "TestNoopCommand"
+	@go test -tags=test -v ./internal/server -run "TestNoopCommand"
 	@echo "\nRunning CHECK tests..."
-	@go test -tags=test -v ./test/server -run "TestCheckCommand"
+	@go test -tags=test -v ./internal/server -run "TestCheckCommand"
 	@echo "\nRunning CLOSE tests..."
-	@go test -tags=test -v ./test/server -run "TestCloseCommand"
+	@go test -tags=test -v ./internal/server -run "TestCloseCommand"
 	@echo "\nRunning EXPUNGE tests..."
-	@go test -tags=test -v ./test/server -run "TestExpungeCommand"
+	@go test -tags=test -v ./internal/server -run "TestExpungeCommand"
 	@echo "\nRunning LOGOUT tests..."
-	@go test -tags=test -v ./test/server -run "TestLogoutCommand"
+	@go test -tags=test -v ./internal/server -run "TestLogoutCommand"
 	@echo "\nRunning APPEND tests..."
-	@go test -tags=test -v ./test/server -run "TestAppendCommand"
+	@go test -tags=test -v ./internal/server -run "TestAppendCommand"
 	@echo "\nRunning AUTHENTICATE tests..."
-	@go test -tags=test -v ./test/server -run "TestAuthenticate"
+	@go test -tags=test -v ./internal/server -run "TestAuthenticate"
 	@echo "\nRunning LOGIN tests..."
-	@go test -tags=test -v ./test/server -run "TestLoginCommand"
+	@go test -tags=test -v ./internal/server -run "TestLoginCommand"
 	@echo "\nRunning STARTTLS tests..."
-	@go test -tags=test -v ./test/server -run "TestStartTLS"
+	@go test -tags=test -v ./internal/server -run "TestStartTLS"
 	@echo "\nRunning SELECT tests..."
-	@go test -tags=test -v ./test/server -run "TestSelectCommand"
+	@go test -tags=test -v ./internal/server -run "TestSelectCommand"
 	@echo "\nRunning EXAMINE tests..."
-	@go test -tags=test -v ./test/server -run "TestExamineCommand"
+	@go test -tags=test -v ./internal/server -run "TestExamineCommand"
 	@echo "\nRunning CREATE tests..."
-	@go test -tags=test -v ./test/server -run "TestCreateCommand"
+	@go test -tags=test -v ./internal/server -run "TestCreateCommand"
 	@echo "\nRunning LIST tests..."
-	@go test -tags=test -v ./test/server -run "TestListCommand"
+	@go test -tags=test -v ./internal/server -run "TestListCommand"
 	@echo "\nRunning LIST extended tests..."
-	@go test -tags=test -v ./test/server -run "TestListCommand.*RFC3501|TestListCommand.*Wildcard|TestListCommand.*Hierarchy|TestListCommand.*Reference|TestListCommand.*Error|TestListCommand.*Special"
+	@go test -tags=test -v ./internal/server -run "TestListCommand.*RFC3501|TestListCommand.*Wildcard|TestListCommand.*Hierarchy|TestListCommand.*Reference|TestListCommand.*Error|TestListCommand.*Special"
 	@echo "\nRunning DELETE tests..."
-	@go test -tags=test -v ./test/server -run "TestDeleteCommand"
+	@go test -tags=test -v ./internal/server -run "TestDeleteCommand"
 	@echo "\nRunning SUBSCRIBE tests..."
-	@go test -tags=test -v ./test/server -run "TestSubscribeCommand"
+	@go test -tags=test -v ./internal/server -run "TestSubscribeCommand"
 	@echo "\nRunning UNSUBSCRIBE tests..."
-	@go test -tags=test -v ./test/server -run "TestUnsubscribeCommand"
+	@go test -tags=test -v ./internal/server -run "TestUnsubscribeCommand"
 	@echo "\nRunning LSUB tests..."
-	@go test -tags=test -v ./test/server -run "TestLsubCommand"
+	@go test -tags=test -v ./internal/server -run "TestLsubCommand"
 	@echo "\nRunning STATUS tests..."
-	@go test -tags=test -v ./test/server -run "TestStatusCommand"
+	@go test -tags=test -v ./internal/server -run "TestStatusCommand"
 	@echo "\nRunning RENAME tests..."
-	@go test -tags=test -v ./test/server -run "TestRenameCommand"
+	@go test -tags=test -v ./internal/server -run "TestRenameCommand"
 	@echo "\nRunning SEARCH tests..."
-	@go test -tags=test -v ./test/server -run "TestSearchCommand"
+	@go test -tags=test -v ./internal/server -run "TestSearchCommand"
 	@echo "\nRunning FETCH tests..."
-	@go test -tags=test -v ./test/server -run "TestFetchCommand"
+	@go test -tags=test -v ./internal/server -run "TestFetchCommand"
 	@echo "\nRunning STORE tests..."
-	@go test -tags=test -v ./test/server -run "TestStoreCommand"
+	@go test -tags=test -v ./internal/server -run "TestStoreCommand"
 	@echo "\nRunning COPY tests..."
-	@go test -tags=test -v ./test/server -run "TestCopyCommand"
+	@go test -tags=test -v ./internal/server -run "TestCopyCommand"
 	@echo "\nRunning UID tests..."
-	@go test -tags=test -v ./test/server -run "TestUID"
+	@go test -tags=test -v ./internal/server -run "TestUID"
 
 # Run tests with verbose output
 test-verbose:
@@ -233,7 +233,7 @@ test-verbose:
 # Run tests with coverage
 test-coverage:
 	go test -tags=test -cover ./...
-	go test -tags=test -coverprofile=coverage.out ./test/server
+	go test -tags=test -coverprofile=coverage.out ./internal/server
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "\nCoverage report generated: coverage.html"
 
@@ -243,11 +243,11 @@ test-race:
 
 # Run capability tests with detailed output (deprecated, use test-capability)
 test-capability-detailed:
-	go test -tags=test -v -run "TestCapabilityCommand" ./test/server
+	go test -tags=test -v -run "TestCapabilityCommand" ./internal/server
 
 # Run benchmarks
 bench:
-	go test -tags=test -bench=. ./test/server
+	go test -tags=test -bench=. ./internal/server
 
 # Clean test artifacts
 clean:
@@ -260,7 +260,7 @@ test-single:
 		echo "Please specify TEST variable"; \
 		exit 1; \
 	fi
-	go test -tags=test -v -run "$(TEST)" ./test/server
+	go test -tags=test -v -run "$(TEST)" ./internal/server
 
 # Install test dependencies
 deps:
