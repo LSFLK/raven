@@ -1,7 +1,4 @@
-//go:build test
-// +build test
-
-package helpers
+package server
 
 import (
 	"bufio"
@@ -26,7 +23,6 @@ import (
 	"raven/internal/db"
 	"raven/internal/delivery/parser"
 	"raven/internal/models"
-	"raven/internal/server"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -110,7 +106,7 @@ var _ MockConnInterface = (*MockConn)(nil)
 var _ MockConnInterface = (*MockTLSConn)(nil)
 
 // SetupTestServer creates a test IMAP server with DBManager and per-user databases
-func SetupTestServer(t *testing.T) (*server.TestInterface, func()) {
+func SetupTestServer(t *testing.T) (*TestInterface, func()) {
 	// Create a temporary directory for databases
 	tmpDir := t.TempDir()
 
@@ -120,8 +116,8 @@ func SetupTestServer(t *testing.T) (*server.TestInterface, func()) {
 		t.Fatalf("Failed to initialize DBManager: %v", err)
 	}
 
-	imapServer := server.NewIMAPServer(dbManager)
-	testInterface := server.NewTestInterface(imapServer)
+	imapServer := NewIMAPServer(dbManager)
+	testInterface := NewTestInterface(imapServer)
 
 	// Generate test certificates for STARTTLS
 	certPath, keyPath, certCleanup := GenerateTestCertificates(t)
@@ -137,19 +133,19 @@ func SetupTestServer(t *testing.T) (*server.TestInterface, func()) {
 
 // SetupTestServerSimple creates a test IMAP server without cleanup function
 // for backward compatibility with existing tests
-func SetupTestServerSimple(t *testing.T) *server.TestInterface {
+func SetupTestServerSimple(t *testing.T) *TestInterface {
 	srv, _ := SetupTestServer(t)
 	return srv
 }
 
 // TestServerWithDBManager creates a test server with a specific DBManager
-func TestServerWithDBManager(dbManager *db.DBManager) *server.TestInterface {
-	imapServer := server.NewIMAPServer(dbManager)
-	return server.NewTestInterface(imapServer)
+func TestServerWithDBManager(dbManager *db.DBManager) *TestInterface {
+	imapServer := NewIMAPServer(dbManager)
+	return NewTestInterface(imapServer)
 }
 
 // TestServerWithDB creates a test server with a specific database - supports both *sql.DB and *db.DBManager
-func TestServerWithDB(database interface{}) *server.TestInterface {
+func TestServerWithDB(database interface{}) *TestInterface {
 	switch v := database.(type) {
 	case *db.DBManager:
 		return TestServerWithDBManager(v)
@@ -687,7 +683,7 @@ func GetUserID(t *testing.T, database *sql.DB, username string) int64 {
 }
 
 // SetupAuthenticatedState creates an authenticated state with proper user setup in database
-func SetupAuthenticatedState(t *testing.T, server *server.TestInterface, username string) *models.ClientState {
+func SetupAuthenticatedState(t *testing.T, server *TestInterface, username string) *models.ClientState {
 	dbManager := server.GetDBManager().(*db.DBManager)
 	sharedDB := dbManager.GetSharedDB()
 	

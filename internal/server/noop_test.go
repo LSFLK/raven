@@ -8,18 +8,18 @@ import (
 	"testing"
 
 	"raven/internal/models"
-	"raven/test/helpers"
+	
 )
 
 // TestNoopCommand_Unauthenticated tests NOOP before authentication
 func TestNoopCommand_Unauthenticated(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 	state := &models.ClientState{
 		Authenticated: false,
 	}
 
-	server.HandleNoop(conn, "N001", state)
+	srv.HandleNoop(conn, "N001", state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -38,15 +38,15 @@ func TestNoopCommand_Unauthenticated(t *testing.T) {
 
 // TestNoopCommand_AuthenticatedNoFolder tests NOOP when authenticated but no folder selected
 func TestNoopCommand_AuthenticatedNoFolder(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 	state := &models.ClientState{
 		Authenticated:  true,
 		Username:       "testuser",
 		SelectedFolder: "",
 	}
 
-	server.HandleNoop(conn, "N002", state)
+	srv.HandleNoop(conn, "N002", state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -65,8 +65,8 @@ func TestNoopCommand_AuthenticatedNoFolder(t *testing.T) {
 
 // TestNoopCommand_WithSelectedFolder tests NOOP with selected folder (no changes)
 func TestNoopCommand_WithSelectedFolder(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 	state := &models.ClientState{
 		Authenticated:    true,
 		Username:         "testuser",
@@ -76,7 +76,7 @@ func TestNoopCommand_WithSelectedFolder(t *testing.T) {
 	}
 
 	// Simulate current mailbox has same state (no changes)
-	server.HandleNoop(conn, "N003", state)
+	srv.HandleNoop(conn, "N003", state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -132,10 +132,10 @@ func TestNoopCommand_AlwaysSucceeds(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			server := helpers.SetupTestServerSimple(t)
-			conn := helpers.NewMockConn()
+			srv := SetupTestServerSimple(t)
+			conn := NewMockConn()
 
-			server.HandleNoop(conn, tc.tag, tc.state)
+			srv.HandleNoop(conn, tc.tag, tc.state)
 
 			response := conn.GetWrittenData()
 			
@@ -155,11 +155,11 @@ func TestNoopCommand_AlwaysSucceeds(t *testing.T) {
 
 // TestNoopCommand_ResponseFormat tests the format of NOOP responses
 func TestNoopCommand_ResponseFormat(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
-	server.HandleNoop(conn, "FORMAT", state)
+	srv.HandleNoop(conn, "FORMAT", state)
 
 	response := conn.GetWrittenData()
 	
@@ -179,14 +179,14 @@ func TestNoopCommand_ResponseFormat(t *testing.T) {
 
 // TestNoopCommand_MultipleInvocations tests calling NOOP multiple times
 func TestNoopCommand_MultipleInvocations(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Call NOOP multiple times with different tags
-	server.HandleNoop(conn, "M001", state)
-	server.HandleNoop(conn, "M002", state)
-	server.HandleNoop(conn, "M003", state)
+	srv.HandleNoop(conn, "M001", state)
+	srv.HandleNoop(conn, "M002", state)
+	srv.HandleNoop(conn, "M003", state)
 
 	response := conn.GetWrittenData()
 	
@@ -204,8 +204,8 @@ func TestNoopCommand_MultipleInvocations(t *testing.T) {
 
 // TestNoopCommand_StateTracking tests that NOOP updates state correctly
 func TestNoopCommand_StateTracking(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 	
 	// Start with initial state
 	initialCount := 5
@@ -219,7 +219,7 @@ func TestNoopCommand_StateTracking(t *testing.T) {
 		LastRecentCount:  initialRecent,
 	}
 
-	server.HandleNoop(conn, "TRACK", state)
+	srv.HandleNoop(conn, "TRACK", state)
 
 	// After NOOP, state should be updated with current mailbox state
 	// In this test, we expect state to be updated even if values haven't changed
@@ -247,11 +247,11 @@ func TestNoopCommand_TagHandling(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run("Tag_"+tc.tag, func(t *testing.T) {
-			server := helpers.SetupTestServerSimple(t)
-			conn := helpers.NewMockConn()
+			srv := SetupTestServerSimple(t)
+			conn := NewMockConn()
 			state := &models.ClientState{Authenticated: false}
 
-			server.HandleNoop(conn, tc.tag, state)
+			srv.HandleNoop(conn, tc.tag, state)
 
 			response := conn.GetWrittenData()
 			expectedOK := tc.expectedTag + " OK NOOP completed"
@@ -265,7 +265,7 @@ func TestNoopCommand_TagHandling(t *testing.T) {
 
 // TestNoopCommand_ConcurrentAccess tests concurrent NOOP requests
 func TestNoopCommand_ConcurrentAccess(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
+	srv := SetupTestServerSimple(t)
 	
 	const numRequests = 20
 	done := make(chan bool, numRequests)
@@ -273,12 +273,12 @@ func TestNoopCommand_ConcurrentAccess(t *testing.T) {
 	// Launch concurrent NOOP requests
 	for i := 0; i < numRequests; i++ {
 		go func(index int) {
-			conn := helpers.NewMockConn()
+			conn := NewMockConn()
 			state := &models.ClientState{
 				Authenticated: true,
 				Username:      "user",
 			}
-			server.HandleNoop(conn, "CONCURRENT", state)
+			srv.HandleNoop(conn, "CONCURRENT", state)
 			
 			response := conn.GetWrittenData()
 			if !strings.Contains(response, "CONCURRENT OK NOOP completed") {
@@ -297,11 +297,11 @@ func TestNoopCommand_ConcurrentAccess(t *testing.T) {
 // TestNoopCommand_RFC3501Compliance tests RFC 3501 compliance
 func TestNoopCommand_RFC3501Compliance(t *testing.T) {
 	t.Run("Always succeeds", func(t *testing.T) {
-		server := helpers.SetupTestServerSimple(t)
-		conn := helpers.NewMockConn()
+		srv := SetupTestServerSimple(t)
+		conn := NewMockConn()
 		state := &models.ClientState{}
 
-		server.HandleNoop(conn, "RFC1", state)
+		srv.HandleNoop(conn, "RFC1", state)
 
 		response := conn.GetWrittenData()
 		if !strings.Contains(response, "RFC1 OK") {
@@ -310,8 +310,8 @@ func TestNoopCommand_RFC3501Compliance(t *testing.T) {
 	})
 
 	t.Run("Can be used for polling", func(t *testing.T) {
-		server := helpers.SetupTestServerSimple(t)
-		conn := helpers.NewMockConn()
+		srv := SetupTestServerSimple(t)
+		conn := NewMockConn()
 		state := &models.ClientState{
 			Authenticated:    true,
 			SelectedFolder:   "INBOX",
@@ -321,7 +321,7 @@ func TestNoopCommand_RFC3501Compliance(t *testing.T) {
 
 		// Multiple NOOP calls to simulate polling
 		for i := 0; i < 3; i++ {
-			server.HandleNoop(conn, "RFC2", state)
+			srv.HandleNoop(conn, "RFC2", state)
 		}
 
 		response := conn.GetWrittenData()
@@ -335,11 +335,11 @@ func TestNoopCommand_RFC3501Compliance(t *testing.T) {
 	t.Run("Resets inactivity timer", func(t *testing.T) {
 		// This is implicit - by processing the command, the server
 		// resets any inactivity timer. We just verify NOOP works.
-		server := helpers.SetupTestServerSimple(t)
-		conn := helpers.NewMockConn()
+		srv := SetupTestServerSimple(t)
+		conn := NewMockConn()
 		state := &models.ClientState{Authenticated: true}
 
-		server.HandleNoop(conn, "RFC3", state)
+		srv.HandleNoop(conn, "RFC3", state)
 
 		response := conn.GetWrittenData()
 		if !strings.Contains(response, "RFC3 OK") {

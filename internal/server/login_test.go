@@ -5,15 +5,15 @@ import (
 	"testing"
 
 	"raven/internal/models"
-	"raven/test/helpers"
+	
 )
 
 // TestLoginCommand_BasicFlow tests the basic LOGIN command flow with valid credentials
 func TestLoginCommand_BasicFlow(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockTLSConn() // Use TLS connection
+	conn := NewMockTLSConn() // Use TLS connection
 	state := &models.ClientState{Authenticated: false}
 
 	// Send LOGIN command with valid credentials
@@ -31,10 +31,10 @@ func TestLoginCommand_BasicFlow(t *testing.T) {
 
 // TestLoginCommand_WithQuotedCredentials tests LOGIN with quoted username and password
 func TestLoginCommand_WithQuotedCredentials(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockTLSConn()
+	conn := NewMockTLSConn()
 	state := &models.ClientState{Authenticated: false}
 
 	// Send LOGIN command with quoted credentials
@@ -50,10 +50,10 @@ func TestLoginCommand_WithQuotedCredentials(t *testing.T) {
 
 // TestLoginCommand_MissingArguments tests LOGIN with missing arguments
 func TestLoginCommand_MissingArguments(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockTLSConn()
+	conn := NewMockTLSConn()
 	state := &models.ClientState{Authenticated: false}
 
 	// Send LOGIN command with only username (missing password)
@@ -73,10 +73,10 @@ func TestLoginCommand_MissingArguments(t *testing.T) {
 
 // TestLoginCommand_NoArguments tests LOGIN with no arguments
 func TestLoginCommand_NoArguments(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockTLSConn()
+	conn := NewMockTLSConn()
 	state := &models.ClientState{Authenticated: false}
 
 	// Send LOGIN command with no arguments
@@ -92,10 +92,10 @@ func TestLoginCommand_NoArguments(t *testing.T) {
 
 // TestLoginCommand_WithoutTLS tests that LOGIN is rejected without TLS
 func TestLoginCommand_WithoutTLS(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockConn() // Plain connection, not TLS
+	conn := NewMockConn() // Plain connection, not TLS
 	state := &models.ClientState{Authenticated: false}
 
 	// Send LOGIN command
@@ -116,10 +116,10 @@ func TestLoginCommand_WithoutTLS(t *testing.T) {
 
 // TestLoginCommand_StateNotAuthenticated tests that state is not authenticated before LOGIN
 func TestLoginCommand_StateNotAuthenticated(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockTLSConn()
+	conn := NewMockTLSConn()
 	state := &models.ClientState{Authenticated: false}
 
 	// Verify state is not authenticated before LOGIN
@@ -136,7 +136,7 @@ func TestLoginCommand_StateNotAuthenticated(t *testing.T) {
 
 // TestLoginCommand_EmptyCredentials tests LOGIN with empty username or password
 func TestLoginCommand_EmptyCredentials(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
 	testCases := []struct {
@@ -152,7 +152,7 @@ func TestLoginCommand_EmptyCredentials(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			conn := helpers.NewMockTLSConn()
+			conn := NewMockTLSConn()
 			state := &models.ClientState{Authenticated: false}
 
 			s.HandleLogin(conn, tc.tag, []string{tc.tag, "LOGIN", tc.username, tc.password}, state)
@@ -169,7 +169,7 @@ func TestLoginCommand_EmptyCredentials(t *testing.T) {
 
 // TestLoginCommand_SpecialCharactersInCredentials tests LOGIN with special characters
 func TestLoginCommand_SpecialCharactersInCredentials(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
 	testCases := []struct {
@@ -186,7 +186,7 @@ func TestLoginCommand_SpecialCharactersInCredentials(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			conn := helpers.NewMockTLSConn()
+			conn := NewMockTLSConn()
 			state := &models.ClientState{Authenticated: false}
 
 			s.HandleLogin(conn, tc.tag, []string{tc.tag, "LOGIN", tc.username, tc.password}, state)
@@ -203,7 +203,7 @@ func TestLoginCommand_SpecialCharactersInCredentials(t *testing.T) {
 
 // TestLoginCommand_CaseSensitivity tests that username and password are case-sensitive
 func TestLoginCommand_CaseSensitivity(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
 	testCases := []struct {
@@ -219,7 +219,7 @@ func TestLoginCommand_CaseSensitivity(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			conn := helpers.NewMockTLSConn()
+			conn := NewMockTLSConn()
 			state := &models.ClientState{Authenticated: false}
 
 			s.HandleLogin(conn, tc.tag, []string{tc.tag, "LOGIN", tc.username, tc.password}, state)
@@ -236,10 +236,10 @@ func TestLoginCommand_CaseSensitivity(t *testing.T) {
 
 // TestLoginCommand_ResponseFormat tests the format of LOGIN responses
 func TestLoginCommand_ResponseFormat(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockTLSConn()
+	conn := NewMockTLSConn()
 	state := &models.ClientState{Authenticated: false}
 
 	// Send LOGIN command
@@ -264,10 +264,10 @@ func TestLoginCommand_ResponseFormat(t *testing.T) {
 
 // TestLoginCommand_MultipleAttempts tests multiple LOGIN attempts
 func TestLoginCommand_MultipleAttempts(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockTLSConn()
+	conn := NewMockTLSConn()
 	state := &models.ClientState{Authenticated: false}
 
 	// First attempt
@@ -293,10 +293,10 @@ func TestLoginCommand_MultipleAttempts(t *testing.T) {
 
 // TestLoginCommand_LongCredentials tests LOGIN with very long username/password
 func TestLoginCommand_LongCredentials(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockTLSConn()
+	conn := NewMockTLSConn()
 	state := &models.ClientState{Authenticated: false}
 
 	// Create long credentials (but still reasonable)
@@ -315,7 +315,7 @@ func TestLoginCommand_LongCredentials(t *testing.T) {
 
 // TestLoginCommand_TagFormat tests various tag formats
 func TestLoginCommand_TagFormat(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
 	testCases := []struct {
@@ -331,7 +331,7 @@ func TestLoginCommand_TagFormat(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			conn := helpers.NewMockTLSConn()
+			conn := NewMockTLSConn()
 			state := &models.ClientState{Authenticated: false}
 
 			s.HandleLogin(conn, tc.tag, []string{tc.tag, "LOGIN", "user", "pass"}, state)
@@ -348,12 +348,12 @@ func TestLoginCommand_TagFormat(t *testing.T) {
 
 // TestLoginCommand_WithWhitespace tests LOGIN with whitespace in credentials
 func TestLoginCommand_WithWhitespace(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
 	// Note: Whitespace in unquoted atoms would break parsing at the connection handler level
 	// Here we test quoted strings with spaces
-	conn := helpers.NewMockTLSConn()
+	conn := NewMockTLSConn()
 	state := &models.ClientState{Authenticated: false}
 
 	// With quotes, spaces should be preserved
@@ -369,10 +369,10 @@ func TestLoginCommand_WithWhitespace(t *testing.T) {
 
 // TestLoginCommand_AfterSuccessfulLogin tests that state changes after successful login
 func TestLoginCommand_AfterSuccessfulLogin(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockTLSConn()
+	conn := NewMockTLSConn()
 	state := &models.ClientState{Authenticated: false}
 
 	// Send LOGIN command
@@ -399,10 +399,10 @@ func TestLoginCommand_AfterSuccessfulLogin(t *testing.T) {
 
 // TestLoginCommand_CapabilityInResponse tests that CAPABILITY is included in OK response per RFC 3501 6.3
 func TestLoginCommand_CapabilityInResponse(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockTLSConn()
+	conn := NewMockTLSConn()
 	state := &models.ClientState{Authenticated: false}
 
 	// Send LOGIN command
@@ -426,11 +426,11 @@ func TestLoginCommand_CapabilityInResponse(t *testing.T) {
 
 // TestLoginCommand_SecurityResponseCodes tests security-related response codes
 func TestLoginCommand_SecurityResponseCodes(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
 	// Test without TLS - should get security-related response code
-	conn := helpers.NewMockConn()
+	conn := NewMockConn()
 	state := &models.ClientState{Authenticated: false}
 
 	s.HandleLogin(conn, "A024", []string{"A024", "LOGIN", "testuser", "testpass"}, state)

@@ -1,25 +1,25 @@
 //go:build test
 // +build test
 
-package server_test
+package server
 
 import (
 	"strings"
 	"testing"
 
 	"raven/internal/models"
-	"raven/test/helpers"
+	
 )
 
 // TestExpungeCommand_Unauthenticated tests EXPUNGE before authentication
 func TestExpungeCommand_Unauthenticated(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 	state := &models.ClientState{
 		Authenticated: false,
 	}
 
-	server.HandleExpunge(conn, "E001", state)
+	srv.HandleExpunge(conn, "E001", state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -38,15 +38,15 @@ func TestExpungeCommand_Unauthenticated(t *testing.T) {
 
 // TestExpungeCommand_AuthenticatedNoMailbox tests EXPUNGE when authenticated but no mailbox selected
 func TestExpungeCommand_AuthenticatedNoMailbox(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 	state := &models.ClientState{
 		Authenticated:     true,
 		Username:          "testuser",
 		SelectedMailboxID: 0, // No mailbox selected
 	}
 
-	server.HandleExpunge(conn, "E002", state)
+	srv.HandleExpunge(conn, "E002", state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -65,13 +65,13 @@ func TestExpungeCommand_AuthenticatedNoMailbox(t *testing.T) {
 
 // TestExpungeCommand_NoDeletedMessages tests EXPUNGE with no deleted messages
 func TestExpungeCommand_NoDeletedMessages(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
 	// Setup authenticated state with selected mailbox
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+	state := SetupAuthenticatedState(t, srv, "testuser")
+	database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
@@ -79,10 +79,10 @@ func TestExpungeCommand_NoDeletedMessages(t *testing.T) {
 	state.SelectedFolder = "INBOX"
 
 	// Insert some messages (but don't mark them as deleted)
-	helpers.InsertTestMail(t, database, "testuser", "Message 1", "sender@example.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@example.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 1", "sender@example.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 2", "sender@example.com", "testuser@localhost", "INBOX")
 
-	server.HandleExpunge(conn, "E003", state)
+	srv.HandleExpunge(conn, "E003", state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -101,13 +101,13 @@ func TestExpungeCommand_NoDeletedMessages(t *testing.T) {
 
 // TestExpungeCommand_SingleDeletedMessage tests EXPUNGE with one deleted message
 func TestExpungeCommand_SingleDeletedMessage(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
 	// Setup authenticated state with selected mailbox
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+	state := SetupAuthenticatedState(t, srv, "testuser")
+	database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
@@ -115,16 +115,16 @@ func TestExpungeCommand_SingleDeletedMessage(t *testing.T) {
 	state.SelectedFolder = "INBOX"
 
 	// Insert messages
-	helpers.InsertTestMail(t, database, "testuser", "Message 1", "sender@example.com", "testuser@localhost", "INBOX")
-	msg2ID := helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@example.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Message 3", "sender@example.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 1", "sender@example.com", "testuser@localhost", "INBOX")
+	msg2ID := InsertTestMail(t, database, "testuser", "Message 2", "sender@example.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 3", "sender@example.com", "testuser@localhost", "INBOX")
 
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 2 as deleted
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, msg2ID)
 
-	server.HandleExpunge(conn, "E004", state)
+	srv.HandleExpunge(conn, "E004", state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -157,13 +157,13 @@ func TestExpungeCommand_SingleDeletedMessage(t *testing.T) {
 // TestExpungeCommand_MultipleDeletedMessages tests EXPUNGE with multiple deleted messages
 // This tests the RFC 3501 example scenario
 func TestExpungeCommand_MultipleDeletedMessages(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
 	// Setup authenticated state with selected mailbox
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+	state := SetupAuthenticatedState(t, srv, "testuser")
+	database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
@@ -173,12 +173,12 @@ func TestExpungeCommand_MultipleDeletedMessages(t *testing.T) {
 	// Insert 11 messages to match RFC 3501 example
 	var messageIDs []int64
 	for i := 1; i <= 11; i++ {
-		msgID := helpers.InsertTestMail(t, database, "testuser",
+		msgID := InsertTestMail(t, database, "testuser",
 			"Message "+string(rune('0'+i)), "sender@example.com", "testuser@localhost", "INBOX")
 		messageIDs = append(messageIDs, msgID)
 	}
 
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// Mark messages 3, 4, 7, and 11 as deleted (indices 2, 3, 6, 10)
 	// Per RFC 3501 example
@@ -187,7 +187,7 @@ func TestExpungeCommand_MultipleDeletedMessages(t *testing.T) {
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageIDs[6])
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageIDs[10])
 
-	server.HandleExpunge(conn, "A202", state)
+	srv.HandleExpunge(conn, "A202", state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -231,13 +231,13 @@ func TestExpungeCommand_MultipleDeletedMessages(t *testing.T) {
 
 // TestExpungeCommand_StateUpdate tests that EXPUNGE updates client state
 func TestExpungeCommand_StateUpdate(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
 	// Setup authenticated state with selected mailbox
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+	state := SetupAuthenticatedState(t, srv, "testuser")
+	database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
@@ -245,16 +245,16 @@ func TestExpungeCommand_StateUpdate(t *testing.T) {
 	state.SelectedFolder = "INBOX"
 
 	// Insert and delete some messages
-	msg1ID := helpers.InsertTestMail(t, database, "testuser", "Message 1", "sender@example.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@example.com", "testuser@localhost", "INBOX")
+	msg1ID := InsertTestMail(t, database, "testuser", "Message 1", "sender@example.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 2", "sender@example.com", "testuser@localhost", "INBOX")
 
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, msg1ID)
 
 	// Set initial state
 	state.LastMessageCount = 2
 
-	server.HandleExpunge(conn, "E005", state)
+	srv.HandleExpunge(conn, "E005", state)
 
 	// Verify state was updated
 	if state.LastMessageCount != 1 {
@@ -269,19 +269,19 @@ func TestExpungeCommand_StateUpdate(t *testing.T) {
 
 // TestExpungeCommand_ResponseFormat tests the format of EXPUNGE responses
 func TestExpungeCommand_ResponseFormat(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+	state := SetupAuthenticatedState(t, srv, "testuser")
+	database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
 	state.SelectedMailboxID = mailboxID
 	state.SelectedFolder = "INBOX"
 
-	server.HandleExpunge(conn, "FORMAT", state)
+	srv.HandleExpunge(conn, "FORMAT", state)
 
 	response := conn.GetWrittenData()
 
@@ -314,19 +314,19 @@ func TestExpungeCommand_TagHandling(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run("Tag_"+tc.tag, func(t *testing.T) {
-			server := helpers.SetupTestServerSimple(t)
-			conn := helpers.NewMockConn()
+			srv := SetupTestServerSimple(t)
+			conn := NewMockConn()
 
-			state := helpers.SetupAuthenticatedState(t, server, "testuser")
-			database := helpers.GetDatabaseFromServer(server)
-			mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+			state := SetupAuthenticatedState(t, srv, "testuser")
+			database := GetDatabaseFromServer(server)
+			mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 			if err != nil {
 				t.Fatalf("Failed to get INBOX mailbox: %v", err)
 			}
 			state.SelectedMailboxID = mailboxID
 			state.SelectedFolder = "INBOX"
 
-			server.HandleExpunge(conn, tc.tag, state)
+			srv.HandleExpunge(conn, tc.tag, state)
 
 			response := conn.GetWrittenData()
 			expectedOK := tc.expectedTag + " OK EXPUNGE completed"
@@ -341,8 +341,8 @@ func TestExpungeCommand_TagHandling(t *testing.T) {
 // TestExpungeCommand_RFC3501Compliance tests RFC 3501 compliance
 func TestExpungeCommand_RFC3501Compliance(t *testing.T) {
 	t.Run("Requires Selected state", func(t *testing.T) {
-		server := helpers.SetupTestServerSimple(t)
-		conn := helpers.NewMockConn()
+		srv := SetupTestServerSimple(t)
+		conn := NewMockConn()
 
 		// Authenticated but no mailbox selected
 		state := &models.ClientState{
@@ -351,7 +351,7 @@ func TestExpungeCommand_RFC3501Compliance(t *testing.T) {
 			SelectedMailboxID: 0,
 		}
 
-		server.HandleExpunge(conn, "RFC1", state)
+		srv.HandleExpunge(conn, "RFC1", state)
 
 		response := conn.GetWrittenData()
 		if !strings.Contains(response, "RFC1 NO") {
@@ -360,19 +360,19 @@ func TestExpungeCommand_RFC3501Compliance(t *testing.T) {
 	})
 
 	t.Run("Always succeeds in Selected state", func(t *testing.T) {
-		server := helpers.SetupTestServerSimple(t)
-		conn := helpers.NewMockConn()
+		srv := SetupTestServerSimple(t)
+		conn := NewMockConn()
 
-		state := helpers.SetupAuthenticatedState(t, server, "testuser")
-		database := helpers.GetDatabaseFromServer(server)
-		mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+		state := SetupAuthenticatedState(t, srv, "testuser")
+		database := GetDatabaseFromServer(server)
+		mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 		if err != nil {
 			t.Fatalf("Failed to get INBOX mailbox: %v", err)
 		}
 		state.SelectedMailboxID = mailboxID
 		state.SelectedFolder = "INBOX"
 
-		server.HandleExpunge(conn, "RFC2", state)
+		srv.HandleExpunge(conn, "RFC2", state)
 
 		response := conn.GetWrittenData()
 		if !strings.Contains(response, "RFC2 OK") {
@@ -381,12 +381,12 @@ func TestExpungeCommand_RFC3501Compliance(t *testing.T) {
 	})
 
 	t.Run("Sends EXPUNGE responses", func(t *testing.T) {
-		server := helpers.SetupTestServerSimple(t)
-		conn := helpers.NewMockConn()
+		srv := SetupTestServerSimple(t)
+		conn := NewMockConn()
 
-		state := helpers.SetupAuthenticatedState(t, server, "testuser")
-		database := helpers.GetDatabaseFromServer(server)
-		mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+		state := SetupAuthenticatedState(t, srv, "testuser")
+		database := GetDatabaseFromServer(server)
+		mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 		if err != nil {
 			t.Fatalf("Failed to get INBOX mailbox: %v", err)
 		}
@@ -394,12 +394,12 @@ func TestExpungeCommand_RFC3501Compliance(t *testing.T) {
 		state.SelectedFolder = "INBOX"
 
 		// Insert and delete a message
-		msgID := helpers.InsertTestMail(t, database, "testuser", "Test", "sender@example.com", "testuser@localhost", "INBOX")
+		msgID := InsertTestMail(t, database, "testuser", "Test", "sender@example.com", "testuser@localhost", "INBOX")
 
-		userDB := helpers.GetUserDBByID(t, database, state.UserID)
+		userDB := GetUserDBByID(t, database, state.UserID)
 		userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, msgID)
 
-		server.HandleExpunge(conn, "RFC3", state)
+		srv.HandleExpunge(conn, "RFC3", state)
 
 		response := conn.GetWrittenData()
 
@@ -415,19 +415,19 @@ func TestExpungeCommand_RFC3501Compliance(t *testing.T) {
 	})
 
 	t.Run("Stays in Selected state", func(t *testing.T) {
-		server := helpers.SetupTestServerSimple(t)
-		conn := helpers.NewMockConn()
+		srv := SetupTestServerSimple(t)
+		conn := NewMockConn()
 
-		state := helpers.SetupAuthenticatedState(t, server, "testuser")
-		database := helpers.GetDatabaseFromServer(server)
-		mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+		state := SetupAuthenticatedState(t, srv, "testuser")
+		database := GetDatabaseFromServer(server)
+		mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 		if err != nil {
 			t.Fatalf("Failed to get INBOX mailbox: %v", err)
 		}
 		state.SelectedMailboxID = mailboxID
 		state.SelectedFolder = "INBOX"
 
-		server.HandleExpunge(conn, "RFC4", state)
+		srv.HandleExpunge(conn, "RFC4", state)
 
 		// After EXPUNGE, should still be in Selected state
 		if state.SelectedMailboxID == 0 || state.SelectedFolder == "" {
@@ -445,34 +445,34 @@ func TestExpungeCommand_RFC3501Compliance(t *testing.T) {
 func TestExpungeCommand_VsClose(t *testing.T) {
 	t.Run("EXPUNGE sends responses, CLOSE does not", func(t *testing.T) {
 		// Test EXPUNGE
-		serverExp := helpers.SetupTestServerSimple(t)
-		connExp := helpers.NewMockConn()
-		stateExp := helpers.SetupAuthenticatedState(t, serverExp, "testuser")
-		databaseExp := helpers.GetDatabaseFromServer(serverExp)
-		mailboxIDExp, _ := helpers.GetMailboxID(t, databaseExp, stateExp.UserID, "INBOX")
+		serverExp := SetupTestServerSimple(t)
+		connExp := NewMockConn()
+		stateExp := SetupAuthenticatedState(t, serverExp, "testuser")
+		databaseExp := GetDatabaseFromServer(serverExp)
+		mailboxIDExp, _ := GetMailboxID(t, databaseExp, stateExp.UserID, "INBOX")
 		stateExp.SelectedMailboxID = mailboxIDExp
 		stateExp.SelectedFolder = "INBOX"
 
-		msgID := helpers.InsertTestMail(t, databaseExp, "testuser", "Test", "sender@example.com", "testuser@localhost", "INBOX")
+		msgID := InsertTestMail(t, databaseExp, "testuser", "Test", "sender@example.com", "testuser@localhost", "INBOX")
 
-		userDBExp := helpers.GetUserDBByID(t, databaseExp, stateExp.UserID)
+		userDBExp := GetUserDBByID(t, databaseExp, stateExp.UserID)
 		userDBExp.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxIDExp, msgID)
 
 		serverExp.HandleExpunge(connExp, "E001", stateExp)
 		expungeResponse := connExp.GetWrittenData()
 
 		// Test CLOSE
-		serverClose := helpers.SetupTestServerSimple(t)
-		connClose := helpers.NewMockConn()
-		stateClose := helpers.SetupAuthenticatedState(t, serverClose, "testuser2")
-		databaseClose := helpers.GetDatabaseFromServer(serverClose)
-		mailboxIDClose, _ := helpers.GetMailboxID(t, databaseClose, stateClose.UserID, "INBOX")
+		serverClose := SetupTestServerSimple(t)
+		connClose := NewMockConn()
+		stateClose := SetupAuthenticatedState(t, serverClose, "testuser2")
+		databaseClose := GetDatabaseFromServer(serverClose)
+		mailboxIDClose, _ := GetMailboxID(t, databaseClose, stateClose.UserID, "INBOX")
 		stateClose.SelectedMailboxID = mailboxIDClose
 		stateClose.SelectedFolder = "INBOX"
 
-		msgID2 := helpers.InsertTestMail(t, databaseClose, "testuser2", "Test", "sender@example.com", "testuser2@localhost", "INBOX")
+		msgID2 := InsertTestMail(t, databaseClose, "testuser2", "Test", "sender@example.com", "testuser2@localhost", "INBOX")
 
-		userDBClose := helpers.GetUserDBByID(t, databaseClose, stateClose.UserID)
+		userDBClose := GetUserDBByID(t, databaseClose, stateClose.UserID)
 		userDBClose.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxIDClose, msgID2)
 
 		serverClose.HandleClose(connClose, "C001", stateClose)
@@ -491,11 +491,11 @@ func TestExpungeCommand_VsClose(t *testing.T) {
 
 	t.Run("EXPUNGE stays in Selected, CLOSE returns to authenticated", func(t *testing.T) {
 		// Test EXPUNGE
-		serverExp := helpers.SetupTestServerSimple(t)
-		connExp := helpers.NewMockConn()
-		stateExp := helpers.SetupAuthenticatedState(t, serverExp, "testuser")
-		databaseExp := helpers.GetDatabaseFromServer(serverExp)
-		mailboxIDExp, _ := helpers.GetMailboxID(t, databaseExp, stateExp.UserID, "INBOX")
+		serverExp := SetupTestServerSimple(t)
+		connExp := NewMockConn()
+		stateExp := SetupAuthenticatedState(t, serverExp, "testuser")
+		databaseExp := GetDatabaseFromServer(serverExp)
+		mailboxIDExp, _ := GetMailboxID(t, databaseExp, stateExp.UserID, "INBOX")
 		stateExp.SelectedMailboxID = mailboxIDExp
 		stateExp.SelectedFolder = "INBOX"
 
@@ -507,11 +507,11 @@ func TestExpungeCommand_VsClose(t *testing.T) {
 		}
 
 		// Test CLOSE
-		serverClose := helpers.SetupTestServerSimple(t)
-		connClose := helpers.NewMockConn()
-		stateClose := helpers.SetupAuthenticatedState(t, serverClose, "testuser2")
-		databaseClose := helpers.GetDatabaseFromServer(serverClose)
-		mailboxIDClose, _ := helpers.GetMailboxID(t, databaseClose, stateClose.UserID, "INBOX")
+		serverClose := SetupTestServerSimple(t)
+		connClose := NewMockConn()
+		stateClose := SetupAuthenticatedState(t, serverClose, "testuser2")
+		databaseClose := GetDatabaseFromServer(serverClose)
+		mailboxIDClose, _ := GetMailboxID(t, databaseClose, stateClose.UserID, "INBOX")
 		stateClose.SelectedMailboxID = mailboxIDClose
 		stateClose.SelectedFolder = "INBOX"
 
@@ -526,12 +526,12 @@ func TestExpungeCommand_VsClose(t *testing.T) {
 
 // TestExpungeCommand_PreservesMessageData tests that EXPUNGE only removes from mailbox, not message data
 func TestExpungeCommand_PreservesMessageData(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+	state := SetupAuthenticatedState(t, srv, "testuser")
+	database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
@@ -539,14 +539,14 @@ func TestExpungeCommand_PreservesMessageData(t *testing.T) {
 	state.SelectedFolder = "INBOX"
 
 	// Insert a test message
-	messageID := helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@example.com", "testuser@localhost", "INBOX")
+	messageID := InsertTestMail(t, database, "testuser", "Test Subject", "sender@example.com", "testuser@localhost", "INBOX")
 
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// Mark it as deleted
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageID)
 
-	server.HandleExpunge(conn, "PRESERVE", state)
+	srv.HandleExpunge(conn, "PRESERVE", state)
 
 	// Message should be removed from mailbox
 	var countInMailbox int

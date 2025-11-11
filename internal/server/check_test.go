@@ -8,18 +8,18 @@ import (
 	"testing"
 
 	"raven/internal/models"
-	"raven/test/helpers"
+	
 )
 
 // TestCheckCommand_Unauthenticated tests CHECK before authentication
 func TestCheckCommand_Unauthenticated(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 	state := &models.ClientState{
 		Authenticated: false,
 	}
 
-	server.HandleCheck(conn, "C001", state)
+	srv.HandleCheck(conn, "C001", state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -38,15 +38,15 @@ func TestCheckCommand_Unauthenticated(t *testing.T) {
 
 // TestCheckCommand_AuthenticatedNoMailbox tests CHECK when authenticated but no mailbox selected
 func TestCheckCommand_AuthenticatedNoMailbox(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 	state := &models.ClientState{
 		Authenticated:      true,
 		Username:           "testuser",
 		SelectedMailboxID:  0, // No mailbox selected
 	}
 
-	server.HandleCheck(conn, "C002", state)
+	srv.HandleCheck(conn, "C002", state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -65,22 +65,22 @@ func TestCheckCommand_AuthenticatedNoMailbox(t *testing.T) {
 
 // TestCheckCommand_WithSelectedMailbox tests CHECK with selected mailbox
 func TestCheckCommand_WithSelectedMailbox(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
 	// Setup authenticated state with selected mailbox
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Set selected mailbox ID (INBOX was created by SetupAuthenticatedState)
-	database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+	database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
 	state.SelectedMailboxID = mailboxID
 	state.SelectedFolder = "INBOX"
 
-	server.HandleCheck(conn, "C003", state)
+	srv.HandleCheck(conn, "C003", state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -102,20 +102,20 @@ func TestCheckCommand_WithSelectedMailbox(t *testing.T) {
 // Per RFC 3501: "There is no guarantee that an EXISTS untagged response will
 // happen as a result of CHECK"
 func TestCheckCommand_NoExistsResponse(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
 	// Setup authenticated state with selected mailbox
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+	state := SetupAuthenticatedState(t, srv, "testuser")
+	database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
 	state.SelectedMailboxID = mailboxID
 	state.SelectedFolder = "INBOX"
 
-	server.HandleCheck(conn, "C004", state)
+	srv.HandleCheck(conn, "C004", state)
 
 	response := conn.GetWrittenData()
 
@@ -137,20 +137,20 @@ func TestCheckCommand_NoExistsResponse(t *testing.T) {
 
 // TestCheckCommand_AlwaysSucceeds tests that CHECK always returns OK when mailbox is selected
 func TestCheckCommand_AlwaysSucceeds(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
 	// Setup authenticated state with selected mailbox
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+	state := SetupAuthenticatedState(t, srv, "testuser")
+	database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
 	state.SelectedMailboxID = mailboxID
 	state.SelectedFolder = "INBOX"
 
-	server.HandleCheck(conn, "T001", state)
+	srv.HandleCheck(conn, "T001", state)
 
 	response := conn.GetWrittenData()
 
@@ -168,19 +168,19 @@ func TestCheckCommand_AlwaysSucceeds(t *testing.T) {
 
 // TestCheckCommand_ResponseFormat tests the format of CHECK responses
 func TestCheckCommand_ResponseFormat(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+	state := SetupAuthenticatedState(t, srv, "testuser")
+	database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
 	state.SelectedMailboxID = mailboxID
 	state.SelectedFolder = "INBOX"
 
-	server.HandleCheck(conn, "FORMAT", state)
+	srv.HandleCheck(conn, "FORMAT", state)
 
 	response := conn.GetWrittenData()
 
@@ -200,12 +200,12 @@ func TestCheckCommand_ResponseFormat(t *testing.T) {
 
 // TestCheckCommand_MultipleInvocations tests calling CHECK multiple times
 func TestCheckCommand_MultipleInvocations(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+	state := SetupAuthenticatedState(t, srv, "testuser")
+	database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
@@ -213,9 +213,9 @@ func TestCheckCommand_MultipleInvocations(t *testing.T) {
 	state.SelectedFolder = "INBOX"
 
 	// Call CHECK multiple times with different tags
-	server.HandleCheck(conn, "M001", state)
-	server.HandleCheck(conn, "M002", state)
-	server.HandleCheck(conn, "M003", state)
+	srv.HandleCheck(conn, "M001", state)
+	srv.HandleCheck(conn, "M002", state)
+	srv.HandleCheck(conn, "M003", state)
 
 	response := conn.GetWrittenData()
 
@@ -233,13 +233,13 @@ func TestCheckCommand_MultipleInvocations(t *testing.T) {
 
 // TestCheckCommand_StateTracking tests that CHECK updates state correctly
 func TestCheckCommand_StateTracking(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
 	// Setup authenticated state with selected mailbox
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+	state := SetupAuthenticatedState(t, srv, "testuser")
+	database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
@@ -250,7 +250,7 @@ func TestCheckCommand_StateTracking(t *testing.T) {
 	initialCount := state.LastMessageCount
 	initialRecent := state.LastRecentCount
 
-	server.HandleCheck(conn, "TRACK", state)
+	srv.HandleCheck(conn, "TRACK", state)
 
 	// After CHECK, state should be updated with current mailbox state
 	// The actual values depend on database state, but state should be synchronized
@@ -282,19 +282,19 @@ func TestCheckCommand_TagHandling(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run("Tag_"+tc.tag, func(t *testing.T) {
-			server := helpers.SetupTestServerSimple(t)
-			conn := helpers.NewMockConn()
+			srv := SetupTestServerSimple(t)
+			conn := NewMockConn()
 
-			state := helpers.SetupAuthenticatedState(t, server, "testuser")
-			database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+			state := SetupAuthenticatedState(t, srv, "testuser")
+			database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
 	state.SelectedMailboxID = mailboxID
 	state.SelectedFolder = "INBOX"
 
-			server.HandleCheck(conn, tc.tag, state)
+			srv.HandleCheck(conn, tc.tag, state)
 
 			response := conn.GetWrittenData()
 			expectedOK := tc.expectedTag + " OK CHECK completed"
@@ -308,7 +308,7 @@ func TestCheckCommand_TagHandling(t *testing.T) {
 
 // TestCheckCommand_ConcurrentAccess tests concurrent CHECK requests
 func TestCheckCommand_ConcurrentAccess(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
+	srv := SetupTestServerSimple(t)
 
 	const numRequests = 20
 	done := make(chan bool, numRequests)
@@ -316,17 +316,17 @@ func TestCheckCommand_ConcurrentAccess(t *testing.T) {
 	// Launch concurrent CHECK requests
 	for i := 0; i < numRequests; i++ {
 		go func(index int) {
-			conn := helpers.NewMockConn()
-			state := helpers.SetupAuthenticatedState(t, server, "user")
-			database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+			conn := NewMockConn()
+			state := SetupAuthenticatedState(t, srv, "user")
+			database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
 	state.SelectedMailboxID = mailboxID
 	state.SelectedFolder = "INBOX"
 
-			server.HandleCheck(conn, "CONCURRENT", state)
+			srv.HandleCheck(conn, "CONCURRENT", state)
 
 			response := conn.GetWrittenData()
 			if !strings.Contains(response, "CONCURRENT OK CHECK completed") {
@@ -345,8 +345,8 @@ func TestCheckCommand_ConcurrentAccess(t *testing.T) {
 // TestCheckCommand_RFC3501Compliance tests RFC 3501 compliance
 func TestCheckCommand_RFC3501Compliance(t *testing.T) {
 	t.Run("Requires Selected state", func(t *testing.T) {
-		server := helpers.SetupTestServerSimple(t)
-		conn := helpers.NewMockConn()
+		srv := SetupTestServerSimple(t)
+		conn := NewMockConn()
 
 		// Authenticated but no mailbox selected
 		state := &models.ClientState{
@@ -355,7 +355,7 @@ func TestCheckCommand_RFC3501Compliance(t *testing.T) {
 			SelectedMailboxID: 0,
 		}
 
-		server.HandleCheck(conn, "RFC1", state)
+		srv.HandleCheck(conn, "RFC1", state)
 
 		response := conn.GetWrittenData()
 		if !strings.Contains(response, "RFC1 NO") {
@@ -364,19 +364,19 @@ func TestCheckCommand_RFC3501Compliance(t *testing.T) {
 	})
 
 	t.Run("Always succeeds in Selected state", func(t *testing.T) {
-		server := helpers.SetupTestServerSimple(t)
-		conn := helpers.NewMockConn()
+		srv := SetupTestServerSimple(t)
+		conn := NewMockConn()
 
-		state := helpers.SetupAuthenticatedState(t, server, "testuser")
-		database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+		state := SetupAuthenticatedState(t, srv, "testuser")
+		database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
 	state.SelectedMailboxID = mailboxID
 	state.SelectedFolder = "INBOX"
 
-		server.HandleCheck(conn, "RFC2", state)
+		srv.HandleCheck(conn, "RFC2", state)
 
 		response := conn.GetWrittenData()
 		if !strings.Contains(response, "RFC2 OK") {
@@ -385,12 +385,12 @@ func TestCheckCommand_RFC3501Compliance(t *testing.T) {
 	})
 
 	t.Run("No guaranteed EXISTS response", func(t *testing.T) {
-		server := helpers.SetupTestServerSimple(t)
-		conn := helpers.NewMockConn()
+		srv := SetupTestServerSimple(t)
+		conn := NewMockConn()
 
-		state := helpers.SetupAuthenticatedState(t, server, "testuser")
-		database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+		state := SetupAuthenticatedState(t, srv, "testuser")
+		database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
@@ -399,7 +399,7 @@ func TestCheckCommand_RFC3501Compliance(t *testing.T) {
 
 		// Multiple CHECK calls should not generate EXISTS responses
 		for i := 0; i < 3; i++ {
-			server.HandleCheck(conn, "RFC3", state)
+			srv.HandleCheck(conn, "RFC3", state)
 		}
 
 		response := conn.GetWrittenData()
@@ -418,12 +418,12 @@ func TestCheckCommand_RFC3501Compliance(t *testing.T) {
 	t.Run("Housekeeping operation", func(t *testing.T) {
 		// This test verifies that CHECK performs housekeeping
 		// by synchronizing in-memory state with database state
-		server := helpers.SetupTestServerSimple(t)
-		conn := helpers.NewMockConn()
+		srv := SetupTestServerSimple(t)
+		conn := NewMockConn()
 
-		state := helpers.SetupAuthenticatedState(t, server, "testuser")
-		database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+		state := SetupAuthenticatedState(t, srv, "testuser")
+		database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
@@ -434,7 +434,7 @@ func TestCheckCommand_RFC3501Compliance(t *testing.T) {
 		state.LastMessageCount = 999
 		state.LastRecentCount = 999
 
-		server.HandleCheck(conn, "RFC4", state)
+		srv.HandleCheck(conn, "RFC4", state)
 
 		response := conn.GetWrittenData()
 		if !strings.Contains(response, "RFC4 OK") {
@@ -452,24 +452,24 @@ func TestCheckCommand_RFC3501Compliance(t *testing.T) {
 // TestCheckCommand_VsNoop tests the difference between CHECK and NOOP
 func TestCheckCommand_VsNoop(t *testing.T) {
 	t.Run("CHECK requires Selected state, NOOP does not", func(t *testing.T) {
-		server := helpers.SetupTestServerSimple(t)
+		srv := SetupTestServerSimple(t)
 
 		// Test NOOP without selected mailbox
-		connNoop := helpers.NewMockConn()
+		connNoop := NewMockConn()
 		stateNoop := &models.ClientState{
 			Authenticated: true,
 			Username:      "testuser",
 		}
-		server.HandleNoop(connNoop, "N001", stateNoop)
+		srv.HandleNoop(connNoop, "N001", stateNoop)
 		noopResponse := connNoop.GetWrittenData()
 
 		// Test CHECK without selected mailbox
-		connCheck := helpers.NewMockConn()
+		connCheck := NewMockConn()
 		stateCheck := &models.ClientState{
 			Authenticated: true,
 			Username:      "testuser",
 		}
-		server.HandleCheck(connCheck, "C001", stateCheck)
+		srv.HandleCheck(connCheck, "C001", stateCheck)
 		checkResponse := connCheck.GetWrittenData()
 
 		// NOOP should succeed
@@ -486,11 +486,11 @@ func TestCheckCommand_VsNoop(t *testing.T) {
 	t.Run("NOOP used for polling, CHECK for housekeeping", func(t *testing.T) {
 		// This is documented in RFC 3501 but behavioral difference is subtle
 		// NOOP can send EXISTS, CHECK does not guarantee it
-		server := helpers.SetupTestServerSimple(t)
+		srv := SetupTestServerSimple(t)
 
-		state := helpers.SetupAuthenticatedState(t, server, "testuser")
-		database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+		state := SetupAuthenticatedState(t, srv, "testuser")
+		database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
@@ -498,8 +498,8 @@ func TestCheckCommand_VsNoop(t *testing.T) {
 	state.SelectedFolder = "INBOX"
 
 		// CHECK should not send untagged responses
-		connCheck := helpers.NewMockConn()
-		server.HandleCheck(connCheck, "C001", state)
+		connCheck := NewMockConn()
+		srv.HandleCheck(connCheck, "C001", state)
 		checkResponse := connCheck.GetWrittenData()
 
 		checkLines := strings.Split(strings.TrimSpace(checkResponse), "\r\n")

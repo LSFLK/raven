@@ -1,25 +1,25 @@
 //go:build test
 // +build test
 
-package server_test
+package server
 
 import (
 	"strings"
 	"testing"
 
 	"raven/internal/models"
-	"raven/test/helpers"
+	
 )
 
 // TestFetchCommand_Unauthenticated tests FETCH without authentication
 func TestFetchCommand_Unauthenticated(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 	state := &models.ClientState{
 		Authenticated: false,
 	}
 
-	server.HandleFetch(conn, "F001", []string{"F001", "FETCH", "1", "FLAGS"}, state)
+	srv.HandleFetch(conn, "F001", []string{"F001", "FETCH", "1", "FLAGS"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "F001 NO Please authenticate first") {
@@ -29,11 +29,11 @@ func TestFetchCommand_Unauthenticated(t *testing.T) {
 
 // TestFetchCommand_NoMailboxSelected tests FETCH without mailbox selection
 func TestFetchCommand_NoMailboxSelected(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -41,7 +41,7 @@ func TestFetchCommand_NoMailboxSelected(t *testing.T) {
 		SelectedMailboxID: 0, // No mailbox selected
 	}
 
-	server.HandleFetch(conn, "F002", []string{"F002", "FETCH", "1", "FLAGS"}, state)
+	srv.HandleFetch(conn, "F002", []string{"F002", "FETCH", "1", "FLAGS"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "F002 NO No folder selected") {
@@ -51,14 +51,14 @@ func TestFetchCommand_NoMailboxSelected(t *testing.T) {
 
 // TestFetchCommand_FLAGS tests FETCH FLAGS
 func TestFetchCommand_FLAGS(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	msg1ID := helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	msg1ID := InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -66,12 +66,12 @@ func TestFetchCommand_FLAGS(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// Set some flags
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen \Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
 
-	server.HandleFetch(conn, "F003", []string{"F003", "FETCH", "1", "FLAGS"}, state)
+	srv.HandleFetch(conn, "F003", []string{"F003", "FETCH", "1", "FLAGS"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "* 1 FETCH") {
@@ -87,14 +87,14 @@ func TestFetchCommand_FLAGS(t *testing.T) {
 
 // TestFetchCommand_UID tests FETCH UID
 func TestFetchCommand_UID(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -103,7 +103,7 @@ func TestFetchCommand_UID(t *testing.T) {
 		SelectedMailboxID: mailboxID,
 	}
 
-	server.HandleFetch(conn, "F004", []string{"F004", "FETCH", "1", "UID"}, state)
+	srv.HandleFetch(conn, "F004", []string{"F004", "FETCH", "1", "UID"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "* 1 FETCH") {
@@ -116,14 +116,14 @@ func TestFetchCommand_UID(t *testing.T) {
 
 // TestFetchCommand_INTERNALDATE tests FETCH INTERNALDATE
 func TestFetchCommand_INTERNALDATE(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -132,7 +132,7 @@ func TestFetchCommand_INTERNALDATE(t *testing.T) {
 		SelectedMailboxID: mailboxID,
 	}
 
-	server.HandleFetch(conn, "F005", []string{"F005", "FETCH", "1", "INTERNALDATE"}, state)
+	srv.HandleFetch(conn, "F005", []string{"F005", "FETCH", "1", "INTERNALDATE"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "INTERNALDATE") {
@@ -142,14 +142,14 @@ func TestFetchCommand_INTERNALDATE(t *testing.T) {
 
 // TestFetchCommand_RFC822SIZE tests FETCH RFC822.SIZE
 func TestFetchCommand_RFC822SIZE(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -158,7 +158,7 @@ func TestFetchCommand_RFC822SIZE(t *testing.T) {
 		SelectedMailboxID: mailboxID,
 	}
 
-	server.HandleFetch(conn, "F006", []string{"F006", "FETCH", "1", "RFC822.SIZE"}, state)
+	srv.HandleFetch(conn, "F006", []string{"F006", "FETCH", "1", "RFC822.SIZE"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "RFC822.SIZE") {
@@ -168,14 +168,14 @@ func TestFetchCommand_RFC822SIZE(t *testing.T) {
 
 // TestFetchCommand_ENVELOPE tests FETCH ENVELOPE
 func TestFetchCommand_ENVELOPE(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -184,7 +184,7 @@ func TestFetchCommand_ENVELOPE(t *testing.T) {
 		SelectedMailboxID: mailboxID,
 	}
 
-	server.HandleFetch(conn, "F007", []string{"F007", "FETCH", "1", "ENVELOPE"}, state)
+	srv.HandleFetch(conn, "F007", []string{"F007", "FETCH", "1", "ENVELOPE"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "ENVELOPE") {
@@ -198,14 +198,14 @@ func TestFetchCommand_ENVELOPE(t *testing.T) {
 
 // TestFetchCommand_BODYSTRUCTURE tests FETCH BODYSTRUCTURE
 func TestFetchCommand_BODYSTRUCTURE(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -214,7 +214,7 @@ func TestFetchCommand_BODYSTRUCTURE(t *testing.T) {
 		SelectedMailboxID: mailboxID,
 	}
 
-	server.HandleFetch(conn, "F008", []string{"F008", "FETCH", "1", "BODYSTRUCTURE"}, state)
+	srv.HandleFetch(conn, "F008", []string{"F008", "FETCH", "1", "BODYSTRUCTURE"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "BODYSTRUCTURE") {
@@ -224,14 +224,14 @@ func TestFetchCommand_BODYSTRUCTURE(t *testing.T) {
 
 // TestFetchCommand_BODY tests FETCH BODY (non-extensible BODYSTRUCTURE)
 func TestFetchCommand_BODY(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -240,7 +240,7 @@ func TestFetchCommand_BODY(t *testing.T) {
 		SelectedMailboxID: mailboxID,
 	}
 
-	server.HandleFetch(conn, "F009", []string{"F009", "FETCH", "1", "BODY"}, state)
+	srv.HandleFetch(conn, "F009", []string{"F009", "FETCH", "1", "BODY"}, state)
 
 	response := conn.GetWrittenData()
 	// Should contain BODY but not BODYSTRUCTURE
@@ -251,14 +251,14 @@ func TestFetchCommand_BODY(t *testing.T) {
 
 // TestFetchCommand_MacroALL tests FETCH ALL macro
 func TestFetchCommand_MacroALL(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -267,7 +267,7 @@ func TestFetchCommand_MacroALL(t *testing.T) {
 		SelectedMailboxID: mailboxID,
 	}
 
-	server.HandleFetch(conn, "A654", []string{"A654", "FETCH", "1", "ALL"}, state)
+	srv.HandleFetch(conn, "A654", []string{"A654", "FETCH", "1", "ALL"}, state)
 
 	response := conn.GetWrittenData()
 	// ALL = FLAGS INTERNALDATE RFC822.SIZE ENVELOPE
@@ -287,14 +287,14 @@ func TestFetchCommand_MacroALL(t *testing.T) {
 
 // TestFetchCommand_MacroFAST tests FETCH FAST macro
 func TestFetchCommand_MacroFAST(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -303,7 +303,7 @@ func TestFetchCommand_MacroFAST(t *testing.T) {
 		SelectedMailboxID: mailboxID,
 	}
 
-	server.HandleFetch(conn, "F011", []string{"F011", "FETCH", "1", "FAST"}, state)
+	srv.HandleFetch(conn, "F011", []string{"F011", "FETCH", "1", "FAST"}, state)
 
 	response := conn.GetWrittenData()
 	// FAST = FLAGS INTERNALDATE RFC822.SIZE
@@ -320,14 +320,14 @@ func TestFetchCommand_MacroFAST(t *testing.T) {
 
 // TestFetchCommand_MacroFULL tests FETCH FULL macro
 func TestFetchCommand_MacroFULL(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -336,7 +336,7 @@ func TestFetchCommand_MacroFULL(t *testing.T) {
 		SelectedMailboxID: mailboxID,
 	}
 
-	server.HandleFetch(conn, "F012", []string{"F012", "FETCH", "1", "FULL"}, state)
+	srv.HandleFetch(conn, "F012", []string{"F012", "FETCH", "1", "FULL"}, state)
 
 	response := conn.GetWrittenData()
 	// FULL = FLAGS INTERNALDATE RFC822.SIZE ENVELOPE BODY
@@ -359,17 +359,17 @@ func TestFetchCommand_MacroFULL(t *testing.T) {
 
 // TestFetchCommand_SequenceRange tests FETCH with sequence range
 func TestFetchCommand_SequenceRange(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Message 3", "sender@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Message 4", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 3", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 4", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -379,7 +379,7 @@ func TestFetchCommand_SequenceRange(t *testing.T) {
 	}
 
 	// Test range 2:4
-	server.HandleFetch(conn, "F013", []string{"F013", "FETCH", "2:4", "(FLAGS BODY[HEADER.FIELDS (DATE FROM)])"}, state)
+	srv.HandleFetch(conn, "F013", []string{"F013", "FETCH", "2:4", "(FLAGS BODY[HEADER.FIELDS (DATE FROM)])"}, state)
 
 	response := conn.GetWrittenData()
 	// Should get responses for messages 2, 3, and 4
@@ -396,14 +396,14 @@ func TestFetchCommand_SequenceRange(t *testing.T) {
 
 // TestFetchCommand_MultipleItems tests FETCH with multiple items
 func TestFetchCommand_MultipleItems(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -412,7 +412,7 @@ func TestFetchCommand_MultipleItems(t *testing.T) {
 		SelectedMailboxID: mailboxID,
 	}
 
-	server.HandleFetch(conn, "F014", []string{"F014", "FETCH", "1", "(FLAGS UID INTERNALDATE RFC822.SIZE)"}, state)
+	srv.HandleFetch(conn, "F014", []string{"F014", "FETCH", "1", "(FLAGS UID INTERNALDATE RFC822.SIZE)"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "FLAGS") {
@@ -431,14 +431,14 @@ func TestFetchCommand_MultipleItems(t *testing.T) {
 
 // TestFetchCommand_BODY_HEADER tests FETCH BODY[HEADER]
 func TestFetchCommand_BODY_HEADER(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -447,7 +447,7 @@ func TestFetchCommand_BODY_HEADER(t *testing.T) {
 		SelectedMailboxID: mailboxID,
 	}
 
-	server.HandleFetch(conn, "F015", []string{"F015", "FETCH", "1", "BODY[HEADER]"}, state)
+	srv.HandleFetch(conn, "F015", []string{"F015", "FETCH", "1", "BODY[HEADER]"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "BODY[HEADER]") {
@@ -461,14 +461,14 @@ func TestFetchCommand_BODY_HEADER(t *testing.T) {
 
 // TestFetchCommand_BODY_TEXT tests FETCH BODY[TEXT]
 func TestFetchCommand_BODY_TEXT(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -477,7 +477,7 @@ func TestFetchCommand_BODY_TEXT(t *testing.T) {
 		SelectedMailboxID: mailboxID,
 	}
 
-	server.HandleFetch(conn, "F016", []string{"F016", "FETCH", "1", "BODY[TEXT]"}, state)
+	srv.HandleFetch(conn, "F016", []string{"F016", "FETCH", "1", "BODY[TEXT]"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "BODY[TEXT]") {
@@ -487,14 +487,14 @@ func TestFetchCommand_BODY_TEXT(t *testing.T) {
 
 // TestFetchCommand_BODY_PEEK tests FETCH BODY.PEEK[]
 func TestFetchCommand_BODY_PEEK(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -503,7 +503,7 @@ func TestFetchCommand_BODY_PEEK(t *testing.T) {
 		SelectedMailboxID: mailboxID,
 	}
 
-	server.HandleFetch(conn, "F017", []string{"F017", "FETCH", "1", "BODY.PEEK[]"}, state)
+	srv.HandleFetch(conn, "F017", []string{"F017", "FETCH", "1", "BODY.PEEK[]"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "BODY[]") {
@@ -515,14 +515,14 @@ func TestFetchCommand_BODY_PEEK(t *testing.T) {
 
 // TestFetchCommand_RFC822 tests FETCH RFC822
 func TestFetchCommand_RFC822(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -531,7 +531,7 @@ func TestFetchCommand_RFC822(t *testing.T) {
 		SelectedMailboxID: mailboxID,
 	}
 
-	server.HandleFetch(conn, "F018", []string{"F018", "FETCH", "1", "RFC822"}, state)
+	srv.HandleFetch(conn, "F018", []string{"F018", "FETCH", "1", "RFC822"}, state)
 
 	response := conn.GetWrittenData()
 	// RFC822 is equivalent to BODY[]
@@ -542,14 +542,14 @@ func TestFetchCommand_RFC822(t *testing.T) {
 
 // TestFetchCommand_RFC822_HEADER tests FETCH RFC822.HEADER
 func TestFetchCommand_RFC822_HEADER(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -558,7 +558,7 @@ func TestFetchCommand_RFC822_HEADER(t *testing.T) {
 		SelectedMailboxID: mailboxID,
 	}
 
-	server.HandleFetch(conn, "F019", []string{"F019", "FETCH", "1", "RFC822.HEADER"}, state)
+	srv.HandleFetch(conn, "F019", []string{"F019", "FETCH", "1", "RFC822.HEADER"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "RFC822.HEADER") {
@@ -568,14 +568,14 @@ func TestFetchCommand_RFC822_HEADER(t *testing.T) {
 
 // TestFetchCommand_RFC822_TEXT tests FETCH RFC822.TEXT
 func TestFetchCommand_RFC822_TEXT(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -584,7 +584,7 @@ func TestFetchCommand_RFC822_TEXT(t *testing.T) {
 		SelectedMailboxID: mailboxID,
 	}
 
-	server.HandleFetch(conn, "F020", []string{"F020", "FETCH", "1", "RFC822.TEXT"}, state)
+	srv.HandleFetch(conn, "F020", []string{"F020", "FETCH", "1", "RFC822.TEXT"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "RFC822.TEXT") {
@@ -594,12 +594,12 @@ func TestFetchCommand_RFC822_TEXT(t *testing.T) {
 
 // TestFetchCommand_BadSyntax tests FETCH with invalid syntax
 func TestFetchCommand_BadSyntax(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -609,7 +609,7 @@ func TestFetchCommand_BadSyntax(t *testing.T) {
 	}
 
 	// Missing data items
-	server.HandleFetch(conn, "F021", []string{"F021", "FETCH", "1"}, state)
+	srv.HandleFetch(conn, "F021", []string{"F021", "FETCH", "1"}, state)
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "F021 BAD") {
 		t.Errorf("Expected BAD response for missing items, got: %s", response)
@@ -618,12 +618,12 @@ func TestFetchCommand_BadSyntax(t *testing.T) {
 
 // TestFetchCommand_TagHandling tests various tag formats
 func TestFetchCommand_TagHandling(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -636,8 +636,8 @@ func TestFetchCommand_TagHandling(t *testing.T) {
 
 	for _, tag := range testCases {
 		t.Run("Tag "+tag, func(t *testing.T) {
-			conn := helpers.NewMockConn()
-			server.HandleFetch(conn, tag, []string{tag, "FETCH", "1", "FLAGS"}, state)
+			conn := NewMockConn()
+			srv.HandleFetch(conn, tag, []string{tag, "FETCH", "1", "FLAGS"}, state)
 
 			response := conn.GetWrittenData()
 			expectedCompletion := tag + " OK FETCH completed"

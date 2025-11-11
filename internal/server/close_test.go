@@ -1,25 +1,25 @@
 //go:build test
 // +build test
 
-package server_test
+package server
 
 import (
 	"strings"
 	"testing"
 
 	"raven/internal/models"
-	"raven/test/helpers"
+	
 )
 
 // TestCloseCommand_Unauthenticated tests CLOSE before authentication
 func TestCloseCommand_Unauthenticated(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 	state := &models.ClientState{
 		Authenticated: false,
 	}
 
-	server.HandleClose(conn, "C001", state)
+	srv.HandleClose(conn, "C001", state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -38,15 +38,15 @@ func TestCloseCommand_Unauthenticated(t *testing.T) {
 
 // TestCloseCommand_AuthenticatedNoMailbox tests CLOSE when authenticated but no mailbox selected
 func TestCloseCommand_AuthenticatedNoMailbox(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 	state := &models.ClientState{
 		Authenticated:     true,
 		Username:          "testuser",
 		SelectedMailboxID: 0, // No mailbox selected
 	}
 
-	server.HandleClose(conn, "C002", state)
+	srv.HandleClose(conn, "C002", state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -65,21 +65,21 @@ func TestCloseCommand_AuthenticatedNoMailbox(t *testing.T) {
 
 // TestCloseCommand_WithSelectedMailbox tests CLOSE with selected mailbox (no deleted messages)
 func TestCloseCommand_WithSelectedMailbox(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
 	// Setup authenticated state with selected mailbox
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+	state := SetupAuthenticatedState(t, srv, "testuser")
+	database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
 	state.SelectedMailboxID = mailboxID
 	state.SelectedFolder = "INBOX"
-	_ = helpers.GetUserDBByID(t, database, state.UserID)
+	_ = GetUserDBByID(t, database, state.UserID)
 
-	server.HandleClose(conn, "C003", state)
+	srv.HandleClose(conn, "C003", state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -107,28 +107,28 @@ func TestCloseCommand_WithSelectedMailbox(t *testing.T) {
 // TestCloseCommand_NoExpungeResponses tests that CLOSE does not send EXPUNGE responses
 // Per RFC 3501: No untagged EXPUNGE responses are sent
 func TestCloseCommand_NoExpungeResponses(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
 	// Setup authenticated state with selected mailbox
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+	state := SetupAuthenticatedState(t, srv, "testuser")
+	database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
 	state.SelectedMailboxID = mailboxID
 	state.SelectedFolder = "INBOX"
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 
 	// Insert a test message with \Deleted flag
-	helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@example.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Test Subject", "sender@example.com", "testuser@localhost", "INBOX")
 
 	// Add \Deleted flag to the message
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ?`, mailboxID)
 
-	server.HandleClose(conn, "C004", state)
+	srv.HandleClose(conn, "C004", state)
 
 	response := conn.GetWrittenData()
 
@@ -145,25 +145,25 @@ func TestCloseCommand_NoExpungeResponses(t *testing.T) {
 
 // TestCloseCommand_DeletesMessagesWithDeletedFlag tests that CLOSE deletes messages with \Deleted flag
 func TestCloseCommand_DeletesMessagesWithDeletedFlag(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
 	// Setup authenticated state with selected mailbox
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+	state := SetupAuthenticatedState(t, srv, "testuser")
+	database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
 	state.SelectedMailboxID = mailboxID
 	state.SelectedFolder = "INBOX"
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 
 	// Insert test messages
-	msg1ID := helpers.InsertTestMail(t, database, "testuser", "Message 1", "sender@example.com", "testuser@localhost", "INBOX")
-	msg2ID := helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@example.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Message 3", "sender@example.com", "testuser@localhost", "INBOX")
+	msg1ID := InsertTestMail(t, database, "testuser", "Message 1", "sender@example.com", "testuser@localhost", "INBOX")
+	msg2ID := InsertTestMail(t, database, "testuser", "Message 2", "sender@example.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 3", "sender@example.com", "testuser@localhost", "INBOX")
 
 	// Mark first two messages as deleted
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, msg1ID)
@@ -183,7 +183,7 @@ func TestCloseCommand_DeletesMessagesWithDeletedFlag(t *testing.T) {
 		t.Fatalf("Expected 2 deleted messages, got %d", deletedCount)
 	}
 
-	server.HandleClose(conn, "C005", state)
+	srv.HandleClose(conn, "C005", state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "C005 OK CLOSE completed") {
@@ -207,25 +207,25 @@ func TestCloseCommand_DeletesMessagesWithDeletedFlag(t *testing.T) {
 
 // TestCloseCommand_StateReset tests that CLOSE resets client state to authenticated
 func TestCloseCommand_StateReset(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
 	// Setup authenticated state with selected mailbox
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+	state := SetupAuthenticatedState(t, srv, "testuser")
+	database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
 	state.SelectedMailboxID = mailboxID
 	state.SelectedFolder = "INBOX"
-	_ = helpers.GetUserDBByID(t, database, state.UserID)
+	_ = GetUserDBByID(t, database, state.UserID)
 	state.LastMessageCount = 10
 	state.LastRecentCount = 5
 	state.UIDValidity = 12345
 	state.UIDNext = 100
 
-	server.HandleClose(conn, "C006", state)
+	srv.HandleClose(conn, "C006", state)
 
 	// Verify all state fields are reset
 	if state.SelectedMailboxID != 0 {
@@ -255,20 +255,20 @@ func TestCloseCommand_StateReset(t *testing.T) {
 
 // TestCloseCommand_ResponseFormat tests the format of CLOSE responses
 func TestCloseCommand_ResponseFormat(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+	state := SetupAuthenticatedState(t, srv, "testuser")
+	database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
 	state.SelectedMailboxID = mailboxID
 	state.SelectedFolder = "INBOX"
-	_ = helpers.GetUserDBByID(t, database, state.UserID)
+	_ = GetUserDBByID(t, database, state.UserID)
 
-	server.HandleClose(conn, "FORMAT", state)
+	srv.HandleClose(conn, "FORMAT", state)
 
 	response := conn.GetWrittenData()
 
@@ -306,20 +306,20 @@ func TestCloseCommand_TagHandling(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run("Tag_"+tc.tag, func(t *testing.T) {
-			server := helpers.SetupTestServerSimple(t)
-			conn := helpers.NewMockConn()
+			srv := SetupTestServerSimple(t)
+			conn := NewMockConn()
 
-			state := helpers.SetupAuthenticatedState(t, server, "testuser")
-			database := helpers.GetDatabaseFromServer(server)
-			mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+			state := SetupAuthenticatedState(t, srv, "testuser")
+			database := GetDatabaseFromServer(server)
+			mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 			if err != nil {
 				t.Fatalf("Failed to get INBOX mailbox: %v", err)
 			}
 			state.SelectedMailboxID = mailboxID
 			state.SelectedFolder = "INBOX"
-	_ = helpers.GetUserDBByID(t, database, state.UserID)
+	_ = GetUserDBByID(t, database, state.UserID)
 
-			server.HandleClose(conn, tc.tag, state)
+			srv.HandleClose(conn, tc.tag, state)
 
 			response := conn.GetWrittenData()
 			expectedOK := tc.expectedTag + " OK CLOSE completed"
@@ -334,8 +334,8 @@ func TestCloseCommand_TagHandling(t *testing.T) {
 // TestCloseCommand_RFC3501Compliance tests RFC 3501 compliance
 func TestCloseCommand_RFC3501Compliance(t *testing.T) {
 	t.Run("Requires Selected state", func(t *testing.T) {
-		server := helpers.SetupTestServerSimple(t)
-		conn := helpers.NewMockConn()
+		srv := SetupTestServerSimple(t)
+		conn := NewMockConn()
 
 		// Authenticated but no mailbox selected
 		state := &models.ClientState{
@@ -344,7 +344,7 @@ func TestCloseCommand_RFC3501Compliance(t *testing.T) {
 			SelectedMailboxID: 0,
 		}
 
-		server.HandleClose(conn, "RFC1", state)
+		srv.HandleClose(conn, "RFC1", state)
 
 		response := conn.GetWrittenData()
 		if !strings.Contains(response, "RFC1 NO") {
@@ -353,19 +353,19 @@ func TestCloseCommand_RFC3501Compliance(t *testing.T) {
 	})
 
 	t.Run("Always succeeds in Selected state", func(t *testing.T) {
-		server := helpers.SetupTestServerSimple(t)
-		conn := helpers.NewMockConn()
+		srv := SetupTestServerSimple(t)
+		conn := NewMockConn()
 
-		state := helpers.SetupAuthenticatedState(t, server, "testuser")
-		database := helpers.GetDatabaseFromServer(server)
-		mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+		state := SetupAuthenticatedState(t, srv, "testuser")
+		database := GetDatabaseFromServer(server)
+		mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 		if err != nil {
 			t.Fatalf("Failed to get INBOX mailbox: %v", err)
 		}
 		state.SelectedMailboxID = mailboxID
 		state.SelectedFolder = "INBOX"
 
-		server.HandleClose(conn, "RFC2", state)
+		srv.HandleClose(conn, "RFC2", state)
 
 		response := conn.GetWrittenData()
 		if !strings.Contains(response, "RFC2 OK") {
@@ -374,24 +374,24 @@ func TestCloseCommand_RFC3501Compliance(t *testing.T) {
 	})
 
 	t.Run("No EXPUNGE responses", func(t *testing.T) {
-		server := helpers.SetupTestServerSimple(t)
-		conn := helpers.NewMockConn()
+		srv := SetupTestServerSimple(t)
+		conn := NewMockConn()
 
-		state := helpers.SetupAuthenticatedState(t, server, "testuser")
-		database := helpers.GetDatabaseFromServer(server)
-		mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+		state := SetupAuthenticatedState(t, srv, "testuser")
+		database := GetDatabaseFromServer(server)
+		mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 		if err != nil {
 			t.Fatalf("Failed to get INBOX mailbox: %v", err)
 		}
 		state.SelectedMailboxID = mailboxID
 		state.SelectedFolder = "INBOX"
-		userDB := helpers.GetUserDBByID(t, database, state.UserID)
+		userDB := GetUserDBByID(t, database, state.UserID)
 
 		// Insert and delete messages
-		helpers.InsertTestMail(t, database, "testuser", "Test", "sender@example.com", "testuser@localhost", "INBOX")
+		InsertTestMail(t, database, "testuser", "Test", "sender@example.com", "testuser@localhost", "INBOX")
 		userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ?`, mailboxID)
 
-		server.HandleClose(conn, "RFC3", state)
+		srv.HandleClose(conn, "RFC3", state)
 
 		response := conn.GetWrittenData()
 
@@ -407,19 +407,19 @@ func TestCloseCommand_RFC3501Compliance(t *testing.T) {
 	})
 
 	t.Run("Returns to authenticated state", func(t *testing.T) {
-		server := helpers.SetupTestServerSimple(t)
-		conn := helpers.NewMockConn()
+		srv := SetupTestServerSimple(t)
+		conn := NewMockConn()
 
-		state := helpers.SetupAuthenticatedState(t, server, "testuser")
-		database := helpers.GetDatabaseFromServer(server)
-		mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+		state := SetupAuthenticatedState(t, srv, "testuser")
+		database := GetDatabaseFromServer(server)
+		mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 		if err != nil {
 			t.Fatalf("Failed to get INBOX mailbox: %v", err)
 		}
 		state.SelectedMailboxID = mailboxID
 		state.SelectedFolder = "INBOX"
 
-		server.HandleClose(conn, "RFC4", state)
+		srv.HandleClose(conn, "RFC4", state)
 
 		// After CLOSE, should be in authenticated state (no mailbox selected)
 		if state.SelectedMailboxID != 0 || state.SelectedFolder != "" {
@@ -435,21 +435,21 @@ func TestCloseCommand_RFC3501Compliance(t *testing.T) {
 
 // TestCloseCommand_MultipleInvocations tests calling CLOSE after it already closed
 func TestCloseCommand_MultipleInvocations(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+	state := SetupAuthenticatedState(t, srv, "testuser")
+	database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
 	state.SelectedMailboxID = mailboxID
 	state.SelectedFolder = "INBOX"
-	_ = helpers.GetUserDBByID(t, database, state.UserID)
+	_ = GetUserDBByID(t, database, state.UserID)
 
 	// First CLOSE should succeed
-	server.HandleClose(conn, "M001", state)
+	srv.HandleClose(conn, "M001", state)
 	response1 := conn.GetWrittenData()
 	if !strings.Contains(response1, "M001 OK CLOSE completed") {
 		t.Error("First CLOSE should succeed")
@@ -457,7 +457,7 @@ func TestCloseCommand_MultipleInvocations(t *testing.T) {
 
 	// Second CLOSE should fail (no mailbox selected)
 	conn.ClearWriteBuffer()
-	server.HandleClose(conn, "M002", state)
+	srv.HandleClose(conn, "M002", state)
 	response2 := conn.GetWrittenData()
 	if !strings.Contains(response2, "M002 NO No mailbox selected") {
 		t.Error("Second CLOSE should fail with NO response")
@@ -466,26 +466,26 @@ func TestCloseCommand_MultipleInvocations(t *testing.T) {
 
 // TestCloseCommand_PreservesMessageData tests that CLOSE only removes from mailbox, not message data
 func TestCloseCommand_PreservesMessageData(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
-	database := helpers.GetDatabaseFromServer(server)
-	mailboxID, err := helpers.GetMailboxID(t, database, state.UserID, "INBOX")
+	state := SetupAuthenticatedState(t, srv, "testuser")
+	database := GetDatabaseFromServer(server)
+	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
 	state.SelectedMailboxID = mailboxID
 	state.SelectedFolder = "INBOX"
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// Insert a test message
-	messageID := helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@example.com", "testuser@localhost", "INBOX")
+	messageID := InsertTestMail(t, database, "testuser", "Test Subject", "sender@example.com", "testuser@localhost", "INBOX")
 
 	// Mark it as deleted
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageID)
 
-	server.HandleClose(conn, "PRESERVE", state)
+	srv.HandleClose(conn, "PRESERVE", state)
 
 	// Message should be removed from mailbox
 	var countInMailbox int

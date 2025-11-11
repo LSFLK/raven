@@ -8,16 +8,16 @@ import (
 	"testing"
 
 	"raven/internal/models"
-	"raven/test/helpers"
+	
 )
 
 // TestLogoutCommand_Unauthenticated tests LOGOUT before authentication
 // RFC 3501: LOGOUT can be used in any state
 func TestLogoutCommand_Unauthenticated(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
-	server.HandleLogout(conn, "L001")
+	srv.HandleLogout(conn, "L001")
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -41,10 +41,10 @@ func TestLogoutCommand_Unauthenticated(t *testing.T) {
 
 // TestLogoutCommand_Authenticated tests LOGOUT after successful authentication
 func TestLogoutCommand_Authenticated(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
-	server.HandleLogout(conn, "A023")
+	srv.HandleLogout(conn, "A023")
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -73,8 +73,8 @@ func TestLogoutCommand_Authenticated(t *testing.T) {
 
 // TestLogoutCommand_WithSelectedFolder tests LOGOUT with a folder selected
 func TestLogoutCommand_WithSelectedFolder(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
 	// Simulate state with selected folder
 	_ = &models.ClientState{
@@ -83,7 +83,7 @@ func TestLogoutCommand_WithSelectedFolder(t *testing.T) {
 		SelectedFolder: "INBOX",
 	}
 
-	server.HandleLogout(conn, "L003")
+	srv.HandleLogout(conn, "L003")
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -106,10 +106,10 @@ func TestLogoutCommand_WithSelectedFolder(t *testing.T) {
 // TestLogoutCommand_ResponseOrder tests that BYE is sent before OK
 // This is a MUST requirement from RFC 3501
 func TestLogoutCommand_ResponseOrder(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
-	server.HandleLogout(conn, "L004")
+	srv.HandleLogout(conn, "L004")
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -147,7 +147,7 @@ func TestLogoutCommand_ResponseOrder(t *testing.T) {
 // TestLogoutCommand_MultipleSequentialLogouts tests multiple LOGOUT commands
 // (though in practice connection closes after first)
 func TestLogoutCommand_MultipleSequentialLogouts(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
+	srv := SetupTestServerSimple(t)
 
 	testCases := []struct {
 		tag          string
@@ -159,8 +159,8 @@ func TestLogoutCommand_MultipleSequentialLogouts(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		conn := helpers.NewMockConn()
-		server.HandleLogout(conn, tc.tag)
+		conn := NewMockConn()
+		srv.HandleLogout(conn, tc.tag)
 
 		response := conn.GetWrittenData()
 		lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -183,10 +183,10 @@ func TestLogoutCommand_MultipleSequentialLogouts(t *testing.T) {
 // TestLogoutCommand_AlwaysSucceeds tests that LOGOUT always returns OK
 // LOGOUT should never fail with BAD or NO response
 func TestLogoutCommand_AlwaysSucceeds(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
-	server.HandleLogout(conn, "L005")
+	srv.HandleLogout(conn, "L005")
 
 	response := conn.GetWrittenData()
 
@@ -207,11 +207,11 @@ func TestLogoutCommand_AlwaysSucceeds(t *testing.T) {
 
 // TestLogoutCommand_NoArguments tests that LOGOUT doesn't require arguments
 func TestLogoutCommand_NoArguments(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
 	// LOGOUT takes no arguments, just tag
-	server.HandleLogout(conn, "L006")
+	srv.HandleLogout(conn, "L006")
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -246,10 +246,10 @@ func TestLogoutCommand_TagFormat(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.description, func(t *testing.T) {
-			server := helpers.SetupTestServerSimple(t)
-			conn := helpers.NewMockConn()
+			srv := SetupTestServerSimple(t)
+			conn := NewMockConn()
 
-			server.HandleLogout(conn, tc.tag)
+			srv.HandleLogout(conn, tc.tag)
 
 			response := conn.GetWrittenData()
 			lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -269,10 +269,10 @@ func TestLogoutCommand_TagFormat(t *testing.T) {
 
 // TestLogoutCommand_MessageContent tests the content of BYE message
 func TestLogoutCommand_MessageContent(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
-	server.HandleLogout(conn, "L007")
+	srv.HandleLogout(conn, "L007")
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")

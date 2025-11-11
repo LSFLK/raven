@@ -6,15 +6,15 @@ import (
 	"testing"
 
 	"raven/internal/models"
-	"raven/test/helpers"
+	
 )
 
 // TestAuthenticatePlainBasicFlow tests the basic AUTHENTICATE PLAIN command flow
 func TestAuthenticatePlainBasicFlow(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockTLSConn() // Use TLS connection
+	conn := NewMockTLSConn() // Use TLS connection
 	state := &models.ClientState{Authenticated: false}
 
 	// Send AUTHENTICATE PLAIN command
@@ -83,10 +83,10 @@ func TestAuthenticatePlainWithAuthzid(t *testing.T) {
 
 // TestAuthenticateWithoutTLS tests that AUTHENTICATE is rejected without TLS
 func TestAuthenticateWithoutTLS(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockConn() // Plain connection, not TLS
+	conn := NewMockConn() // Plain connection, not TLS
 	state := &models.ClientState{Authenticated: false}
 
 	// Send AUTHENTICATE PLAIN command
@@ -105,10 +105,10 @@ func TestAuthenticateWithoutTLS(t *testing.T) {
 
 // TestAuthenticateUnsupportedMechanism tests unsupported authentication mechanism
 func TestAuthenticateUnsupportedMechanism(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockTLSConn()
+	conn := NewMockTLSConn()
 	state := &models.ClientState{Authenticated: false}
 
 	// Send AUTHENTICATE with unsupported mechanism
@@ -127,10 +127,10 @@ func TestAuthenticateUnsupportedMechanism(t *testing.T) {
 
 // TestAuthenticateMissingMechanism tests AUTHENTICATE without mechanism
 func TestAuthenticateMissingMechanism(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockTLSConn()
+	conn := NewMockTLSConn()
 	state := &models.ClientState{Authenticated: false}
 
 	// Send AUTHENTICATE without mechanism
@@ -146,14 +146,14 @@ func TestAuthenticateMissingMechanism(t *testing.T) {
 
 // TestAuthenticatePlainCaseInsensitive tests that mechanism name is case-insensitive
 func TestAuthenticatePlainCaseInsensitive(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
 	mechanisms := []string{"PLAIN", "Plain", "plain", "pLaIn"}
 
 	for _, mechanism := range mechanisms {
 		t.Run("Mechanism_"+mechanism, func(t *testing.T) {
-			conn := helpers.NewMockTLSConn()
+			conn := NewMockTLSConn()
 			state := &models.ClientState{Authenticated: false}
 
 			// Send AUTHENTICATE with various cases
@@ -239,10 +239,10 @@ func BenchmarkAuthenticatePlainBase64(b *testing.B) {
 
 // TestAuthenticateCancellation tests that client can cancel authentication with "*"
 func TestAuthenticateCancellation(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockTLSConn()
+	conn := NewMockTLSConn()
 	state := &models.ClientState{Authenticated: false}
 
 	// Send AUTHENTICATE PLAIN command
@@ -427,10 +427,10 @@ func TestAuthenticateBase64Encoding(t *testing.T) {
 
 // TestAuthenticateContinuationRequest tests continuation request format
 func TestAuthenticateContinuationRequest(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockTLSConn()
+	conn := NewMockTLSConn()
 	state := &models.ClientState{Authenticated: false}
 
 	// Send AUTHENTICATE PLAIN command

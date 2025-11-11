@@ -1,23 +1,23 @@
-package server_test
+package server
 
 import (
 	"strings"
 	"testing"
 
 	"raven/internal/models"
-	"raven/test/helpers"
+	
 )
 
 // TestRenameCommand_Unauthenticated tests RENAME command without authentication
 func TestRenameCommand_Unauthenticated(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 	state := &models.ClientState{
 		Authenticated: false,
 	}
 
 	// Test RENAME command without authentication
-	server.HandleRename(conn, "A001", []string{"A001", "RENAME", "oldbox", "newbox"}, state)
+	srv.HandleRename(conn, "A001", []string{"A001", "RENAME", "oldbox", "newbox"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A001 NO Please authenticate first") {
@@ -27,12 +27,12 @@ func TestRenameCommand_Unauthenticated(t *testing.T) {
 
 // TestRenameCommand_InvalidArguments tests RENAME command with invalid arguments
 func TestRenameCommand_InvalidArguments(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test RENAME command without enough arguments
-	server.HandleRename(conn, "A001", []string{"A001", "RENAME", "oldbox"}, state)
+	srv.HandleRename(conn, "A001", []string{"A001", "RENAME", "oldbox"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A001 BAD RENAME requires existing and new mailbox names") {
@@ -42,12 +42,12 @@ func TestRenameCommand_InvalidArguments(t *testing.T) {
 
 // TestRenameCommand_EmptyMailboxNames tests RENAME command with empty mailbox names
 func TestRenameCommand_EmptyMailboxNames(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test RENAME command with empty old name
-	server.HandleRename(conn, "A001", []string{"A001", "RENAME", "\"\"", "newbox"}, state)
+	srv.HandleRename(conn, "A001", []string{"A001", "RENAME", "\"\"", "newbox"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A001 BAD Invalid mailbox names") {
@@ -56,7 +56,7 @@ func TestRenameCommand_EmptyMailboxNames(t *testing.T) {
 
 	// Clear buffer and test empty new name
 	conn.ClearWriteBuffer()
-	server.HandleRename(conn, "A002", []string{"A002", "RENAME", "oldbox", "\"\""}, state)
+	srv.HandleRename(conn, "A002", []string{"A002", "RENAME", "oldbox", "\"\""}, state)
 
 	response = conn.GetWrittenData()
 	if !strings.Contains(response, "A002 BAD Invalid mailbox names") {
@@ -66,12 +66,12 @@ func TestRenameCommand_EmptyMailboxNames(t *testing.T) {
 
 // TestRenameCommand_NonExistentMailbox tests renaming a non-existent mailbox
 func TestRenameCommand_NonExistentMailbox(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test renaming a non-existent mailbox
-	server.HandleRename(conn, "A001", []string{"A001", "RENAME", "NonExistent", "NewName"}, state)
+	srv.HandleRename(conn, "A001", []string{"A001", "RENAME", "NonExistent", "NewName"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A001 NO Source mailbox does not exist") {
@@ -81,19 +81,19 @@ func TestRenameCommand_NonExistentMailbox(t *testing.T) {
 
 // TestRenameCommand_RenameToExistingMailbox tests renaming to an existing mailbox
 func TestRenameCommand_RenameToExistingMailbox(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Create source and destination mailboxes
-	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "SourceBox"}, state)
-	server.HandleCreate(conn, "A002", []string{"A002", "CREATE", "DestBox"}, state)
+	srv.HandleCreate(conn, "A001", []string{"A001", "CREATE", "SourceBox"}, state)
+	srv.HandleCreate(conn, "A002", []string{"A002", "CREATE", "DestBox"}, state)
 
 	// Clear buffer
 	conn.ClearWriteBuffer()
 
 	// Try to rename to existing mailbox
-	server.HandleRename(conn, "A003", []string{"A003", "RENAME", "SourceBox", "DestBox"}, state)
+	srv.HandleRename(conn, "A003", []string{"A003", "RENAME", "SourceBox", "DestBox"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A003 NO Destination mailbox already exists") {
@@ -103,18 +103,18 @@ func TestRenameCommand_RenameToExistingMailbox(t *testing.T) {
 
 // TestRenameCommand_RenameToINBOX tests renaming to INBOX
 func TestRenameCommand_RenameToINBOX(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Create a source mailbox
-	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "SourceBox"}, state)
+	srv.HandleCreate(conn, "A001", []string{"A001", "CREATE", "SourceBox"}, state)
 
 	// Clear buffer
 	conn.ClearWriteBuffer()
 
 	// Try to rename to INBOX
-	server.HandleRename(conn, "A002", []string{"A002", "RENAME", "SourceBox", "INBOX"}, state)
+	srv.HandleRename(conn, "A002", []string{"A002", "RENAME", "SourceBox", "INBOX"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A002 NO Cannot rename to INBOX") {
@@ -124,12 +124,12 @@ func TestRenameCommand_RenameToINBOX(t *testing.T) {
 
 // TestRenameCommand_RenameINBOX tests renaming INBOX (special case)
 func TestRenameCommand_RenameINBOX(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Rename INBOX to a new name
-	server.HandleRename(conn, "A001", []string{"A001", "RENAME", "INBOX", "old-mail"}, state)
+	srv.HandleRename(conn, "A001", []string{"A001", "RENAME", "INBOX", "old-mail"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A001 OK RENAME completed") {
@@ -138,7 +138,7 @@ func TestRenameCommand_RenameINBOX(t *testing.T) {
 
 	// Verify the new mailbox exists
 	conn.ClearWriteBuffer()
-	server.HandleList(conn, "A002", []string{"A002", "LIST", "\"\"", "*"}, state)
+	srv.HandleList(conn, "A002", []string{"A002", "LIST", "\"\"", "*"}, state)
 
 	response = conn.GetWrittenData()
 	if !strings.Contains(response, "old-mail") {
@@ -153,18 +153,18 @@ func TestRenameCommand_RenameINBOX(t *testing.T) {
 
 // TestRenameCommand_ValidRename tests successful mailbox renaming
 func TestRenameCommand_ValidRename(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Create a source mailbox
-	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "OldName"}, state)
+	srv.HandleCreate(conn, "A001", []string{"A001", "CREATE", "OldName"}, state)
 
 	// Clear buffer
 	conn.ClearWriteBuffer()
 
 	// Rename the mailbox
-	server.HandleRename(conn, "A002", []string{"A002", "RENAME", "OldName", "NewName"}, state)
+	srv.HandleRename(conn, "A002", []string{"A002", "RENAME", "OldName", "NewName"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A002 OK RENAME completed") {
@@ -173,7 +173,7 @@ func TestRenameCommand_ValidRename(t *testing.T) {
 
 	// Verify the rename by listing mailboxes
 	conn.ClearWriteBuffer()
-	server.HandleList(conn, "A003", []string{"A003", "LIST", "\"\"", "*"}, state)
+	srv.HandleList(conn, "A003", []string{"A003", "LIST", "\"\"", "*"}, state)
 
 	response = conn.GetWrittenData()
 	if !strings.Contains(response, "NewName") {
@@ -187,20 +187,20 @@ func TestRenameCommand_ValidRename(t *testing.T) {
 
 // TestRenameCommand_HierarchicalRename tests renaming with hierarchical names
 func TestRenameCommand_HierarchicalRename(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Create hierarchical mailboxes
-	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "foo"}, state)
-	server.HandleCreate(conn, "A002", []string{"A002", "CREATE", "foo/bar"}, state)
-	server.HandleCreate(conn, "A003", []string{"A003", "CREATE", "foo/baz"}, state)
+	srv.HandleCreate(conn, "A001", []string{"A001", "CREATE", "foo"}, state)
+	srv.HandleCreate(conn, "A002", []string{"A002", "CREATE", "foo/bar"}, state)
+	srv.HandleCreate(conn, "A003", []string{"A003", "CREATE", "foo/baz"}, state)
 
 	// Clear buffer
 	conn.ClearWriteBuffer()
 
 	// Rename the parent mailbox
-	server.HandleRename(conn, "A004", []string{"A004", "RENAME", "foo", "zap"}, state)
+	srv.HandleRename(conn, "A004", []string{"A004", "RENAME", "foo", "zap"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A004 OK RENAME completed") {
@@ -209,7 +209,7 @@ func TestRenameCommand_HierarchicalRename(t *testing.T) {
 
 	// Verify the rename by listing mailboxes
 	conn.ClearWriteBuffer()
-	server.HandleList(conn, "A005", []string{"A005", "LIST", "\"\"", "*"}, state)
+	srv.HandleList(conn, "A005", []string{"A005", "LIST", "\"\"", "*"}, state)
 
 	response = conn.GetWrittenData()
 	
@@ -235,18 +235,18 @@ func TestRenameCommand_HierarchicalRename(t *testing.T) {
 
 // TestRenameCommand_CreateSuperiorHierarchy tests creating superior hierarchy during rename
 func TestRenameCommand_CreateSuperiorHierarchy(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Create a simple mailbox
-	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "simple"}, state)
+	srv.HandleCreate(conn, "A001", []string{"A001", "CREATE", "simple"}, state)
 
 	// Clear buffer
 	conn.ClearWriteBuffer()
 
 	// Rename to a hierarchical name that requires creating superior hierarchy
-	server.HandleRename(conn, "A002", []string{"A002", "RENAME", "simple", "baz/rag/zowie"}, state)
+	srv.HandleRename(conn, "A002", []string{"A002", "RENAME", "simple", "baz/rag/zowie"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A002 OK RENAME completed") {
@@ -255,7 +255,7 @@ func TestRenameCommand_CreateSuperiorHierarchy(t *testing.T) {
 
 	// Verify the hierarchy was created
 	conn.ClearWriteBuffer()
-	server.HandleList(conn, "A003", []string{"A003", "LIST", "\"\"", "*"}, state)
+	srv.HandleList(conn, "A003", []string{"A003", "LIST", "\"\"", "*"}, state)
 
 	response = conn.GetWrittenData()
 	
@@ -280,18 +280,18 @@ func TestRenameCommand_CreateSuperiorHierarchy(t *testing.T) {
 
 // TestRenameCommand_QuotedNames tests renaming with quoted mailbox names
 func TestRenameCommand_QuotedNames(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Create a mailbox with quoted name
-	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "\"My Old Box\""}, state)
+	srv.HandleCreate(conn, "A001", []string{"A001", "CREATE", "\"My Old Box\""}, state)
 
 	// Clear buffer
 	conn.ClearWriteBuffer()
 
 	// Rename using quoted names
-	server.HandleRename(conn, "A002", []string{"A002", "RENAME", "\"My Old Box\"", "\"My New Box\""}, state)
+	srv.HandleRename(conn, "A002", []string{"A002", "RENAME", "\"My Old Box\"", "\"My New Box\""}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A002 OK RENAME completed") {
@@ -300,7 +300,7 @@ func TestRenameCommand_QuotedNames(t *testing.T) {
 
 	// Verify the rename
 	conn.ClearWriteBuffer()
-	server.HandleList(conn, "A003", []string{"A003", "LIST", "\"\"", "*"}, state)
+	srv.HandleList(conn, "A003", []string{"A003", "LIST", "\"\"", "*"}, state)
 
 	response = conn.GetWrittenData()
 	if !strings.Contains(response, "My New Box") {
@@ -310,12 +310,12 @@ func TestRenameCommand_QuotedNames(t *testing.T) {
 
 // TestRenameCommand_CaseInsensitiveINBOX tests INBOX renaming is case-insensitive
 func TestRenameCommand_CaseInsensitiveINBOX(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Rename inbox (lowercase) to a new name
-	server.HandleRename(conn, "A001", []string{"A001", "RENAME", "inbox", "old-inbox"}, state)
+	srv.HandleRename(conn, "A001", []string{"A001", "RENAME", "inbox", "old-inbox"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A001 OK RENAME completed") {
@@ -324,7 +324,7 @@ func TestRenameCommand_CaseInsensitiveINBOX(t *testing.T) {
 
 	// Verify the new mailbox exists
 	conn.ClearWriteBuffer()
-	server.HandleList(conn, "A002", []string{"A002", "LIST", "\"\"", "*"}, state)
+	srv.HandleList(conn, "A002", []string{"A002", "LIST", "\"\"", "*"}, state)
 
 	response = conn.GetWrittenData()
 	if !strings.Contains(response, "old-inbox") {
@@ -334,22 +334,22 @@ func TestRenameCommand_CaseInsensitiveINBOX(t *testing.T) {
 
 // TestRenameCommand_Multiple tests multiple rename operations
 func TestRenameCommand_Multiple(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Create multiple mailboxes
-	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "Box1"}, state)
-	server.HandleCreate(conn, "A002", []string{"A002", "CREATE", "Box2"}, state)
-	server.HandleCreate(conn, "A003", []string{"A003", "CREATE", "Box3"}, state)
+	srv.HandleCreate(conn, "A001", []string{"A001", "CREATE", "Box1"}, state)
+	srv.HandleCreate(conn, "A002", []string{"A002", "CREATE", "Box2"}, state)
+	srv.HandleCreate(conn, "A003", []string{"A003", "CREATE", "Box3"}, state)
 
 	// Clear buffer
 	conn.ClearWriteBuffer()
 
 	// Rename them in sequence
-	server.HandleRename(conn, "A004", []string{"A004", "RENAME", "Box1", "NewBox1"}, state)
-	server.HandleRename(conn, "A005", []string{"A005", "RENAME", "Box2", "NewBox2"}, state)
-	server.HandleRename(conn, "A006", []string{"A006", "RENAME", "Box3", "NewBox3"}, state)
+	srv.HandleRename(conn, "A004", []string{"A004", "RENAME", "Box1", "NewBox1"}, state)
+	srv.HandleRename(conn, "A005", []string{"A005", "RENAME", "Box2", "NewBox2"}, state)
+	srv.HandleRename(conn, "A006", []string{"A006", "RENAME", "Box3", "NewBox3"}, state)
 
 	response := conn.GetWrittenData()
 	
@@ -368,7 +368,7 @@ func TestRenameCommand_Multiple(t *testing.T) {
 
 	// Verify all renames worked
 	conn.ClearWriteBuffer()
-	server.HandleList(conn, "A007", []string{"A007", "LIST", "\"\"", "*"}, state)
+	srv.HandleList(conn, "A007", []string{"A007", "LIST", "\"\"", "*"}, state)
 
 	response = conn.GetWrittenData()
 	newBoxes := []string{"NewBox1", "NewBox2", "NewBox3"}
@@ -381,24 +381,24 @@ func TestRenameCommand_Multiple(t *testing.T) {
 
 // TestRenameCommand_ErrorRecovery tests error recovery after failed renames
 func TestRenameCommand_ErrorRecovery(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Create a mailbox
-	server.HandleCreate(conn, "A001", []string{"A001", "CREATE", "TestBox"}, state)
+	srv.HandleCreate(conn, "A001", []string{"A001", "CREATE", "TestBox"}, state)
 
 	// Clear buffer
 	conn.ClearWriteBuffer()
 
 	// Try to rename non-existent mailbox (should fail)
-	server.HandleRename(conn, "A002", []string{"A002", "RENAME", "NonExistent", "NewName"}, state)
+	srv.HandleRename(conn, "A002", []string{"A002", "RENAME", "NonExistent", "NewName"}, state)
 
 	// Try to rename to existing name (should fail)
-	server.HandleRename(conn, "A003", []string{"A003", "RENAME", "TestBox", "INBOX"}, state)
+	srv.HandleRename(conn, "A003", []string{"A003", "RENAME", "TestBox", "INBOX"}, state)
 
 	// Try valid rename (should succeed)
-	server.HandleRename(conn, "A004", []string{"A004", "RENAME", "TestBox", "ValidName"}, state)
+	srv.HandleRename(conn, "A004", []string{"A004", "RENAME", "TestBox", "ValidName"}, state)
 
 	response := conn.GetWrittenData()
 	

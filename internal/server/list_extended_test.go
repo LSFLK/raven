@@ -1,4 +1,4 @@
-package server_test
+package server
 
 import (
 	"fmt"
@@ -6,14 +6,14 @@ import (
 	"testing"
 
 	"raven/internal/models"
-	"raven/test/helpers"
+	
 )
 
 // TestListCommand_RFC3501_Examples tests examples from RFC 3501 Section 6.3.8
 func TestListCommand_RFC3501_Examples(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	testCases := []struct {
 		name              string
@@ -57,7 +57,7 @@ func TestListCommand_RFC3501_Examples(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			conn.ClearWriteBuffer()
-			server.HandleList(conn, "A001", []string{"A001", "LIST", tc.reference, tc.mailbox}, state)
+			srv.HandleList(conn, "A001", []string{"A001", "LIST", tc.reference, tc.mailbox}, state)
 
 			response := conn.GetWrittenData()
 
@@ -78,9 +78,9 @@ func TestListCommand_RFC3501_Examples(t *testing.T) {
 
 // TestListCommand_WildcardEdgeCases tests edge cases with wildcard patterns
 func TestListCommand_WildcardEdgeCases(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	testCases := []struct {
 		pattern          string
@@ -112,7 +112,7 @@ func TestListCommand_WildcardEdgeCases(t *testing.T) {
 			
 			if tc.pattern == "" {
 				// Empty pattern is special case - hierarchy delimiter
-				server.HandleList(conn, "A001", []string{"A001", "LIST", `""`, `""`}, state)
+				srv.HandleList(conn, "A001", []string{"A001", "LIST", `""`, `""`}, state)
 				response := conn.GetWrittenData()
 				if !strings.Contains(response, `\Noselect`) {
 					t.Errorf("Empty pattern should return hierarchy delimiter, got: %s", response)
@@ -120,7 +120,7 @@ func TestListCommand_WildcardEdgeCases(t *testing.T) {
 				return
 			}
 
-			server.HandleList(conn, "A001", []string{"A001", "LIST", `""`, fmt.Sprintf(`"%s"`, tc.pattern)}, state)
+			srv.HandleList(conn, "A001", []string{"A001", "LIST", `""`, fmt.Sprintf(`"%s"`, tc.pattern)}, state)
 
 			response := conn.GetWrittenData()
 
@@ -162,9 +162,9 @@ func TestListCommand_WildcardEdgeCases(t *testing.T) {
 
 // TestListCommand_HierarchyDelimiterVariations tests various hierarchy delimiter scenarios
 func TestListCommand_HierarchyDelimiterVariations(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	testCases := []struct {
 		reference         string
@@ -182,7 +182,7 @@ func TestListCommand_HierarchyDelimiterVariations(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.description, func(t *testing.T) {
 			conn.ClearWriteBuffer()
-			server.HandleList(conn, "A001", []string{"A001", "LIST", tc.reference, tc.mailbox}, state)
+			srv.HandleList(conn, "A001", []string{"A001", "LIST", tc.reference, tc.mailbox}, state)
 
 			response := conn.GetWrittenData()
 			lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -208,9 +208,9 @@ func TestListCommand_HierarchyDelimiterVariations(t *testing.T) {
 
 // TestListCommand_ReferencePatternCombination tests combination of reference and pattern
 func TestListCommand_ReferencePatternCombination(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	testCases := []struct {
 		reference       string
@@ -229,7 +229,7 @@ func TestListCommand_ReferencePatternCombination(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.description, func(t *testing.T) {
 			conn.ClearWriteBuffer()
-			server.HandleList(conn, "A001", []string{"A001", "LIST", tc.reference, tc.pattern}, state)
+			srv.HandleList(conn, "A001", []string{"A001", "LIST", tc.reference, tc.pattern}, state)
 
 			response := conn.GetWrittenData()
 			lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -257,14 +257,14 @@ func TestListCommand_ReferencePatternCombination(t *testing.T) {
 
 // TestListCommand_ErrorConditions tests various error conditions
 func TestListCommand_ErrorConditions(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 
 	// Test unauthenticated state
 	t.Run("Unauthenticated", func(t *testing.T) {
 		state := &models.ClientState{Authenticated: false}
 		conn.ClearWriteBuffer()
-		server.HandleList(conn, "A001", []string{"A001", "LIST", `""`, `"*"`}, state)
+		srv.HandleList(conn, "A001", []string{"A001", "LIST", `""`, `"*"`}, state)
 
 		response := conn.GetWrittenData()
 		if !strings.Contains(response, "A001 NO Please authenticate first") {
@@ -276,7 +276,7 @@ func TestListCommand_ErrorConditions(t *testing.T) {
 	t.Run("InsufficientArgs", func(t *testing.T) {
 		state := &models.ClientState{Authenticated: true, Username: "testuser"}
 		conn.ClearWriteBuffer()
-		server.HandleList(conn, "A001", []string{"A001", "LIST", `""`}, state)
+		srv.HandleList(conn, "A001", []string{"A001", "LIST", `""`}, state)
 
 		response := conn.GetWrittenData()
 		if !strings.Contains(response, "A001 BAD LIST command requires reference and mailbox arguments") {
@@ -288,7 +288,7 @@ func TestListCommand_ErrorConditions(t *testing.T) {
 	t.Run("MinimalValid", func(t *testing.T) {
 		state := &models.ClientState{Authenticated: true, Username: "testuser"}
 		conn.ClearWriteBuffer()
-		server.HandleList(conn, "A001", []string{"A001", "LIST", `""`, `""`}, state)
+		srv.HandleList(conn, "A001", []string{"A001", "LIST", `""`, `""`}, state)
 
 		response := conn.GetWrittenData()
 		if strings.Contains(response, "BAD") || strings.Contains(response, "NO") {
@@ -302,9 +302,9 @@ func TestListCommand_ErrorConditions(t *testing.T) {
 
 // TestListCommand_SpecialCharacters tests LIST with special characters in patterns
 func TestListCommand_SpecialCharacters(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	testCases := []struct {
 		pattern     string
@@ -323,7 +323,7 @@ func TestListCommand_SpecialCharacters(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.description, func(t *testing.T) {
 			conn.ClearWriteBuffer()
-			server.HandleList(conn, "A001", []string{"A001", "LIST", `""`, tc.pattern}, state)
+			srv.HandleList(conn, "A001", []string{"A001", "LIST", `""`, tc.pattern}, state)
 
 			response := conn.GetWrittenData()
 

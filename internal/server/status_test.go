@@ -1,7 +1,7 @@
 //go:build test
 // +build test
 
-package server_test
+package server
 
 import (
 	"fmt"
@@ -9,19 +9,19 @@ import (
 	"testing"
 
 	"raven/internal/models"
-	"raven/test/helpers"
+	
 )
 
 // TestStatusCommand_Authentication tests STATUS command authentication requirements
 func TestStatusCommand_Authentication(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 	state := &models.ClientState{
 		Authenticated: false,
 	}
 
 	// Test STATUS command without authentication
-	server.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(MESSAGES)"}, state)
+	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(MESSAGES)"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A001 NO Please authenticate first") {
@@ -31,12 +31,12 @@ func TestStatusCommand_Authentication(t *testing.T) {
 
 // TestStatusCommand_InvalidArguments tests STATUS command with invalid arguments
 func TestStatusCommand_InvalidArguments(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test STATUS command with insufficient arguments (no mailbox)
-	server.HandleStatus(conn, "A001", []string{"A001", "STATUS"}, state)
+	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A001 BAD STATUS requires mailbox name and status data items") {
@@ -46,12 +46,12 @@ func TestStatusCommand_InvalidArguments(t *testing.T) {
 
 // TestStatusCommand_NoStatusItems tests STATUS command without status data items
 func TestStatusCommand_NoStatusItems(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test STATUS command without status items
-	server.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX"}, state)
+	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A001 BAD STATUS requires mailbox name and status data items") {
@@ -61,12 +61,12 @@ func TestStatusCommand_NoStatusItems(t *testing.T) {
 
 // TestStatusCommand_EmptyMailboxName tests STATUS command with empty mailbox name
 func TestStatusCommand_EmptyMailboxName(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test STATUS command with empty mailbox name
-	server.HandleStatus(conn, "A001", []string{"A001", "STATUS", `""`, "(MESSAGES)"}, state)
+	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", `""`, "(MESSAGES)"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A001 BAD Invalid mailbox name") {
@@ -76,16 +76,16 @@ func TestStatusCommand_EmptyMailboxName(t *testing.T) {
 
 // TestStatusCommand_NonExistentMailbox tests STATUS command with non-existent mailbox
 func TestStatusCommand_NonExistentMailbox(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := helpers.GetDatabaseFromServer(server)
-	helpers.CreateTestUser(t, database, "testuser")
+	database := GetDatabaseFromServer(server)
+	CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with non-existent mailbox
-	server.HandleStatus(conn, "A001", []string{"A001", "STATUS", "NonExistent", "(MESSAGES)"}, state)
+	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "NonExistent", "(MESSAGES)"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A001 NO STATUS failure: no status for that name") {
@@ -96,18 +96,18 @@ func TestStatusCommand_NonExistentMailbox(t *testing.T) {
 // TestStatusCommand_MessagesItem tests STATUS command with MESSAGES item
 func TestStatusCommand_MessagesItem(t *testing.T) {
 	// Create test database and user
-	database := helpers.CreateTestDB(t)
+	database := CreateTestDB(t)
 	defer database.Close()
-	helpers.CreateTestUser(t, database, "testuser")
+	CreateTestUser(t, database, "testuser")
 	
 	// Create server with the database
-	server := helpers.TestServerWithDB(database)
+	srv := TestServerWithDB(database)
 	
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test STATUS command with MESSAGES item on INBOX
-	server.HandleStatus(conn, "A042", []string{"A042", "STATUS", "INBOX", "(MESSAGES)"}, state)
+	srv.HandleStatus(conn, "A042", []string{"A042", "STATUS", "INBOX", "(MESSAGES)"}, state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -136,16 +136,16 @@ func TestStatusCommand_MessagesItem(t *testing.T) {
 
 // TestStatusCommand_MultipleItems tests STATUS command with multiple status items
 func TestStatusCommand_MultipleItems(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := helpers.GetDatabaseFromServer(server)
-	helpers.CreateTestUser(t, database, "testuser")
+	database := GetDatabaseFromServer(server)
+	CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with multiple items (as per RFC 3501 example)
-	server.HandleStatus(conn, "A042", []string{"A042", "STATUS", "INBOX", "(UIDNEXT", "MESSAGES)"}, state)
+	srv.HandleStatus(conn, "A042", []string{"A042", "STATUS", "INBOX", "(UIDNEXT", "MESSAGES)"}, state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -177,16 +177,16 @@ func TestStatusCommand_MultipleItems(t *testing.T) {
 
 // TestStatusCommand_AllItems tests STATUS command with all defined status items
 func TestStatusCommand_AllItems(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := helpers.GetDatabaseFromServer(server)
-	helpers.CreateTestUser(t, database, "testuser")
+	database := GetDatabaseFromServer(server)
+	CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with all status items
-	server.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(MESSAGES", "RECENT", "UIDNEXT", "UIDVALIDITY", "UNSEEN)"}, state)
+	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(MESSAGES", "RECENT", "UIDNEXT", "UIDVALIDITY", "UNSEEN)"}, state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -218,16 +218,16 @@ func TestStatusCommand_AllItems(t *testing.T) {
 
 // TestStatusCommand_RecentItem tests STATUS command with RECENT item
 func TestStatusCommand_RecentItem(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := helpers.GetDatabaseFromServer(server)
-	helpers.CreateTestUser(t, database, "testuser")
+	database := GetDatabaseFromServer(server)
+	CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with RECENT item
-	server.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(RECENT)"}, state)
+	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(RECENT)"}, state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -251,16 +251,16 @@ func TestStatusCommand_RecentItem(t *testing.T) {
 
 // TestStatusCommand_UidnextItem tests STATUS command with UIDNEXT item
 func TestStatusCommand_UidnextItem(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := helpers.GetDatabaseFromServer(server)
-	helpers.CreateTestUser(t, database, "testuser")
+	database := GetDatabaseFromServer(server)
+	CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with UIDNEXT item
-	server.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(UIDNEXT)"}, state)
+	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(UIDNEXT)"}, state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -289,16 +289,16 @@ func TestStatusCommand_UidnextItem(t *testing.T) {
 
 // TestStatusCommand_UidvalidityItem tests STATUS command with UIDVALIDITY item
 func TestStatusCommand_UidvalidityItem(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := helpers.GetDatabaseFromServer(server)
-	helpers.CreateTestUser(t, database, "testuser")
+	database := GetDatabaseFromServer(server)
+	CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with UIDVALIDITY item
-	server.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(UIDVALIDITY)"}, state)
+	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(UIDVALIDITY)"}, state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -322,16 +322,16 @@ func TestStatusCommand_UidvalidityItem(t *testing.T) {
 
 // TestStatusCommand_UnseenItem tests STATUS command with UNSEEN item
 func TestStatusCommand_UnseenItem(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := helpers.GetDatabaseFromServer(server)
-	helpers.CreateTestUser(t, database, "testuser")
+	database := GetDatabaseFromServer(server)
+	CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with UNSEEN item
-	server.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(UNSEEN)"}, state)
+	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(UNSEEN)"}, state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -355,17 +355,17 @@ func TestStatusCommand_UnseenItem(t *testing.T) {
 
 // TestStatusCommand_QuotedMailboxName tests STATUS command with quoted mailbox name
 func TestStatusCommand_QuotedMailboxName(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists and create a mailbox
-	database := helpers.GetDatabaseFromServer(server)
-	helpers.CreateTestUser(t, database, "testuser")
-	helpers.CreateMailbox(t, database, "testuser", "Test Folder")
+	database := GetDatabaseFromServer(server)
+	CreateTestUser(t, database, "testuser")
+	CreateMailbox(t, database, "testuser", "Test Folder")
 
 	// Test STATUS command with quoted mailbox name
-	server.HandleStatus(conn, "A001", []string{"A001", "STATUS", `"Test Folder"`, "(MESSAGES)"}, state)
+	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", `"Test Folder"`, "(MESSAGES)"}, state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -389,17 +389,17 @@ func TestStatusCommand_QuotedMailboxName(t *testing.T) {
 
 // TestStatusCommand_CustomMailbox tests STATUS command on a custom mailbox
 func TestStatusCommand_CustomMailbox(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists and create a mailbox
-	database := helpers.GetDatabaseFromServer(server)
-	helpers.CreateTestUser(t, database, "testuser")
-	helpers.CreateMailbox(t, database, "testuser", "Projects")
+	database := GetDatabaseFromServer(server)
+	CreateTestUser(t, database, "testuser")
+	CreateMailbox(t, database, "testuser", "Projects")
 
 	// Test STATUS command on custom mailbox
-	server.HandleStatus(conn, "A001", []string{"A001", "STATUS", "Projects", "(MESSAGES", "UIDNEXT)"}, state)
+	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "Projects", "(MESSAGES", "UIDNEXT)"}, state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -423,17 +423,17 @@ func TestStatusCommand_CustomMailbox(t *testing.T) {
 
 // TestStatusCommand_WithMessages tests STATUS command on a mailbox with messages
 func TestStatusCommand_WithMessages(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := helpers.GetDatabaseFromServer(server)
-	helpers.CreateTestUser(t, database, "testuser")
+	database := GetDatabaseFromServer(server)
+	CreateTestUser(t, database, "testuser")
 
 	// Insert test messages into INBOX using helpers
 	for i := 1; i <= 3; i++ {
-		helpers.InsertTestMail(t, database, "testuser",
+		InsertTestMail(t, database, "testuser",
 			fmt.Sprintf("Test Subject %d", i),
 			"sender@example.com",
 			"testuser@example.com",
@@ -441,7 +441,7 @@ func TestStatusCommand_WithMessages(t *testing.T) {
 	}
 
 	// Test STATUS command
-	server.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(MESSAGES", "UIDNEXT)"}, state)
+	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(MESSAGES", "UIDNEXT)"}, state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -468,16 +468,16 @@ func TestStatusCommand_WithMessages(t *testing.T) {
 
 // TestStatusCommand_InvalidStatusItem tests STATUS command with unknown status item
 func TestStatusCommand_InvalidStatusItem(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := helpers.GetDatabaseFromServer(server)
-	helpers.CreateTestUser(t, database, "testuser")
+	database := GetDatabaseFromServer(server)
+	CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with invalid status item
-	server.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(INVALID)"}, state)
+	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(INVALID)"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A001 BAD Unknown status data item") {
@@ -491,12 +491,12 @@ func TestStatusCommand_DefaultMailboxes(t *testing.T) {
 
 	for _, mailbox := range defaultMailboxes {
 		t.Run(mailbox, func(t *testing.T) {
-			server := helpers.SetupTestServerSimple(t)
-			conn := helpers.NewMockConn()
-			state := helpers.SetupAuthenticatedState(t, server, "testuser")
+			srv := SetupTestServerSimple(t)
+			conn := NewMockConn()
+			state := SetupAuthenticatedState(t, srv, "testuser")
 
 			// Test STATUS command
-			server.HandleStatus(conn, "A001", []string{"A001", "STATUS", mailbox, "(MESSAGES)"}, state)
+			srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", mailbox, "(MESSAGES)"}, state)
 
 			response := conn.GetWrittenData()
 			lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -522,17 +522,17 @@ func TestStatusCommand_DefaultMailboxes(t *testing.T) {
 
 // TestStatusCommand_RFC3501Example tests the exact example from RFC 3501
 func TestStatusCommand_RFC3501Example(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists and create the mailbox
-	database := helpers.GetDatabaseFromServer(server)
-	helpers.CreateTestUser(t, database, "testuser")
-	helpers.CreateMailbox(t, database, "testuser", "blurdybloop")
+	database := GetDatabaseFromServer(server)
+	CreateTestUser(t, database, "testuser")
+	CreateMailbox(t, database, "testuser", "blurdybloop")
 
 	// Test STATUS command as per RFC 3501 example: STATUS blurdybloop (UIDNEXT MESSAGES)
-	server.HandleStatus(conn, "A042", []string{"A042", "STATUS", "blurdybloop", "(UIDNEXT", "MESSAGES)"}, state)
+	srv.HandleStatus(conn, "A042", []string{"A042", "STATUS", "blurdybloop", "(UIDNEXT", "MESSAGES)"}, state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -564,16 +564,16 @@ func TestStatusCommand_RFC3501Example(t *testing.T) {
 
 // TestStatusCommand_CaseInsensitiveItems tests STATUS command with mixed case items
 func TestStatusCommand_CaseInsensitiveItems(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	state := helpers.SetupAuthenticatedState(t, server, "testuser")
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := helpers.GetDatabaseFromServer(server)
-	helpers.CreateTestUser(t, database, "testuser")
+	database := GetDatabaseFromServer(server)
+	CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with mixed case items
-	server.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(messages", "UidNext)"}, state)
+	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(messages", "UidNext)"}, state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")

@@ -1,11 +1,11 @@
-package server_test
+package server
 
 import (
 	"strings"
 	"testing"
 
 	"raven/internal/models"
-	"raven/test/helpers"
+	
 )
 
 // Helper to check capability tokens exactly (avoids substring matches like LOGIN in LOGINDISABLED)
@@ -26,14 +26,14 @@ func hasCapabilityToken(line, token string) bool {
 
 // TestCapabilityCommand_NonTLSConnection tests CAPABILITY command over non-TLS connection
 func TestCapabilityCommand_NonTLSConnection(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 	state := &models.ClientState{
 		Authenticated: false,
 	}
 
 	// Test CAPABILITY command
-	server.HandleCapability(conn, "A001", state)
+	srv.HandleCapability(conn, "A001", state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -91,14 +91,14 @@ func TestCapabilityCommand_NonTLSConnection(t *testing.T) {
 
 // TestCapabilityCommand_TLSConnection tests CAPABILITY command over TLS connection
 func TestCapabilityCommand_TLSConnection(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockTLSConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockTLSConn()
 	state := &models.ClientState{
 		Authenticated: false,
 	}
 
 	// Test CAPABILITY command
-	server.HandleCapability(conn, "B002", state)
+	srv.HandleCapability(conn, "B002", state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -143,13 +143,13 @@ func TestCapabilityCommand_TLSConnection(t *testing.T) {
 
 // TestCapabilityCommand_ResponseFormat tests the exact format of CAPABILITY response
 func TestCapabilityCommand_ResponseFormat(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 	state := &models.ClientState{
 		Authenticated: false,
 	}
 
-	server.HandleCapability(conn, "C003", state)
+	srv.HandleCapability(conn, "C003", state)
 
 	response := conn.GetWrittenData()
 	
@@ -196,15 +196,15 @@ func TestCapabilityCommand_ResponseFormat(t *testing.T) {
 
 // TestCapabilityCommand_MultipleInvocations tests calling CAPABILITY multiple times
 func TestCapabilityCommand_MultipleInvocations(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 	state := &models.ClientState{
 		Authenticated: false,
 	}
 
 	// Call CAPABILITY multiple times with different tags
-	server.HandleCapability(conn, "D001", state)
-	server.HandleCapability(conn, "D002", state)
+	srv.HandleCapability(conn, "D001", state)
+	srv.HandleCapability(conn, "D002", state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -239,23 +239,23 @@ func TestCapabilityCommand_MultipleInvocations(t *testing.T) {
 // TestCapabilityCommand_AuthenticationStateDoesNotAffectCapabilities tests that 
 // authentication state doesn't change capabilities (connection type does)
 func TestCapabilityCommand_AuthenticationStateDoesNotAffectCapabilities(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
+	srv := SetupTestServerSimple(t)
 
 	// Test with unauthenticated state
-	conn1 := helpers.NewMockConn()
+	conn1 := NewMockConn()
 	unauthState := &models.ClientState{
 		Authenticated: false,
 	}
-	server.HandleCapability(conn1, "E001", unauthState)
+	srv.HandleCapability(conn1, "E001", unauthState)
 	unauthResponse := conn1.GetWrittenData()
 
 	// Test with authenticated state using a new connection
-	conn2 := helpers.NewMockConn()
+	conn2 := NewMockConn()
 	authState := &models.ClientState{
 		Authenticated: true,
 		Username:      "testuser",
 	}
-	server.HandleCapability(conn2, "E002", authState)
+	srv.HandleCapability(conn2, "E002", authState)
 	authResponse := conn2.GetWrittenData()
 
 	// Extract capability lines (first line of each response)
@@ -275,21 +275,21 @@ func TestCapabilityCommand_AuthenticationStateDoesNotAffectCapabilities(t *testi
 
 // BenchmarkCapabilityCommand benchmarks the CAPABILITY command performance
 func BenchmarkCapabilityCommand(b *testing.B) {
-	server := helpers.SetupTestServerSimple(&testing.T{})
+	srv := SetupTestServerSimple(&testing.T{})
 	state := &models.ClientState{
 		Authenticated: false,
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		conn := helpers.NewMockConn()
-		server.HandleCapability(conn, "BENCH", state)
+		conn := NewMockConn()
+		srv.HandleCapability(conn, "BENCH", state)
 	}
 }
 
 // TestCapabilityCommand_ConcurrentAccess tests concurrent CAPABILITY requests
 func TestCapabilityCommand_ConcurrentAccess(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
+	srv := SetupTestServerSimple(t)
 	
 	// Number of concurrent requests
 	const numRequests = 10
@@ -299,11 +299,11 @@ func TestCapabilityCommand_ConcurrentAccess(t *testing.T) {
 	// Launch concurrent CAPABILITY requests
 	for i := 0; i < numRequests; i++ {
 		go func(index int) {
-			conn := helpers.NewMockConn()
+			conn := NewMockConn()
 			state := &models.ClientState{
 				Authenticated: false,
 			}
-			server.HandleCapability(conn, "CONCURRENT", state)
+			srv.HandleCapability(conn, "CONCURRENT", state)
 			responses[index] = conn.GetWrittenData()
 			done <- index
 		}(i)

@@ -1,7 +1,7 @@
 //go:build test
 // +build test
 
-package server_test
+package server
 
 import (
 	"fmt"
@@ -10,18 +10,18 @@ import (
 	"time"
 
 	"raven/internal/models"
-	"raven/test/helpers"
+	
 )
 
 // TestSearchCommand_Unauthenticated tests SEARCH without authentication
 func TestSearchCommand_Unauthenticated(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 	state := &models.ClientState{
 		Authenticated: false,
 	}
 
-	server.HandleSearch(conn, "S001", []string{"S001", "SEARCH", "ALL"}, state)
+	srv.HandleSearch(conn, "S001", []string{"S001", "SEARCH", "ALL"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "S001 NO Please authenticate first") {
@@ -31,11 +31,11 @@ func TestSearchCommand_Unauthenticated(t *testing.T) {
 
 // TestSearchCommand_NoMailboxSelected tests SEARCH without mailbox selection
 func TestSearchCommand_NoMailboxSelected(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -43,7 +43,7 @@ func TestSearchCommand_NoMailboxSelected(t *testing.T) {
 		SelectedMailboxID: 0, // No mailbox selected
 	}
 
-	server.HandleSearch(conn, "S002", []string{"S002", "SEARCH", "ALL"}, state)
+	srv.HandleSearch(conn, "S002", []string{"S002", "SEARCH", "ALL"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "S002 NO No folder selected") {
@@ -53,17 +53,17 @@ func TestSearchCommand_NoMailboxSelected(t *testing.T) {
 
 // TestSearchCommand_ALL tests SEARCH ALL
 func TestSearchCommand_ALL(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
 	// Create test user and messages
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test Subject 1", "sender1@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Test Subject 2", "sender2@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Test Subject 3", "sender3@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test Subject 1", "sender1@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Test Subject 2", "sender2@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Test Subject 3", "sender3@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -71,7 +71,7 @@ func TestSearchCommand_ALL(t *testing.T) {
 		SelectedMailboxID: mailboxID,
 	}
 
-	server.HandleSearch(conn, "S003", []string{"S003", "SEARCH", "ALL"}, state)
+	srv.HandleSearch(conn, "S003", []string{"S003", "SEARCH", "ALL"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "* SEARCH 1 2 3") {
@@ -84,12 +84,12 @@ func TestSearchCommand_ALL(t *testing.T) {
 
 // TestSearchCommand_EmptyMailbox tests SEARCH on empty mailbox
 func TestSearchCommand_EmptyMailbox(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -98,7 +98,7 @@ func TestSearchCommand_EmptyMailbox(t *testing.T) {
 		SelectedMailboxID: mailboxID,
 	}
 
-	server.HandleSearch(conn, "S004", []string{"S004", "SEARCH", "ALL"}, state)
+	srv.HandleSearch(conn, "S004", []string{"S004", "SEARCH", "ALL"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "* SEARCH\r\n") {
@@ -111,18 +111,18 @@ func TestSearchCommand_EmptyMailbox(t *testing.T) {
 
 // TestSearchCommand_FlaggedMessages tests SEARCH FLAGGED
 func TestSearchCommand_FlaggedMessages(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 
 	// Insert messages with different flags
-	msg1ID := helpers.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
-	msg2ID := helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
-	msg3ID := helpers.InsertTestMail(t, database, "testuser", "Message 3", "sender@test.com", "testuser@localhost", "INBOX")
+	msg1ID := InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+	msg2ID := InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
+	msg3ID := InsertTestMail(t, database, "testuser", "Message 3", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -130,12 +130,12 @@ func TestSearchCommand_FlaggedMessages(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// Flag message 2
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg2ID, mailboxID)
 
-	server.HandleSearch(conn, "S005", []string{"S005", "SEARCH", "FLAGGED"}, state)
+	srv.HandleSearch(conn, "S005", []string{"S005", "SEARCH", "FLAGGED"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "* SEARCH 2") {
@@ -153,16 +153,16 @@ func TestSearchCommand_FlaggedMessages(t *testing.T) {
 
 // TestSearchCommand_DeletedMessages tests SEARCH DELETED and UNDELETED
 func TestSearchCommand_DeletedMessages(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 
-	msg1ID := helpers.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
-	msg2ID := helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
+	msg1ID := InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+	msg2ID := InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -170,13 +170,13 @@ func TestSearchCommand_DeletedMessages(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 1 as deleted
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
 
 	// Test DELETED
-	server.HandleSearch(conn, "S006", []string{"S006", "SEARCH", "DELETED"}, state)
+	srv.HandleSearch(conn, "S006", []string{"S006", "SEARCH", "DELETED"}, state)
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "* SEARCH 1") {
 		t.Errorf("Expected to find deleted message 1, got: %s", response)
@@ -185,7 +185,7 @@ func TestSearchCommand_DeletedMessages(t *testing.T) {
 	conn.ClearWriteBuffer()
 
 	// Test UNDELETED
-	server.HandleSearch(conn, "S007", []string{"S007", "SEARCH", "UNDELETED"}, state)
+	srv.HandleSearch(conn, "S007", []string{"S007", "SEARCH", "UNDELETED"}, state)
 	response = conn.GetWrittenData()
 	if !strings.Contains(response, "* SEARCH 2") {
 		t.Errorf("Expected to find undeleted message 2, got: %s", response)
@@ -196,16 +196,16 @@ func TestSearchCommand_DeletedMessages(t *testing.T) {
 
 // TestSearchCommand_SeenUnseen tests SEARCH SEEN and UNSEEN
 func TestSearchCommand_SeenUnseen(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 
-	msg1ID := helpers.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
+	msg1ID := InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -213,13 +213,13 @@ func TestSearchCommand_SeenUnseen(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 1 as seen
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
 
 	// Test SEEN
-	server.HandleSearch(conn, "S008", []string{"S008", "SEARCH", "SEEN"}, state)
+	srv.HandleSearch(conn, "S008", []string{"S008", "SEARCH", "SEEN"}, state)
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "* SEARCH 1") {
 		t.Errorf("Expected to find seen message 1, got: %s", response)
@@ -228,7 +228,7 @@ func TestSearchCommand_SeenUnseen(t *testing.T) {
 	conn.ClearWriteBuffer()
 
 	// Test UNSEEN
-	server.HandleSearch(conn, "S009", []string{"S009", "SEARCH", "UNSEEN"}, state)
+	srv.HandleSearch(conn, "S009", []string{"S009", "SEARCH", "UNSEEN"}, state)
 	response = conn.GetWrittenData()
 	if !strings.Contains(response, "* SEARCH 2") {
 		t.Errorf("Expected to find unseen message 2, got: %s", response)
@@ -237,17 +237,17 @@ func TestSearchCommand_SeenUnseen(t *testing.T) {
 
 // TestSearchCommand_FromHeader tests SEARCH FROM
 func TestSearchCommand_FromHeader(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 
-	helpers.InsertTestMail(t, database, "testuser", "Message 1", "smith@example.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Message 2", "jones@example.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Message 3", "smithson@example.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 1", "smith@example.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 2", "jones@example.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 3", "smithson@example.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -256,7 +256,7 @@ func TestSearchCommand_FromHeader(t *testing.T) {
 	}
 
 	// Search for "smith" - should match both smith@example.com and smithson@example.com
-	server.HandleSearch(conn, "S010", []string{"S010", "SEARCH", "FROM", "smith"}, state)
+	srv.HandleSearch(conn, "S010", []string{"S010", "SEARCH", "FROM", "smith"}, state)
 
 	response := conn.GetWrittenData()
 	// Should find messages 1 and 3 (case-insensitive substring match)
@@ -270,17 +270,17 @@ func TestSearchCommand_FromHeader(t *testing.T) {
 
 // TestSearchCommand_SubjectHeader tests SEARCH SUBJECT
 func TestSearchCommand_SubjectHeader(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 
-	helpers.InsertTestMail(t, database, "testuser", "Meeting Tomorrow", "sender@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Project Update", "sender@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Meeting Notes", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Meeting Tomorrow", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Project Update", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Meeting Notes", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -289,7 +289,7 @@ func TestSearchCommand_SubjectHeader(t *testing.T) {
 	}
 
 	// Search for "Meeting" in subject
-	server.HandleSearch(conn, "S011", []string{"S011", "SEARCH", "SUBJECT", "Meeting"}, state)
+	srv.HandleSearch(conn, "S011", []string{"S011", "SEARCH", "SUBJECT", "Meeting"}, state)
 
 	response := conn.GetWrittenData()
 	// Should find messages 1 and 3
@@ -300,16 +300,16 @@ func TestSearchCommand_SubjectHeader(t *testing.T) {
 
 // TestSearchCommand_ToHeader tests SEARCH TO
 func TestSearchCommand_ToHeader(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 
-	helpers.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "alice@example.com", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "bob@example.com", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "alice@example.com", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "bob@example.com", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -317,7 +317,7 @@ func TestSearchCommand_ToHeader(t *testing.T) {
 		SelectedMailboxID: mailboxID,
 	}
 
-	server.HandleSearch(conn, "S012", []string{"S012", "SEARCH", "TO", "alice"}, state)
+	srv.HandleSearch(conn, "S012", []string{"S012", "SEARCH", "TO", "alice"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "* SEARCH 1") {
@@ -327,18 +327,18 @@ func TestSearchCommand_ToHeader(t *testing.T) {
 
 // TestSearchCommand_SequenceSet tests SEARCH with sequence numbers
 func TestSearchCommand_SequenceSet(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 
-	helpers.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Message 3", "sender@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Message 4", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 3", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 4", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -347,7 +347,7 @@ func TestSearchCommand_SequenceSet(t *testing.T) {
 	}
 
 	// Test single sequence number
-	server.HandleSearch(conn, "S013", []string{"S013", "SEARCH", "2"}, state)
+	srv.HandleSearch(conn, "S013", []string{"S013", "SEARCH", "2"}, state)
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "* SEARCH 2") {
 		t.Errorf("Expected to find message 2, got: %s", response)
@@ -356,7 +356,7 @@ func TestSearchCommand_SequenceSet(t *testing.T) {
 	conn.ClearWriteBuffer()
 
 	// Test sequence range
-	server.HandleSearch(conn, "S014", []string{"S014", "SEARCH", "2:4"}, state)
+	srv.HandleSearch(conn, "S014", []string{"S014", "SEARCH", "2:4"}, state)
 	response = conn.GetWrittenData()
 	if !strings.Contains(response, "2") || !strings.Contains(response, "3") || !strings.Contains(response, "4") {
 		t.Errorf("Expected to find messages 2-4, got: %s", response)
@@ -365,16 +365,16 @@ func TestSearchCommand_SequenceSet(t *testing.T) {
 
 // TestSearchCommand_NOT tests SEARCH NOT
 func TestSearchCommand_NOT(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 
-	msg1ID := helpers.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
+	msg1ID := InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -382,13 +382,13 @@ func TestSearchCommand_NOT(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 1 as seen
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
 
 	// Search for NOT SEEN (equivalent to UNSEEN)
-	server.HandleSearch(conn, "S015", []string{"S015", "SEARCH", "NOT", "SEEN"}, state)
+	srv.HandleSearch(conn, "S015", []string{"S015", "SEARCH", "NOT", "SEEN"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "* SEARCH 2") {
@@ -401,17 +401,17 @@ func TestSearchCommand_NOT(t *testing.T) {
 
 // TestSearchCommand_OR tests SEARCH OR
 func TestSearchCommand_OR(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 
-	msg1ID := helpers.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
-	msg2ID := helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Message 3", "sender@test.com", "testuser@localhost", "INBOX")
+	msg1ID := InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+	msg2ID := InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 3", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -419,14 +419,14 @@ func TestSearchCommand_OR(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 1 as seen, message 2 as flagged
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg2ID, mailboxID)
 
 	// Search for SEEN OR FLAGGED
-	server.HandleSearch(conn, "S016", []string{"S016", "SEARCH", "OR", "SEEN", "FLAGGED"}, state)
+	srv.HandleSearch(conn, "S016", []string{"S016", "SEARCH", "OR", "SEEN", "FLAGGED"}, state)
 
 	response := conn.GetWrittenData()
 	// Should find messages 1 and 2 but not 3
@@ -437,17 +437,17 @@ func TestSearchCommand_OR(t *testing.T) {
 
 // TestSearchCommand_CombinedCriteria tests SEARCH with multiple criteria (AND logic)
 func TestSearchCommand_CombinedCriteria(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 
-	msg1ID := helpers.InsertTestMail(t, database, "testuser", "Meeting", "smith@example.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Meeting", "jones@example.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Project", "smith@example.com", "testuser@localhost", "INBOX")
+	msg1ID := InsertTestMail(t, database, "testuser", "Meeting", "smith@example.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Meeting", "jones@example.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Project", "smith@example.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -455,14 +455,14 @@ func TestSearchCommand_CombinedCriteria(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 1 as flagged
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
 
 	// Search for FLAGGED messages FROM "smith" with SUBJECT "Meeting"
 	// Should only match message 1
-	server.HandleSearch(conn, "S017", []string{"S017", "SEARCH", "FLAGGED", "FROM", "smith", "SUBJECT", "Meeting"}, state)
+	srv.HandleSearch(conn, "S017", []string{"S017", "SEARCH", "FLAGGED", "FROM", "smith", "SUBJECT", "Meeting"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "* SEARCH 1") {
@@ -476,18 +476,18 @@ func TestSearchCommand_CombinedCriteria(t *testing.T) {
 
 // TestSearchCommand_RFC3501Example tests the example from RFC 3501
 func TestSearchCommand_RFC3501Example(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 
 	// Create messages with specific dates and flags
-	msg1ID := helpers.InsertTestMail(t, database, "testuser", "From Smith", "smith@example.com", "testuser@localhost", "INBOX")
-	msg2ID := helpers.InsertTestMail(t, database, "testuser", "From Smith", "smith@example.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "From Jones", "jones@example.com", "testuser@localhost", "INBOX")
+	msg1ID := InsertTestMail(t, database, "testuser", "From Smith", "smith@example.com", "testuser@localhost", "INBOX")
+	msg2ID := InsertTestMail(t, database, "testuser", "From Smith", "smith@example.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "From Jones", "jones@example.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -495,7 +495,7 @@ func TestSearchCommand_RFC3501Example(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// Set dates for messages (after 1-Feb-1994)
 	futureDate := time.Date(1994, 2, 15, 10, 0, 0, 0, time.UTC)
@@ -509,7 +509,7 @@ func TestSearchCommand_RFC3501Example(t *testing.T) {
 	// RFC 3501 Example: SEARCH FLAGGED SINCE 1-Feb-1994 NOT FROM "Smith"
 	// Since our implementation doesn't have DELETED flag support in test data,
 	// we'll test: FLAGGED FROM "Smith" SINCE 1-Feb-1994
-	server.HandleSearch(conn, "A282", []string{"A282", "SEARCH", "FLAGGED", "FROM", "Smith", "SINCE", "1-Feb-1994"}, state)
+	srv.HandleSearch(conn, "A282", []string{"A282", "SEARCH", "FLAGGED", "FROM", "Smith", "SINCE", "1-Feb-1994"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "* SEARCH") {
@@ -522,15 +522,15 @@ func TestSearchCommand_RFC3501Example(t *testing.T) {
 
 // TestSearchCommand_EmptyResult tests search with no matching messages
 func TestSearchCommand_EmptyResult(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 
-	helpers.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -539,7 +539,7 @@ func TestSearchCommand_EmptyResult(t *testing.T) {
 	}
 
 	// RFC 3501 Example: Search for non-existent string
-	server.HandleSearch(conn, "A283", []string{"A283", "SEARCH", "TEXT", "\"string not in mailbox\""}, state)
+	srv.HandleSearch(conn, "A283", []string{"A283", "SEARCH", "TEXT", "\"string not in mailbox\""}, state)
 
 	response := conn.GetWrittenData()
 	// Should return empty SEARCH response
@@ -553,14 +553,14 @@ func TestSearchCommand_EmptyResult(t *testing.T) {
 
 // TestSearchCommand_CHARSET tests SEARCH with CHARSET specification
 func TestSearchCommand_CHARSET(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test Message", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test Message", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -569,7 +569,7 @@ func TestSearchCommand_CHARSET(t *testing.T) {
 	}
 
 	// Test with supported charset (UTF-8)
-	server.HandleSearch(conn, "A284", []string{"A284", "SEARCH", "CHARSET", "UTF-8", "TEXT", "Test"}, state)
+	srv.HandleSearch(conn, "A284", []string{"A284", "SEARCH", "CHARSET", "UTF-8", "TEXT", "Test"}, state)
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "* SEARCH 1") {
 		t.Errorf("Expected to find message with UTF-8 charset, got: %s", response)
@@ -578,7 +578,7 @@ func TestSearchCommand_CHARSET(t *testing.T) {
 	conn.ClearWriteBuffer()
 
 	// Test with unsupported charset
-	server.HandleSearch(conn, "A285", []string{"A285", "SEARCH", "CHARSET", "ISO-8859-1", "TEXT", "Test"}, state)
+	srv.HandleSearch(conn, "A285", []string{"A285", "SEARCH", "CHARSET", "ISO-8859-1", "TEXT", "Test"}, state)
 	response = conn.GetWrittenData()
 	// Should return NO with BADCHARSET response code
 	if !strings.Contains(response, "A285 NO") || !strings.Contains(response, "BADCHARSET") {
@@ -588,17 +588,17 @@ func TestSearchCommand_CHARSET(t *testing.T) {
 
 // TestSearchCommand_LARGER_SMALLER tests SEARCH LARGER and SMALLER
 func TestSearchCommand_LARGER_SMALLER(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 
 	// Create messages (they will have different sizes based on subject length)
-	helpers.InsertTestMail(t, database, "testuser", "A", "sender@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "This is a very long subject line that will make this message larger", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "A", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "This is a very long subject line that will make this message larger", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -607,7 +607,7 @@ func TestSearchCommand_LARGER_SMALLER(t *testing.T) {
 	}
 
 	// Test SMALLER - should find smaller messages
-	server.HandleSearch(conn, "S018", []string{"S018", "SEARCH", "SMALLER", "500"}, state)
+	srv.HandleSearch(conn, "S018", []string{"S018", "SEARCH", "SMALLER", "500"}, state)
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "* SEARCH") {
 		t.Errorf("Expected SEARCH response for SMALLER, got: %s", response)
@@ -616,7 +616,7 @@ func TestSearchCommand_LARGER_SMALLER(t *testing.T) {
 	conn.ClearWriteBuffer()
 
 	// Test LARGER - should find larger messages
-	server.HandleSearch(conn, "S019", []string{"S019", "SEARCH", "LARGER", "50"}, state)
+	srv.HandleSearch(conn, "S019", []string{"S019", "SEARCH", "LARGER", "50"}, state)
 	response = conn.GetWrittenData()
 	if !strings.Contains(response, "* SEARCH") {
 		t.Errorf("Expected SEARCH response for LARGER, got: %s", response)
@@ -625,16 +625,16 @@ func TestSearchCommand_LARGER_SMALLER(t *testing.T) {
 
 // TestSearchCommand_DateSearches tests BEFORE, ON, SINCE
 func TestSearchCommand_DateSearches(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 
-	msg1ID := helpers.InsertTestMail(t, database, "testuser", "Old Message", "sender@test.com", "testuser@localhost", "INBOX")
-	msg2ID := helpers.InsertTestMail(t, database, "testuser", "Recent Message", "sender@test.com", "testuser@localhost", "INBOX")
+	msg1ID := InsertTestMail(t, database, "testuser", "Old Message", "sender@test.com", "testuser@localhost", "INBOX")
+	msg2ID := InsertTestMail(t, database, "testuser", "Recent Message", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -642,7 +642,7 @@ func TestSearchCommand_DateSearches(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// Set different dates
 	oldDate := time.Date(2020, 1, 1, 10, 0, 0, 0, time.UTC)
@@ -652,7 +652,7 @@ func TestSearchCommand_DateSearches(t *testing.T) {
 	userDB.Exec(`UPDATE message_mailbox SET internal_date = ? WHERE message_id = ? AND mailbox_id = ?`, recentDate, msg2ID, mailboxID)
 
 	// Test SINCE - should find recent messages
-	server.HandleSearch(conn, "S020", []string{"S020", "SEARCH", "SINCE", "1-Jan-2024"}, state)
+	srv.HandleSearch(conn, "S020", []string{"S020", "SEARCH", "SINCE", "1-Jan-2024"}, state)
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "2") {
 		t.Errorf("Expected to find recent message with SINCE, got: %s", response)
@@ -661,7 +661,7 @@ func TestSearchCommand_DateSearches(t *testing.T) {
 	conn.ClearWriteBuffer()
 
 	// Test BEFORE - should find old messages
-	server.HandleSearch(conn, "S021", []string{"S021", "SEARCH", "BEFORE", "1-Jan-2024"}, state)
+	srv.HandleSearch(conn, "S021", []string{"S021", "SEARCH", "BEFORE", "1-Jan-2024"}, state)
 	response = conn.GetWrittenData()
 	if !strings.Contains(response, "1") {
 		t.Errorf("Expected to find old message with BEFORE, got: %s", response)
@@ -670,16 +670,16 @@ func TestSearchCommand_DateSearches(t *testing.T) {
 
 // TestSearchCommand_NEW_OLD tests SEARCH NEW and OLD
 func TestSearchCommand_NEW_OLD(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 
-	msg1ID := helpers.InsertTestMail(t, database, "testuser", "New Message", "sender@test.com", "testuser@localhost", "INBOX")
-	msg2ID := helpers.InsertTestMail(t, database, "testuser", "Old Message", "sender@test.com", "testuser@localhost", "INBOX")
+	msg1ID := InsertTestMail(t, database, "testuser", "New Message", "sender@test.com", "testuser@localhost", "INBOX")
+	msg2ID := InsertTestMail(t, database, "testuser", "Old Message", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -687,7 +687,7 @@ func TestSearchCommand_NEW_OLD(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// NEW = RECENT and UNSEEN
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Recent' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
@@ -696,7 +696,7 @@ func TestSearchCommand_NEW_OLD(t *testing.T) {
 	// Message 2 has no flags, so it's not recent
 
 	// Test NEW - should find recent unseen messages
-	server.HandleSearch(conn, "S022", []string{"S022", "SEARCH", "NEW"}, state)
+	srv.HandleSearch(conn, "S022", []string{"S022", "SEARCH", "NEW"}, state)
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "1") {
 		t.Errorf("Expected to find new message, got: %s", response)
@@ -705,7 +705,7 @@ func TestSearchCommand_NEW_OLD(t *testing.T) {
 	conn.ClearWriteBuffer()
 
 	// Test OLD - should find non-recent messages
-	server.HandleSearch(conn, "S023", []string{"S023", "SEARCH", "OLD"}, state)
+	srv.HandleSearch(conn, "S023", []string{"S023", "SEARCH", "OLD"}, state)
 	response = conn.GetWrittenData()
 	if !strings.Contains(response, "2") {
 		t.Errorf("Expected to find old message, got: %s", response)
@@ -716,16 +716,16 @@ func TestSearchCommand_NEW_OLD(t *testing.T) {
 
 // TestSearchCommand_ANSWERED tests SEARCH ANSWERED and UNANSWERED
 func TestSearchCommand_ANSWERED(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 
-	msg1ID := helpers.InsertTestMail(t, database, "testuser", "Answered", "sender@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Not Answered", "sender@test.com", "testuser@localhost", "INBOX")
+	msg1ID := InsertTestMail(t, database, "testuser", "Answered", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Not Answered", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -733,13 +733,13 @@ func TestSearchCommand_ANSWERED(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 1 as answered
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Answered' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
 
 	// Test ANSWERED
-	server.HandleSearch(conn, "S024", []string{"S024", "SEARCH", "ANSWERED"}, state)
+	srv.HandleSearch(conn, "S024", []string{"S024", "SEARCH", "ANSWERED"}, state)
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "* SEARCH 1") {
 		t.Errorf("Expected to find answered message, got: %s", response)
@@ -748,7 +748,7 @@ func TestSearchCommand_ANSWERED(t *testing.T) {
 	conn.ClearWriteBuffer()
 
 	// Test UNANSWERED
-	server.HandleSearch(conn, "S025", []string{"S025", "SEARCH", "UNANSWERED"}, state)
+	srv.HandleSearch(conn, "S025", []string{"S025", "SEARCH", "UNANSWERED"}, state)
 	response = conn.GetWrittenData()
 	if !strings.Contains(response, "* SEARCH 2") {
 		t.Errorf("Expected to find unanswered message, got: %s", response)
@@ -757,16 +757,16 @@ func TestSearchCommand_ANSWERED(t *testing.T) {
 
 // TestSearchCommand_DRAFT tests SEARCH DRAFT and UNDRAFT
 func TestSearchCommand_DRAFT(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 
-	msg1ID := helpers.InsertTestMail(t, database, "testuser", "Draft", "sender@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Not Draft", "sender@test.com", "testuser@localhost", "INBOX")
+	msg1ID := InsertTestMail(t, database, "testuser", "Draft", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Not Draft", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -774,13 +774,13 @@ func TestSearchCommand_DRAFT(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 1 as draft
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Draft' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
 
 	// Test DRAFT
-	server.HandleSearch(conn, "S026", []string{"S026", "SEARCH", "DRAFT"}, state)
+	srv.HandleSearch(conn, "S026", []string{"S026", "SEARCH", "DRAFT"}, state)
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "* SEARCH 1") {
 		t.Errorf("Expected to find draft message, got: %s", response)
@@ -789,7 +789,7 @@ func TestSearchCommand_DRAFT(t *testing.T) {
 	conn.ClearWriteBuffer()
 
 	// Test UNDRAFT
-	server.HandleSearch(conn, "S027", []string{"S027", "SEARCH", "UNDRAFT"}, state)
+	srv.HandleSearch(conn, "S027", []string{"S027", "SEARCH", "UNDRAFT"}, state)
 	response = conn.GetWrittenData()
 	if !strings.Contains(response, "* SEARCH 2") {
 		t.Errorf("Expected to find non-draft message, got: %s", response)
@@ -798,16 +798,16 @@ func TestSearchCommand_DRAFT(t *testing.T) {
 
 // TestSearchCommand_HEADER tests SEARCH HEADER
 func TestSearchCommand_HEADER(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 
-	helpers.InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Another Subject", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Another Subject", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -816,7 +816,7 @@ func TestSearchCommand_HEADER(t *testing.T) {
 	}
 
 	// Test HEADER Subject with specific string
-	server.HandleSearch(conn, "S028", []string{"S028", "SEARCH", "HEADER", "Subject", "Test"}, state)
+	srv.HandleSearch(conn, "S028", []string{"S028", "SEARCH", "HEADER", "Subject", "Test"}, state)
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "* SEARCH 1") {
 		t.Errorf("Expected to find message with 'Test' in Subject header, got: %s", response)
@@ -825,17 +825,17 @@ func TestSearchCommand_HEADER(t *testing.T) {
 
 // TestSearchCommand_BODY_TEXT tests SEARCH BODY and TEXT
 func TestSearchCommand_BODY_TEXT(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 
 	// Note: Our InsertTestMail creates messages with "Test message body" as the body
-	helpers.InsertTestMail(t, database, "testuser", "Subject One", "sender@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Subject Two", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Subject One", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Subject Two", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -844,7 +844,7 @@ func TestSearchCommand_BODY_TEXT(t *testing.T) {
 	}
 
 	// Test BODY - search in message body
-	server.HandleSearch(conn, "S029", []string{"S029", "SEARCH", "BODY", "message"}, state)
+	srv.HandleSearch(conn, "S029", []string{"S029", "SEARCH", "BODY", "message"}, state)
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "1") || !strings.Contains(response, "2") {
 		t.Errorf("Expected to find both messages with 'message' in body, got: %s", response)
@@ -853,7 +853,7 @@ func TestSearchCommand_BODY_TEXT(t *testing.T) {
 	conn.ClearWriteBuffer()
 
 	// Test TEXT - search in entire message (headers + body)
-	server.HandleSearch(conn, "S030", []string{"S030", "SEARCH", "TEXT", "Subject One"}, state)
+	srv.HandleSearch(conn, "S030", []string{"S030", "SEARCH", "TEXT", "Subject One"}, state)
 	response = conn.GetWrittenData()
 	if !strings.Contains(response, "1") {
 		t.Errorf("Expected to find message with 'Subject One' in text, got: %s", response)
@@ -862,17 +862,17 @@ func TestSearchCommand_BODY_TEXT(t *testing.T) {
 
 // TestSearchCommand_UID tests SEARCH UID
 func TestSearchCommand_UID(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 
-	helpers.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Message 3", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 3", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -881,7 +881,7 @@ func TestSearchCommand_UID(t *testing.T) {
 	}
 
 	// Test UID search with single UID
-	server.HandleSearch(conn, "S031", []string{"S031", "SEARCH", "UID", "1"}, state)
+	srv.HandleSearch(conn, "S031", []string{"S031", "SEARCH", "UID", "1"}, state)
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "* SEARCH") {
 		t.Errorf("Expected SEARCH response for UID, got: %s", response)
@@ -890,7 +890,7 @@ func TestSearchCommand_UID(t *testing.T) {
 	conn.ClearWriteBuffer()
 
 	// Test UID search with range
-	server.HandleSearch(conn, "S032", []string{"S032", "SEARCH", "UID", "1:2"}, state)
+	srv.HandleSearch(conn, "S032", []string{"S032", "SEARCH", "UID", "1:2"}, state)
 	response = conn.GetWrittenData()
 	if !strings.Contains(response, "* SEARCH") {
 		t.Errorf("Expected SEARCH response for UID range, got: %s", response)
@@ -899,12 +899,12 @@ func TestSearchCommand_UID(t *testing.T) {
 
 // TestSearchCommand_BadSyntax tests SEARCH with invalid syntax
 func TestSearchCommand_BadSyntax(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -914,7 +914,7 @@ func TestSearchCommand_BadSyntax(t *testing.T) {
 	}
 
 	// Test with no search criteria
-	server.HandleSearch(conn, "S033", []string{"S033", "SEARCH"}, state)
+	srv.HandleSearch(conn, "S033", []string{"S033", "SEARCH"}, state)
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "S033 BAD") {
 		t.Errorf("Expected BAD response for missing criteria, got: %s", response)
@@ -923,16 +923,16 @@ func TestSearchCommand_BadSyntax(t *testing.T) {
 
 // TestSearchCommand_ResponseFormat tests the format of SEARCH responses
 func TestSearchCommand_ResponseFormat(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 
-	helpers.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -940,7 +940,7 @@ func TestSearchCommand_ResponseFormat(t *testing.T) {
 		SelectedMailboxID: mailboxID,
 	}
 
-	server.HandleSearch(conn, "FORMAT", []string{"FORMAT", "SEARCH", "ALL"}, state)
+	srv.HandleSearch(conn, "FORMAT", []string{"FORMAT", "SEARCH", "ALL"}, state)
 
 	response := conn.GetWrittenData()
 
@@ -973,12 +973,12 @@ func TestSearchCommand_ResponseFormat(t *testing.T) {
 
 // TestSearchCommand_TagHandling tests various tag formats
 func TestSearchCommand_TagHandling(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Message", "sender@test.com", "testuser@localhost", "INBOX")
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Message", "sender@test.com", "testuser@localhost", "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -1000,8 +1000,8 @@ func TestSearchCommand_TagHandling(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			conn := helpers.NewMockConn()
-			server.HandleSearch(conn, tc.tag, []string{tc.tag, "SEARCH", "ALL"}, state)
+			conn := NewMockConn()
+			srv.HandleSearch(conn, tc.tag, []string{tc.tag, "SEARCH", "ALL"}, state)
 
 			response := conn.GetWrittenData()
 			expectedCompletion := fmt.Sprintf("%s OK SEARCH completed", tc.tag)

@@ -5,15 +5,15 @@ import (
 	"testing"
 
 	"raven/internal/models"
-	"raven/test/helpers"
+	
 )
 
 // TestStartTLS_BasicFlow tests the basic STARTTLS command flow per RFC 3501
 func TestStartTLS_BasicFlow(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockConn() // Plain connection
+	conn := NewMockConn() // Plain connection
 
 	// Issue STARTTLS command
 	s.HandleStartTLS(conn, "A001", []string{"A001", "STARTTLS"})
@@ -28,10 +28,10 @@ func TestStartTLS_BasicFlow(t *testing.T) {
 
 // TestStartTLS_ExactResponseFormat tests RFC 3501 compliance for response format
 func TestStartTLS_ExactResponseFormat(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockConn()
+	conn := NewMockConn()
 
 	s.HandleStartTLS(conn, "a002", []string{"a002", "STARTTLS"})
 
@@ -46,10 +46,10 @@ func TestStartTLS_ExactResponseFormat(t *testing.T) {
 
 // TestStartTLS_NoArguments tests that STARTTLS rejects arguments per RFC 3501
 func TestStartTLS_NoArguments(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockConn()
+	conn := NewMockConn()
 
 	// Try STARTTLS with an argument (invalid)
 	s.HandleStartTLS(conn, "A001", []string{"A001", "STARTTLS", "EXTRA"})
@@ -68,10 +68,10 @@ func TestStartTLS_NoArguments(t *testing.T) {
 
 // TestStartTLS_MultipleArguments tests rejection of multiple arguments
 func TestStartTLS_MultipleArguments(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockConn()
+	conn := NewMockConn()
 
 	s.HandleStartTLS(conn, "A001", []string{"A001", "STARTTLS", "ARG1", "ARG2"})
 
@@ -84,10 +84,10 @@ func TestStartTLS_MultipleArguments(t *testing.T) {
 
 // TestStartTLS_AlreadyOnTLS tests that STARTTLS fails when already on TLS
 func TestStartTLS_AlreadyOnTLS(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockTLSConn() // Already TLS connection
+	conn := NewMockTLSConn() // Already TLS connection
 
 	// Try STARTTLS on TLS connection (invalid)
 	s.HandleStartTLS(conn, "A001", []string{"A001", "STARTTLS"})
@@ -118,10 +118,10 @@ func TestStartTLS_CaseInsensitive(t *testing.T) {
 
 	for _, cmdCase := range testCases {
 		t.Run(cmdCase, func(t *testing.T) {
-			s, cleanup := helpers.SetupTestServer(t)
+			s, cleanup := SetupTestServer(t)
 			defer cleanup()
 
-			conn := helpers.NewMockConn()
+			conn := NewMockConn()
 
 			// The command will be uppercase by the time it reaches the handler
 			s.HandleStartTLS(conn, "A001", []string{"A001", "STARTTLS"})
@@ -146,10 +146,10 @@ func TestStartTLS_TagPreserved(t *testing.T) {
 
 	for _, tag := range testCases {
 		t.Run(tag, func(t *testing.T) {
-			s, cleanup := helpers.SetupTestServer(t)
+			s, cleanup := SetupTestServer(t)
 			defer cleanup()
 
-			conn := helpers.NewMockConn()
+			conn := NewMockConn()
 
 			s.HandleStartTLS(conn, tag, []string{tag, "STARTTLS"})
 
@@ -169,10 +169,10 @@ func TestStartTLS_StateReset(t *testing.T) {
 	// This is tested by verifying that after STARTTLS, the connection
 	// starts with a fresh ClientState
 
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockConn()
+	conn := NewMockConn()
 
 	// Issue STARTTLS
 	s.HandleStartTLS(conn, "A001", []string{"A001", "STARTTLS"})
@@ -202,11 +202,11 @@ func TestStartTLS_RFCExampleSequence(t *testing.T) {
 	// S: * CAPABILITY IMAP4rev1 AUTH=PLAIN
 	// S: a003 OK CAPABILITY completed
 
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
 	// Step 1: Check capabilities on plain connection
-	conn := helpers.NewMockConn()
+	conn := NewMockConn()
 	state := &models.ClientState{Authenticated: false}
 
 	s.HandleCapability(conn, "a001", state)
@@ -230,7 +230,7 @@ func TestStartTLS_RFCExampleSequence(t *testing.T) {
 	}
 
 	// Step 3: After TLS, capabilities should change (simulated with TLS mock)
-	tlsConn := helpers.NewMockTLSConn()
+	tlsConn := NewMockTLSConn()
 	tlsState := &models.ClientState{Authenticated: false}
 
 	s.HandleCapability(tlsConn, "a003", tlsState)
@@ -256,18 +256,18 @@ func TestStartTLS_CapabilityMustBeReissued(t *testing.T) {
 	// information about server capabilities and SHOULD re-issue the
 	// CAPABILITY command."
 
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
 	// Before STARTTLS - plain connection
-	plainConn := helpers.NewMockConn()
+	plainConn := NewMockConn()
 	plainState := &models.ClientState{Authenticated: false}
 
 	s.HandleCapability(plainConn, "A001", plainState)
 	plainResponse := plainConn.GetWrittenData()
 
 	// After STARTTLS - TLS connection
-	tlsConn := helpers.NewMockTLSConn()
+	tlsConn := NewMockTLSConn()
 	tlsState := &models.ClientState{Authenticated: false}
 
 	s.HandleCapability(tlsConn, "A002", tlsState)
@@ -301,10 +301,10 @@ func TestStartTLS_NonAuthenticatedState(t *testing.T) {
 	// RFC 3501: "The server remains in the non-authenticated state,
 	// even if client credentials are supplied during the [TLS] negotiation."
 
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockConn()
+	conn := NewMockConn()
 
 	// Issue STARTTLS
 	s.HandleStartTLS(conn, "A001", []string{"A001", "STARTTLS"})
@@ -322,11 +322,11 @@ func TestStartTLS_NonAuthenticatedState(t *testing.T) {
 
 // TestStartTLS_WithWhitespace tests STARTTLS with various whitespace patterns
 func TestStartTLS_WithWhitespace(t *testing.T) {
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
 	// Valid: just tag and command
-	conn := helpers.NewMockConn()
+	conn := NewMockConn()
 	s.HandleStartTLS(conn, "A001", []string{"A001", "STARTTLS"})
 
 	response := conn.GetWrittenData()
@@ -342,10 +342,10 @@ func TestStartTLS_ErrorHandling(t *testing.T) {
 	// In the actual implementation, missing certs will cause a BAD response
 	// The test server uses hardcoded paths that may not exist
 
-	s, cleanup := helpers.SetupTestServer(t)
+	s, cleanup := SetupTestServer(t)
 	defer cleanup()
 
-	conn := helpers.NewMockConn()
+	conn := NewMockConn()
 
 	// This will fail to load certs in test environment
 	s.HandleStartTLS(conn, "A001", []string{"A001", "STARTTLS"})

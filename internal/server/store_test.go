@@ -1,25 +1,25 @@
 //go:build test
 // +build test
 
-package server_test
+package server
 
 import (
 	"strings"
 	"testing"
 
 	"raven/internal/models"
-	"raven/test/helpers"
+	
 )
 
 // TestStoreCommand_Unauthenticated tests STORE without authentication
 func TestStoreCommand_Unauthenticated(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
 	state := &models.ClientState{
 		Authenticated: false,
 	}
 
-	server.HandleStore(conn, "S001", []string{"S001", "STORE", "1", "FLAGS", "(\\Seen)"}, state)
+	srv.HandleStore(conn, "S001", []string{"S001", "STORE", "1", "FLAGS", "(\\Seen)"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "S001 NO Please authenticate first") {
@@ -29,11 +29,11 @@ func TestStoreCommand_Unauthenticated(t *testing.T) {
 
 // TestStoreCommand_NoMailboxSelected tests STORE without mailbox selection
 func TestStoreCommand_NoMailboxSelected(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
+	userID := CreateTestUser(t, database, "testuser")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -41,7 +41,7 @@ func TestStoreCommand_NoMailboxSelected(t *testing.T) {
 		SelectedMailboxID: 0, // No mailbox selected
 	}
 
-	server.HandleStore(conn, "S002", []string{"S002", "STORE", "1", "FLAGS", "(\\Seen)"}, state)
+	srv.HandleStore(conn, "S002", []string{"S002", "STORE", "1", "FLAGS", "(\\Seen)"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "S002 NO No mailbox selected") {
@@ -51,14 +51,14 @@ func TestStoreCommand_NoMailboxSelected(t *testing.T) {
 
 // TestStoreCommand_FLAGS_Replace tests STORE FLAGS (replace all flags)
 func TestStoreCommand_FLAGS_Replace(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	msgID := helpers.InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	msgID := InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -66,13 +66,13 @@ func TestStoreCommand_FLAGS_Replace(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// Set initial flags
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen \Answered' WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID)
 
 	// Replace flags with \Deleted
-	server.HandleStore(conn, "S003", []string{"S003", "STORE", "1", "FLAGS", "(\\Deleted)"}, state)
+	srv.HandleStore(conn, "S003", []string{"S003", "STORE", "1", "FLAGS", "(\\Deleted)"}, state)
 
 	response := conn.GetWrittenData()
 	// Should return untagged FETCH with new flags
@@ -99,14 +99,14 @@ func TestStoreCommand_FLAGS_Replace(t *testing.T) {
 
 // TestStoreCommand_AddFlags tests STORE +FLAGS (add flags)
 func TestStoreCommand_AddFlags(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	msgID := helpers.InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	msgID := InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -114,13 +114,13 @@ func TestStoreCommand_AddFlags(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// Set initial flag
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID)
 
 	// Add \Deleted flag
-	server.HandleStore(conn, "S004", []string{"S004", "STORE", "1", "+FLAGS", "(\\Deleted)"}, state)
+	srv.HandleStore(conn, "S004", []string{"S004", "STORE", "1", "+FLAGS", "(\\Deleted)"}, state)
 
 	response := conn.GetWrittenData()
 	// Should have both flags
@@ -134,14 +134,14 @@ func TestStoreCommand_AddFlags(t *testing.T) {
 
 // TestStoreCommand_RemoveFlags tests STORE -FLAGS (remove flags)
 func TestStoreCommand_RemoveFlags(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	msgID := helpers.InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	msgID := InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -149,13 +149,13 @@ func TestStoreCommand_RemoveFlags(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// Set initial flags
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen \Deleted \Flagged' WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID)
 
 	// Remove \Deleted flag
-	server.HandleStore(conn, "S005", []string{"S005", "STORE", "1", "-FLAGS", "(\\Deleted)"}, state)
+	srv.HandleStore(conn, "S005", []string{"S005", "STORE", "1", "-FLAGS", "(\\Deleted)"}, state)
 
 	response := conn.GetWrittenData()
 	// Should have remaining flags but not \Deleted
@@ -169,14 +169,14 @@ func TestStoreCommand_RemoveFlags(t *testing.T) {
 
 // TestStoreCommand_FLAGS_SILENT tests STORE FLAGS.SILENT
 func TestStoreCommand_FLAGS_SILENT(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	msgID := helpers.InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	msgID := InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -184,10 +184,10 @@ func TestStoreCommand_FLAGS_SILENT(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// Store with .SILENT - should NOT return untagged FETCH
-	server.HandleStore(conn, "S006", []string{"S006", "STORE", "1", "FLAGS.SILENT", "(\\Seen)"}, state)
+	srv.HandleStore(conn, "S006", []string{"S006", "STORE", "1", "FLAGS.SILENT", "(\\Seen)"}, state)
 
 	response := conn.GetWrittenData()
 	// Should NOT contain untagged FETCH
@@ -209,14 +209,14 @@ func TestStoreCommand_FLAGS_SILENT(t *testing.T) {
 
 // TestStoreCommand_AddFLAGS_SILENT tests STORE +FLAGS.SILENT
 func TestStoreCommand_AddFLAGS_SILENT(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -225,7 +225,7 @@ func TestStoreCommand_AddFLAGS_SILENT(t *testing.T) {
 		SelectedMailboxID: mailboxID,
 	}
 
-	server.HandleStore(conn, "S007", []string{"S007", "STORE", "1", "+FLAGS.SILENT", "(\\Deleted)"}, state)
+	srv.HandleStore(conn, "S007", []string{"S007", "STORE", "1", "+FLAGS.SILENT", "(\\Deleted)"}, state)
 
 	response := conn.GetWrittenData()
 	if strings.Contains(response, "* 1 FETCH") {
@@ -238,14 +238,14 @@ func TestStoreCommand_AddFLAGS_SILENT(t *testing.T) {
 
 // TestStoreCommand_RemoveFLAGS_SILENT tests STORE -FLAGS.SILENT
 func TestStoreCommand_RemoveFLAGS_SILENT(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	msgID := helpers.InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	msgID := InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -253,11 +253,11 @@ func TestStoreCommand_RemoveFLAGS_SILENT(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen \Deleted' WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID)
 
-	server.HandleStore(conn, "S008", []string{"S008", "STORE", "1", "-FLAGS.SILENT", "(\\Deleted)"}, state)
+	srv.HandleStore(conn, "S008", []string{"S008", "STORE", "1", "-FLAGS.SILENT", "(\\Deleted)"}, state)
 
 	response := conn.GetWrittenData()
 	if strings.Contains(response, "* 1 FETCH") {
@@ -267,17 +267,17 @@ func TestStoreCommand_RemoveFLAGS_SILENT(t *testing.T) {
 
 // TestStoreCommand_SequenceRange tests STORE with sequence range
 func TestStoreCommand_SequenceRange(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Msg 1", "sender@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Msg 2", "sender@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Msg 3", "sender@test.com", "testuser@localhost", "INBOX")
-	helpers.InsertTestMail(t, database, "testuser", "Msg 4", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Msg 1", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Msg 2", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Msg 3", "sender@test.com", "testuser@localhost", "INBOX")
+	InsertTestMail(t, database, "testuser", "Msg 4", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -287,7 +287,7 @@ func TestStoreCommand_SequenceRange(t *testing.T) {
 	}
 
 	// RFC 3501 Example: STORE 2:4 +FLAGS (\Deleted)
-	server.HandleStore(conn, "A003", []string{"A003", "STORE", "2:4", "+FLAGS", "(\\Deleted)"}, state)
+	srv.HandleStore(conn, "A003", []string{"A003", "STORE", "2:4", "+FLAGS", "(\\Deleted)"}, state)
 
 	response := conn.GetWrittenData()
 	// Should return FETCH for messages 2, 3, and 4
@@ -311,17 +311,17 @@ func TestStoreCommand_SequenceRange(t *testing.T) {
 
 // TestStoreCommand_RFC3501Example tests the exact example from RFC 3501
 func TestStoreCommand_RFC3501Example(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	msg1ID := helpers.InsertTestMail(t, database, "testuser", "Msg 1", "sender@test.com", "testuser@localhost", "INBOX")
-	msg2ID := helpers.InsertTestMail(t, database, "testuser", "Msg 2", "sender@test.com", "testuser@localhost", "INBOX")
-	msg3ID := helpers.InsertTestMail(t, database, "testuser", "Msg 3", "sender@test.com", "testuser@localhost", "INBOX")
-	msg4ID := helpers.InsertTestMail(t, database, "testuser", "Msg 4", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	msg1ID := InsertTestMail(t, database, "testuser", "Msg 1", "sender@test.com", "testuser@localhost", "INBOX")
+	msg2ID := InsertTestMail(t, database, "testuser", "Msg 2", "sender@test.com", "testuser@localhost", "INBOX")
+	msg3ID := InsertTestMail(t, database, "testuser", "Msg 3", "sender@test.com", "testuser@localhost", "INBOX")
+	msg4ID := InsertTestMail(t, database, "testuser", "Msg 4", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -329,7 +329,7 @@ func TestStoreCommand_RFC3501Example(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// Set initial flags like in RFC example
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msg2ID, mailboxID)
@@ -341,7 +341,7 @@ func TestStoreCommand_RFC3501Example(t *testing.T) {
 	// S: * 3 FETCH (FLAGS (\Deleted))
 	// S: * 4 FETCH (FLAGS (\Deleted \Flagged \Seen))
 	// S: A003 OK STORE completed
-	server.HandleStore(conn, "A003", []string{"A003", "STORE", "2:4", "+FLAGS", "(\\Deleted)"}, state)
+	srv.HandleStore(conn, "A003", []string{"A003", "STORE", "2:4", "+FLAGS", "(\\Deleted)"}, state)
 
 	response := conn.GetWrittenData()
 
@@ -383,14 +383,14 @@ func TestStoreCommand_RFC3501Example(t *testing.T) {
 
 // TestStoreCommand_MultipleFlags tests STORE with multiple flags
 func TestStoreCommand_MultipleFlags(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -400,7 +400,7 @@ func TestStoreCommand_MultipleFlags(t *testing.T) {
 	}
 
 	// Add multiple flags at once
-	server.HandleStore(conn, "S009", []string{"S009", "STORE", "1", "+FLAGS", "(\\Seen", "\\Deleted", "\\Flagged)"}, state)
+	srv.HandleStore(conn, "S009", []string{"S009", "STORE", "1", "+FLAGS", "(\\Seen", "\\Deleted", "\\Flagged)"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "\\Seen") || !strings.Contains(response, "\\Deleted") || !strings.Contains(response, "\\Flagged") {
@@ -410,13 +410,13 @@ func TestStoreCommand_MultipleFlags(t *testing.T) {
 
 // TestStoreCommand_InvalidDataItem tests STORE with invalid data item
 func TestStoreCommand_InvalidDataItem(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -425,7 +425,7 @@ func TestStoreCommand_InvalidDataItem(t *testing.T) {
 		SelectedMailboxID: mailboxID,
 	}
 
-	server.HandleStore(conn, "S010", []string{"S010", "STORE", "1", "INVALID", "(\\Seen)"}, state)
+	srv.HandleStore(conn, "S010", []string{"S010", "STORE", "1", "INVALID", "(\\Seen)"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "S010 BAD") {
@@ -435,12 +435,12 @@ func TestStoreCommand_InvalidDataItem(t *testing.T) {
 
 // TestStoreCommand_BadSyntax tests STORE with missing arguments
 func TestStoreCommand_BadSyntax(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -450,7 +450,7 @@ func TestStoreCommand_BadSyntax(t *testing.T) {
 	}
 
 	// Missing flags argument
-	server.HandleStore(conn, "S011", []string{"S011", "STORE", "1", "FLAGS"}, state)
+	srv.HandleStore(conn, "S011", []string{"S011", "STORE", "1", "FLAGS"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "S011 BAD") {
@@ -460,14 +460,14 @@ func TestStoreCommand_BadSyntax(t *testing.T) {
 
 // TestStoreCommand_NoRecentFlag tests that \Recent flag cannot be set by client
 func TestStoreCommand_NoRecentFlag(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	msgID := helpers.InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	msgID := InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -475,10 +475,10 @@ func TestStoreCommand_NoRecentFlag(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// Try to set \Recent (should be ignored)
-	server.HandleStore(conn, "S012", []string{"S012", "STORE", "1", "FLAGS", "(\\Recent", "\\Seen)"}, state)
+	srv.HandleStore(conn, "S012", []string{"S012", "STORE", "1", "FLAGS", "(\\Recent", "\\Seen)"}, state)
 
 	response := conn.GetWrittenData()
 	// \Recent should NOT appear in flags (server-managed only)
@@ -497,14 +497,14 @@ func TestStoreCommand_NoRecentFlag(t *testing.T) {
 
 // TestStoreCommand_EmptyFlags tests STORE FLAGS with empty flag list
 func TestStoreCommand_EmptyFlags(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	conn := helpers.NewMockConn()
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	conn := NewMockConn()
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	msgID := helpers.InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	msgID := InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -512,13 +512,13 @@ func TestStoreCommand_EmptyFlags(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := helpers.GetUserDBByID(t, database, state.UserID)
+	userDB := GetUserDBByID(t, database, state.UserID)
 
 	// Set some initial flags
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen \Flagged' WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID)
 
 	// Clear all flags
-	server.HandleStore(conn, "S013", []string{"S013", "STORE", "1", "FLAGS", "()"}, state)
+	srv.HandleStore(conn, "S013", []string{"S013", "STORE", "1", "FLAGS", "()"}, state)
 
 	response := conn.GetWrittenData()
 	// Should have empty flags
@@ -536,12 +536,12 @@ func TestStoreCommand_EmptyFlags(t *testing.T) {
 
 // TestStoreCommand_TagHandling tests various tag formats
 func TestStoreCommand_TagHandling(t *testing.T) {
-	server := helpers.SetupTestServerSimple(t)
-	database := helpers.GetDatabaseFromServer(server)
+	srv := SetupTestServerSimple(t)
+	database := GetDatabaseFromServer(server)
 
-	userID := helpers.CreateTestUser(t, database, "testuser")
-	helpers.InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
-	mailboxID, _ := helpers.GetMailboxID(t, database, userID, "INBOX")
+	userID := CreateTestUser(t, database, "testuser")
+	InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
+	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -554,8 +554,8 @@ func TestStoreCommand_TagHandling(t *testing.T) {
 
 	for _, tag := range testCases {
 		t.Run("Tag "+tag, func(t *testing.T) {
-			conn := helpers.NewMockConn()
-			server.HandleStore(conn, tag, []string{tag, "STORE", "1", "FLAGS", "(\\Seen)"}, state)
+			conn := NewMockConn()
+			srv.HandleStore(conn, tag, []string{tag, "STORE", "1", "FLAGS", "(\\Seen)"}, state)
 
 			response := conn.GetWrittenData()
 			expectedCompletion := tag + " OK STORE completed"
