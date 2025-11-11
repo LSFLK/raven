@@ -31,7 +31,7 @@ func TestStoreCommand_Unauthenticated(t *testing.T) {
 func TestStoreCommand_NoMailboxSelected(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	state := &models.ClientState{
@@ -53,7 +53,7 @@ func TestStoreCommand_NoMailboxSelected(t *testing.T) {
 func TestStoreCommand_FLAGS_Replace(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	msgID := InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
@@ -101,7 +101,7 @@ func TestStoreCommand_FLAGS_Replace(t *testing.T) {
 func TestStoreCommand_AddFlags(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	msgID := InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
@@ -136,7 +136,7 @@ func TestStoreCommand_AddFlags(t *testing.T) {
 func TestStoreCommand_RemoveFlags(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	msgID := InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
@@ -171,7 +171,7 @@ func TestStoreCommand_RemoveFlags(t *testing.T) {
 func TestStoreCommand_FLAGS_SILENT(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	msgID := InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
@@ -211,7 +211,7 @@ func TestStoreCommand_FLAGS_SILENT(t *testing.T) {
 func TestStoreCommand_AddFLAGS_SILENT(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
@@ -240,7 +240,7 @@ func TestStoreCommand_AddFLAGS_SILENT(t *testing.T) {
 func TestStoreCommand_RemoveFLAGS_SILENT(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	msgID := InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
@@ -269,7 +269,7 @@ func TestStoreCommand_RemoveFLAGS_SILENT(t *testing.T) {
 func TestStoreCommand_SequenceRange(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Msg 1", "sender@test.com", "testuser@localhost", "INBOX")
@@ -313,7 +313,7 @@ func TestStoreCommand_SequenceRange(t *testing.T) {
 func TestStoreCommand_RFC3501Example(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	msg1ID := InsertTestMail(t, database, "testuser", "Msg 1", "sender@test.com", "testuser@localhost", "INBOX")
@@ -385,7 +385,7 @@ func TestStoreCommand_RFC3501Example(t *testing.T) {
 func TestStoreCommand_MultipleFlags(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
@@ -412,7 +412,7 @@ func TestStoreCommand_MultipleFlags(t *testing.T) {
 func TestStoreCommand_InvalidDataItem(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
@@ -437,7 +437,7 @@ func TestStoreCommand_InvalidDataItem(t *testing.T) {
 func TestStoreCommand_BadSyntax(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
@@ -462,7 +462,7 @@ func TestStoreCommand_BadSyntax(t *testing.T) {
 func TestStoreCommand_NoRecentFlag(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	msgID := InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
@@ -499,7 +499,7 @@ func TestStoreCommand_NoRecentFlag(t *testing.T) {
 func TestStoreCommand_EmptyFlags(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	msgID := InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")
@@ -537,7 +537,7 @@ func TestStoreCommand_EmptyFlags(t *testing.T) {
 // TestStoreCommand_TagHandling tests various tag formats
 func TestStoreCommand_TagHandling(t *testing.T) {
 	srv := SetupTestServerSimple(t)
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")

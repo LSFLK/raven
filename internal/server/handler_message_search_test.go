@@ -33,7 +33,7 @@ func TestSearchCommand_Unauthenticated(t *testing.T) {
 func TestSearchCommand_NoMailboxSelected(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	state := &models.ClientState{
@@ -55,7 +55,7 @@ func TestSearchCommand_NoMailboxSelected(t *testing.T) {
 func TestSearchCommand_ALL(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	// Create test user and messages
 	userID := CreateTestUser(t, database, "testuser")
@@ -86,7 +86,7 @@ func TestSearchCommand_ALL(t *testing.T) {
 func TestSearchCommand_EmptyMailbox(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
@@ -113,7 +113,7 @@ func TestSearchCommand_EmptyMailbox(t *testing.T) {
 func TestSearchCommand_FlaggedMessages(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 
@@ -155,7 +155,7 @@ func TestSearchCommand_FlaggedMessages(t *testing.T) {
 func TestSearchCommand_DeletedMessages(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 
@@ -198,7 +198,7 @@ func TestSearchCommand_DeletedMessages(t *testing.T) {
 func TestSearchCommand_SeenUnseen(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 
@@ -239,7 +239,7 @@ func TestSearchCommand_SeenUnseen(t *testing.T) {
 func TestSearchCommand_FromHeader(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 
@@ -272,7 +272,7 @@ func TestSearchCommand_FromHeader(t *testing.T) {
 func TestSearchCommand_SubjectHeader(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 
@@ -302,7 +302,7 @@ func TestSearchCommand_SubjectHeader(t *testing.T) {
 func TestSearchCommand_ToHeader(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 
@@ -329,7 +329,7 @@ func TestSearchCommand_ToHeader(t *testing.T) {
 func TestSearchCommand_SequenceSet(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 
@@ -367,7 +367,7 @@ func TestSearchCommand_SequenceSet(t *testing.T) {
 func TestSearchCommand_NOT(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 
@@ -403,7 +403,7 @@ func TestSearchCommand_NOT(t *testing.T) {
 func TestSearchCommand_OR(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 
@@ -439,7 +439,7 @@ func TestSearchCommand_OR(t *testing.T) {
 func TestSearchCommand_CombinedCriteria(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 
@@ -478,7 +478,7 @@ func TestSearchCommand_CombinedCriteria(t *testing.T) {
 func TestSearchCommand_RFC3501Example(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 
@@ -524,7 +524,7 @@ func TestSearchCommand_RFC3501Example(t *testing.T) {
 func TestSearchCommand_EmptyResult(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 
@@ -555,7 +555,7 @@ func TestSearchCommand_EmptyResult(t *testing.T) {
 func TestSearchCommand_CHARSET(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test Message", "sender@test.com", "testuser@localhost", "INBOX")
@@ -590,7 +590,7 @@ func TestSearchCommand_CHARSET(t *testing.T) {
 func TestSearchCommand_LARGER_SMALLER(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 
@@ -627,7 +627,7 @@ func TestSearchCommand_LARGER_SMALLER(t *testing.T) {
 func TestSearchCommand_DateSearches(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 
@@ -672,7 +672,7 @@ func TestSearchCommand_DateSearches(t *testing.T) {
 func TestSearchCommand_NEW_OLD(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 
@@ -718,7 +718,7 @@ func TestSearchCommand_NEW_OLD(t *testing.T) {
 func TestSearchCommand_ANSWERED(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 
@@ -759,7 +759,7 @@ func TestSearchCommand_ANSWERED(t *testing.T) {
 func TestSearchCommand_DRAFT(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 
@@ -800,7 +800,7 @@ func TestSearchCommand_DRAFT(t *testing.T) {
 func TestSearchCommand_HEADER(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 
@@ -827,7 +827,7 @@ func TestSearchCommand_HEADER(t *testing.T) {
 func TestSearchCommand_BODY_TEXT(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 
@@ -864,7 +864,7 @@ func TestSearchCommand_BODY_TEXT(t *testing.T) {
 func TestSearchCommand_UID(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 
@@ -901,7 +901,7 @@ func TestSearchCommand_UID(t *testing.T) {
 func TestSearchCommand_BadSyntax(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
@@ -925,7 +925,7 @@ func TestSearchCommand_BadSyntax(t *testing.T) {
 func TestSearchCommand_ResponseFormat(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 
@@ -974,7 +974,7 @@ func TestSearchCommand_ResponseFormat(t *testing.T) {
 // TestSearchCommand_TagHandling tests various tag formats
 func TestSearchCommand_TagHandling(t *testing.T) {
 	srv := SetupTestServerSimple(t)
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Message", "sender@test.com", "testuser@localhost", "INBOX")

@@ -70,7 +70,7 @@ func TestCloseCommand_WithSelectedMailbox(t *testing.T) {
 
 	// Setup authenticated state with selected mailbox
 	state := SetupAuthenticatedState(t, srv, "testuser")
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
@@ -112,7 +112,7 @@ func TestCloseCommand_NoExpungeResponses(t *testing.T) {
 
 	// Setup authenticated state with selected mailbox
 	state := SetupAuthenticatedState(t, srv, "testuser")
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
@@ -150,7 +150,7 @@ func TestCloseCommand_DeletesMessagesWithDeletedFlag(t *testing.T) {
 
 	// Setup authenticated state with selected mailbox
 	state := SetupAuthenticatedState(t, srv, "testuser")
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
@@ -212,7 +212,7 @@ func TestCloseCommand_StateReset(t *testing.T) {
 
 	// Setup authenticated state with selected mailbox
 	state := SetupAuthenticatedState(t, srv, "testuser")
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
@@ -259,7 +259,7 @@ func TestCloseCommand_ResponseFormat(t *testing.T) {
 	conn := NewMockConn()
 
 	state := SetupAuthenticatedState(t, srv, "testuser")
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
@@ -310,7 +310,7 @@ func TestCloseCommand_TagHandling(t *testing.T) {
 			conn := NewMockConn()
 
 			state := SetupAuthenticatedState(t, srv, "testuser")
-			database := GetDatabaseFromServer(server)
+			database := GetDatabaseFromServer(srv)
 			mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 			if err != nil {
 				t.Fatalf("Failed to get INBOX mailbox: %v", err)
@@ -357,7 +357,7 @@ func TestCloseCommand_RFC3501Compliance(t *testing.T) {
 		conn := NewMockConn()
 
 		state := SetupAuthenticatedState(t, srv, "testuser")
-		database := GetDatabaseFromServer(server)
+		database := GetDatabaseFromServer(srv)
 		mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 		if err != nil {
 			t.Fatalf("Failed to get INBOX mailbox: %v", err)
@@ -378,7 +378,7 @@ func TestCloseCommand_RFC3501Compliance(t *testing.T) {
 		conn := NewMockConn()
 
 		state := SetupAuthenticatedState(t, srv, "testuser")
-		database := GetDatabaseFromServer(server)
+		database := GetDatabaseFromServer(srv)
 		mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 		if err != nil {
 			t.Fatalf("Failed to get INBOX mailbox: %v", err)
@@ -411,7 +411,7 @@ func TestCloseCommand_RFC3501Compliance(t *testing.T) {
 		conn := NewMockConn()
 
 		state := SetupAuthenticatedState(t, srv, "testuser")
-		database := GetDatabaseFromServer(server)
+		database := GetDatabaseFromServer(srv)
 		mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 		if err != nil {
 			t.Fatalf("Failed to get INBOX mailbox: %v", err)
@@ -439,7 +439,7 @@ func TestCloseCommand_MultipleInvocations(t *testing.T) {
 	conn := NewMockConn()
 
 	state := SetupAuthenticatedState(t, srv, "testuser")
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
@@ -470,7 +470,7 @@ func TestCloseCommand_PreservesMessageData(t *testing.T) {
 	conn := NewMockConn()
 
 	state := SetupAuthenticatedState(t, srv, "testuser")
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)

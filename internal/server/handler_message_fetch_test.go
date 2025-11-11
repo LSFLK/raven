@@ -31,7 +31,7 @@ func TestFetchCommand_Unauthenticated(t *testing.T) {
 func TestFetchCommand_NoMailboxSelected(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	state := &models.ClientState{
@@ -53,7 +53,7 @@ func TestFetchCommand_NoMailboxSelected(t *testing.T) {
 func TestFetchCommand_FLAGS(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	msg1ID := InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
@@ -89,7 +89,7 @@ func TestFetchCommand_FLAGS(t *testing.T) {
 func TestFetchCommand_UID(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
@@ -118,7 +118,7 @@ func TestFetchCommand_UID(t *testing.T) {
 func TestFetchCommand_INTERNALDATE(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
@@ -144,7 +144,7 @@ func TestFetchCommand_INTERNALDATE(t *testing.T) {
 func TestFetchCommand_RFC822SIZE(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
@@ -170,7 +170,7 @@ func TestFetchCommand_RFC822SIZE(t *testing.T) {
 func TestFetchCommand_ENVELOPE(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
@@ -200,7 +200,7 @@ func TestFetchCommand_ENVELOPE(t *testing.T) {
 func TestFetchCommand_BODYSTRUCTURE(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
@@ -226,7 +226,7 @@ func TestFetchCommand_BODYSTRUCTURE(t *testing.T) {
 func TestFetchCommand_BODY(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
@@ -253,7 +253,7 @@ func TestFetchCommand_BODY(t *testing.T) {
 func TestFetchCommand_MacroALL(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
@@ -289,7 +289,7 @@ func TestFetchCommand_MacroALL(t *testing.T) {
 func TestFetchCommand_MacroFAST(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
@@ -322,7 +322,7 @@ func TestFetchCommand_MacroFAST(t *testing.T) {
 func TestFetchCommand_MacroFULL(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
@@ -361,7 +361,7 @@ func TestFetchCommand_MacroFULL(t *testing.T) {
 func TestFetchCommand_SequenceRange(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
@@ -398,7 +398,7 @@ func TestFetchCommand_SequenceRange(t *testing.T) {
 func TestFetchCommand_MultipleItems(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
@@ -433,7 +433,7 @@ func TestFetchCommand_MultipleItems(t *testing.T) {
 func TestFetchCommand_BODY_HEADER(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
@@ -463,7 +463,7 @@ func TestFetchCommand_BODY_HEADER(t *testing.T) {
 func TestFetchCommand_BODY_TEXT(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
@@ -489,7 +489,7 @@ func TestFetchCommand_BODY_TEXT(t *testing.T) {
 func TestFetchCommand_BODY_PEEK(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
@@ -517,7 +517,7 @@ func TestFetchCommand_BODY_PEEK(t *testing.T) {
 func TestFetchCommand_RFC822(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
@@ -544,7 +544,7 @@ func TestFetchCommand_RFC822(t *testing.T) {
 func TestFetchCommand_RFC822_HEADER(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
@@ -570,7 +570,7 @@ func TestFetchCommand_RFC822_HEADER(t *testing.T) {
 func TestFetchCommand_RFC822_TEXT(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
@@ -596,7 +596,7 @@ func TestFetchCommand_RFC822_TEXT(t *testing.T) {
 func TestFetchCommand_BadSyntax(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
@@ -619,7 +619,7 @@ func TestFetchCommand_BadSyntax(t *testing.T) {
 // TestFetchCommand_TagHandling tests various tag formats
 func TestFetchCommand_TagHandling(t *testing.T) {
 	srv := SetupTestServerSimple(t)
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test", "sender@test.com", "testuser@localhost", "INBOX")

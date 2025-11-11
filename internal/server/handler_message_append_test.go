@@ -186,7 +186,7 @@ func TestAppendCommand_RFC3501Example(t *testing.T) {
 	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Create the saved-messages mailbox first (as per RFC example)
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	CreateMailbox(t, database, "testuser", "saved-messages")
 
 	// RFC 3501 example message

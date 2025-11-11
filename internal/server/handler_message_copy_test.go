@@ -33,7 +33,7 @@ func TestCopyCommand_Unauthenticated(t *testing.T) {
 func TestCopyCommand_NoMailboxSelected(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "copyuser@example.com")
 
@@ -55,7 +55,7 @@ func TestCopyCommand_NoMailboxSelected(t *testing.T) {
 func TestCopyCommand_DestinationNotExists(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "copyuser")
 	InsertTestMail(t, database, "copyuser", "Test message", "sender@test.com", "copyuser@localhost", "INBOX")
@@ -84,7 +84,7 @@ func TestCopyCommand_DestinationNotExists(t *testing.T) {
 func TestCopyCommand_SingleMessage(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "copyuser")
 	InsertTestMail(t, database, "copyuser", "Test message 1", "sender@test.com", "copyuser@localhost", "INBOX")
@@ -126,7 +126,7 @@ func TestCopyCommand_SingleMessage(t *testing.T) {
 func TestCopyCommand_RFC3501Example(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "copyuser")
 
@@ -174,7 +174,7 @@ func TestCopyCommand_RFC3501Example(t *testing.T) {
 func TestCopyCommand_PreserveFlags(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "copyuser")
 	msgID := InsertTestMail(t, database, "copyuser", "Test message", "sender@test.com", "copyuser@localhost", "INBOX")
@@ -216,7 +216,7 @@ func TestCopyCommand_PreserveFlags(t *testing.T) {
 func TestCopyCommand_PreserveInternalDate(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "copyuser")
 	msgID := InsertTestMail(t, database, "copyuser", "Test message", "sender@test.com", "copyuser@localhost", "INBOX")
@@ -256,7 +256,7 @@ func TestCopyCommand_PreserveInternalDate(t *testing.T) {
 func TestCopyCommand_MultipleMessages(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "copyuser")
 	InsertTestMail(t, database, "copyuser", "Message 1", "sender@test.com", "copyuser@localhost", "INBOX")
@@ -294,7 +294,7 @@ func TestCopyCommand_MultipleMessages(t *testing.T) {
 func TestCopyCommand_InvalidSequenceSet(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "copyuser")
 	CreateMailbox(t, database, "copyuser", "Sent")
@@ -320,7 +320,7 @@ func TestCopyCommand_InvalidSequenceSet(t *testing.T) {
 func TestCopyCommand_BadSyntax(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "copyuser")
 	inboxID, _ := GetMailboxID(t, database, userID, "INBOX")
@@ -344,7 +344,7 @@ func TestCopyCommand_BadSyntax(t *testing.T) {
 func TestCopyCommand_QuotedMailboxName(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "copyuser")
 	InsertTestMail(t, database, "copyuser", "Test message", "sender@test.com", "copyuser@localhost", "INBOX")
@@ -371,7 +371,7 @@ func TestCopyCommand_QuotedMailboxName(t *testing.T) {
 func TestCopyCommand_AllMessages(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "copyuser")
 	InsertTestMail(t, database, "copyuser", "Message 1", "sender@test.com", "copyuser@localhost", "INBOX")
@@ -409,7 +409,7 @@ func TestCopyCommand_AllMessages(t *testing.T) {
 func TestCopyCommand_RangeWithStar(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "copyuser")
 	InsertTestMail(t, database, "copyuser", "Message 1", "sender@test.com", "copyuser@localhost", "INBOX")
@@ -448,7 +448,7 @@ func TestCopyCommand_RangeWithStar(t *testing.T) {
 func TestCopyCommand_TagHandling(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "copyuser")
 	InsertTestMail(t, database, "copyuser", "Test message", "sender@test.com", "copyuser@localhost", "INBOX")
@@ -488,7 +488,7 @@ func TestCopyCommand_TagHandling(t *testing.T) {
 func TestCopyCommand_AtomicOperation(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "copyuser")
 	InsertTestMail(t, database, "copyuser", "Message 1", "sender@test.com", "copyuser@localhost", "INBOX")

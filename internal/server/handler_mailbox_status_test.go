@@ -81,7 +81,7 @@ func TestStatusCommand_NonExistentMailbox(t *testing.T) {
 	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with non-existent mailbox
@@ -141,7 +141,7 @@ func TestStatusCommand_MultipleItems(t *testing.T) {
 	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with multiple items (as per RFC 3501 example)
@@ -182,7 +182,7 @@ func TestStatusCommand_AllItems(t *testing.T) {
 	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with all status items
@@ -223,7 +223,7 @@ func TestStatusCommand_RecentItem(t *testing.T) {
 	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with RECENT item
@@ -256,7 +256,7 @@ func TestStatusCommand_UidnextItem(t *testing.T) {
 	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with UIDNEXT item
@@ -294,7 +294,7 @@ func TestStatusCommand_UidvalidityItem(t *testing.T) {
 	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with UIDVALIDITY item
@@ -327,7 +327,7 @@ func TestStatusCommand_UnseenItem(t *testing.T) {
 	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with UNSEEN item
@@ -360,7 +360,7 @@ func TestStatusCommand_QuotedMailboxName(t *testing.T) {
 	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists and create a mailbox
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	CreateTestUser(t, database, "testuser")
 	CreateMailbox(t, database, "testuser", "Test Folder")
 
@@ -394,7 +394,7 @@ func TestStatusCommand_CustomMailbox(t *testing.T) {
 	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists and create a mailbox
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	CreateTestUser(t, database, "testuser")
 	CreateMailbox(t, database, "testuser", "Projects")
 
@@ -428,7 +428,7 @@ func TestStatusCommand_WithMessages(t *testing.T) {
 	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	CreateTestUser(t, database, "testuser")
 
 	// Insert test messages into INBOX using helpers
@@ -473,7 +473,7 @@ func TestStatusCommand_InvalidStatusItem(t *testing.T) {
 	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with invalid status item
@@ -527,7 +527,7 @@ func TestStatusCommand_RFC3501Example(t *testing.T) {
 	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists and create the mailbox
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	CreateTestUser(t, database, "testuser")
 	CreateMailbox(t, database, "testuser", "blurdybloop")
 
@@ -569,7 +569,7 @@ func TestStatusCommand_CaseInsensitiveItems(t *testing.T) {
 	state := SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with mixed case items

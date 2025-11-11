@@ -33,7 +33,7 @@ func TestUIDCommand_Unauthenticated(t *testing.T) {
 func TestUIDCommand_NoMailboxSelected(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "uiduser")
 
@@ -55,7 +55,7 @@ func TestUIDCommand_NoMailboxSelected(t *testing.T) {
 func TestUIDFetch_RFC3501Example(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "uiduser")
 
@@ -111,7 +111,7 @@ func TestUIDFetch_RFC3501Example(t *testing.T) {
 func TestUIDFetch_AlwaysIncludesUID(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "uiduser")
 	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
@@ -142,7 +142,7 @@ func TestUIDFetch_AlwaysIncludesUID(t *testing.T) {
 func TestUIDFetch_NonExistentUID(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "uiduser")
 	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
@@ -174,7 +174,7 @@ func TestUIDFetch_NonExistentUID(t *testing.T) {
 func TestUIDFetch_StarRange(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "uiduser")
 	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
@@ -207,7 +207,7 @@ func TestUIDFetch_StarRange(t *testing.T) {
 func TestUIDSearch_ALL(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "uiduser")
 	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
@@ -240,7 +240,7 @@ func TestUIDSearch_ALL(t *testing.T) {
 func TestUIDSearch_UIDRange(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "uiduser")
 
@@ -278,7 +278,7 @@ func TestUIDSearch_UIDRange(t *testing.T) {
 func TestUIDStore_FLAGS(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "uiduser")
 	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
@@ -315,7 +315,7 @@ func TestUIDStore_FLAGS(t *testing.T) {
 func TestUIDStore_SILENT(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "uiduser")
 	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
@@ -346,7 +346,7 @@ func TestUIDStore_SILENT(t *testing.T) {
 func TestUIDStore_NonExistentUID(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "uiduser")
 	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
@@ -374,7 +374,7 @@ func TestUIDStore_NonExistentUID(t *testing.T) {
 func TestUIDCopy_SingleMessage(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "uiduser")
 	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
@@ -411,7 +411,7 @@ func TestUIDCopy_SingleMessage(t *testing.T) {
 func TestUIDCopy_UIDRange(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "uiduser")
 	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
@@ -450,7 +450,7 @@ func TestUIDCopy_UIDRange(t *testing.T) {
 func TestUIDCopy_NonExistentDestination(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "uiduser")
 	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
@@ -477,7 +477,7 @@ func TestUIDCopy_NonExistentDestination(t *testing.T) {
 func TestUIDCopy_NonExistentUID(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "uiduser")
 	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
@@ -506,7 +506,7 @@ func TestUIDCopy_NonExistentUID(t *testing.T) {
 func TestUIDCommand_BadSubCommand(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "uiduser")
 	inboxID, _ := GetMailboxID(t, database, userID, "INBOX")
@@ -531,7 +531,7 @@ func TestUIDCommand_BadSubCommand(t *testing.T) {
 func TestUIDCommand_TagHandling(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 
 	userID := CreateTestUser(t, database, "uiduser")
 	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")

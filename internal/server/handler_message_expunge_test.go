@@ -70,7 +70,7 @@ func TestExpungeCommand_NoDeletedMessages(t *testing.T) {
 
 	// Setup authenticated state with selected mailbox
 	state := SetupAuthenticatedState(t, srv, "testuser")
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
@@ -106,7 +106,7 @@ func TestExpungeCommand_SingleDeletedMessage(t *testing.T) {
 
 	// Setup authenticated state with selected mailbox
 	state := SetupAuthenticatedState(t, srv, "testuser")
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
@@ -162,7 +162,7 @@ func TestExpungeCommand_MultipleDeletedMessages(t *testing.T) {
 
 	// Setup authenticated state with selected mailbox
 	state := SetupAuthenticatedState(t, srv, "testuser")
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
@@ -236,7 +236,7 @@ func TestExpungeCommand_StateUpdate(t *testing.T) {
 
 	// Setup authenticated state with selected mailbox
 	state := SetupAuthenticatedState(t, srv, "testuser")
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
@@ -273,7 +273,7 @@ func TestExpungeCommand_ResponseFormat(t *testing.T) {
 	conn := NewMockConn()
 
 	state := SetupAuthenticatedState(t, srv, "testuser")
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
@@ -318,7 +318,7 @@ func TestExpungeCommand_TagHandling(t *testing.T) {
 			conn := NewMockConn()
 
 			state := SetupAuthenticatedState(t, srv, "testuser")
-			database := GetDatabaseFromServer(server)
+			database := GetDatabaseFromServer(srv)
 			mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 			if err != nil {
 				t.Fatalf("Failed to get INBOX mailbox: %v", err)
@@ -364,7 +364,7 @@ func TestExpungeCommand_RFC3501Compliance(t *testing.T) {
 		conn := NewMockConn()
 
 		state := SetupAuthenticatedState(t, srv, "testuser")
-		database := GetDatabaseFromServer(server)
+		database := GetDatabaseFromServer(srv)
 		mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 		if err != nil {
 			t.Fatalf("Failed to get INBOX mailbox: %v", err)
@@ -385,7 +385,7 @@ func TestExpungeCommand_RFC3501Compliance(t *testing.T) {
 		conn := NewMockConn()
 
 		state := SetupAuthenticatedState(t, srv, "testuser")
-		database := GetDatabaseFromServer(server)
+		database := GetDatabaseFromServer(srv)
 		mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 		if err != nil {
 			t.Fatalf("Failed to get INBOX mailbox: %v", err)
@@ -419,7 +419,7 @@ func TestExpungeCommand_RFC3501Compliance(t *testing.T) {
 		conn := NewMockConn()
 
 		state := SetupAuthenticatedState(t, srv, "testuser")
-		database := GetDatabaseFromServer(server)
+		database := GetDatabaseFromServer(srv)
 		mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 		if err != nil {
 			t.Fatalf("Failed to get INBOX mailbox: %v", err)
@@ -530,7 +530,7 @@ func TestExpungeCommand_PreservesMessageData(t *testing.T) {
 	conn := NewMockConn()
 
 	state := SetupAuthenticatedState(t, srv, "testuser")
-	database := GetDatabaseFromServer(server)
+	database := GetDatabaseFromServer(srv)
 	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
