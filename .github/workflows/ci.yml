@@ -31,82 +31,82 @@ jobs:
         run: make deps
 
       - name: Test CAPABILITY command
-        run: go test -tags=test -v ./test/server -run "TestCapabilityCommand"
+        run: go test -tags=test -v ./internal/server -run "TestCapabilityCommand"
 
       - name: Test NOOP command
-        run: go test -tags=test -v ./test/server -run "TestNoopCommand"
+        run: go test -tags=test -v ./internal/server -run "TestNoopCommand"
 
       - name: Test CHECK command
-        run: go test -tags=test -v ./test/server -run "TestCheckCommand"
+        run: go test -tags=test -v ./internal/server -run "TestCheckCommand"
 
       - name: Test CLOSE command
-        run: go test -tags=test -v ./test/server -run "TestCloseCommand"
+        run: go test -tags=test -v ./internal/server -run "TestCloseCommand"
 
       - name: Test EXPUNGE command
-        run: go test -tags=test -v ./test/server -run "TestExpungeCommand"
+        run: go test -tags=test -v ./internal/server -run "TestExpungeCommand"
 
       - name: Test LOGOUT command
-        run: go test -tags=test -v ./test/server -run "TestLogoutCommand"
+        run: go test -tags=test -v ./internal/server -run "TestLogoutCommand"
 
       - name: Test APPEND command
-        run: go test -tags=test -v ./test/server -run "TestAppendCommand"
+        run: go test -tags=test -v ./internal/server -run "TestAppendCommand"
 
       - name: Test AUTHENTICATE command
-        run: go test -tags=test -v ./test/server -run "TestAuthenticate"
+        run: go test -tags=test -v ./internal/server -run "TestAuthenticate"
 
       - name: Test LOGIN command
-        run: go test -tags=test -v ./test/server -run "TestLoginCommand"
+        run: go test -tags=test -v ./internal/server -run "TestLoginCommand"
 
       - name: Test STARTTLS command
-        run: go test -tags=test -v ./test/server -run "TestStartTLS"
+        run: go test -tags=test -v ./internal/server -run "TestStartTLS"
 
       - name: Test SELECT command
-        run: go test -tags=test -v ./test/server -run "TestSelectCommand"
+        run: go test -tags=test -v ./internal/server -run "TestSelectCommand"
 
       - name: Test EXAMINE command
-        run: go test -tags=test -v ./test/server -run "TestExamineCommand"
+        run: go test -tags=test -v ./internal/server -run "TestExamineCommand"
 
       - name: Test CREATE command
-        run: go test -tags=test -v ./test/server -run "TestCreateCommand"
+        run: go test -tags=test -v ./internal/server -run "TestCreateCommand"
 
       - name: Test LIST command
-        run: go test -tags=test -v ./test/server -run "TestListCommand"
+        run: go test -tags=test -v ./internal/server -run "TestListCommand"
 
       - name: Test LIST extended command
-        run: go test -tags=test -v ./test/server -run "TestListCommand.*RFC3501|TestListCommand.*Wildcard|TestListCommand.*Hierarchy|TestListCommand.*Reference|TestListCommand.*Error|TestListCommand.*Special"
+        run: go test -tags=test -v ./internal/server -run "TestListCommand.*RFC3501|TestListCommand.*Wildcard|TestListCommand.*Hierarchy|TestListCommand.*Reference|TestListCommand.*Error|TestListCommand.*Special"
 
       - name: Test DELETE command
-        run: go test -tags=test -v ./test/server -run "TestDeleteCommand"
+        run: go test -tags=test -v ./internal/server -run "TestDeleteCommand"
 
       - name: Test RENAME command
-        run: go test -tags=test -v ./test/server -run "TestRenameCommand"
+        run: go test -tags=test -v ./internal/server -run "TestRenameCommand"
 
       - name: Test SUBSCRIBE command
-        run: go test -tags=test -v ./test/server -run "TestSubscribeCommand"
+        run: go test -tags=test -v ./internal/server -run "TestSubscribeCommand"
 
       - name: Test UNSUBSCRIBE command
-        run: go test -tags=test -v ./test/server -run "TestUnsubscribeCommand"
+        run: go test -tags=test -v ./internal/server -run "TestUnsubscribeCommand"
 
       - name: Test LSUB command
-        run: go test -tags=test -v ./test/server -run "TestLsubCommand"
+        run: go test -tags=test -v ./internal/server -run "TestLsubCommand"
 
       - name: Test STATUS command
-        run: go test -tags=test -v ./test/server -run "TestStatusCommand"
+        run: go test -tags=test -v ./internal/server -run "TestStatusCommand"
 
       - name: Test SEARCH command
-        run: go test -tags=test -v ./test/server -run "TestSearchCommand"
+        run: go test -tags=test -v ./internal/server -run "TestSearchCommand"
 
       - name: Test FETCH command
-        run: go test -tags=test -v ./test/server -run "TestFetchCommand"
+        run: go test -tags=test -v ./internal/server -run "TestFetchCommand"
 
       - name: Test STORE command
-        run: go test -tags=test -v ./test/server -run "TestStoreCommand"
+        run: go test -tags=test -v ./internal/server -run "TestStoreCommand"
 
       - name: Test COPY command
-        run: go test -tags=test -v ./test/server -run "TestCopyCommand"
+        run: go test -tags=test -v ./internal/server -run "TestCopyCommand"
 
       - name: Test UID commands
-        run: go test -tags=test -v ./test/server -run "TestUID"
+        run: go test -tags=test -v ./internal/server -run "TestUID"
 
   test-delivery:
     name: Test Delivery Service
@@ -126,16 +126,16 @@ jobs:
         run: make deps
 
       - name: Test Delivery Configuration
-        run: go test -tags=test -v ./test/delivery -run "TestDefaultConfig|TestLoadConfig|TestConfigValidation"
+        run: go test -tags=test -v ./internal/delivery/... -run "TestDefaultConfig|TestLoadConfig|TestConfigValidation"
 
       - name: Test Email Parser
-        run: go test -tags=test -v ./test/delivery -run "TestParseMessage|TestValidateMessage|TestExtractEnvelopeRecipient|TestReadDataCommand"
+        run: go test -tags=test -v ./internal/delivery/... -run "TestParseMessage|TestValidateMessage|TestExtractEnvelopeRecipient|TestReadDataCommand"
 
       - name: Test Email Address Extraction
-        run: go test -tags=test -v ./test/delivery -run "TestExtractLocalPart|TestExtractDomain"
+        run: go test -tags=test -v ./internal/delivery/... -run "TestExtractLocalPart|TestExtractDomain"
 
       - name: Run All Delivery Tests
-        run: go test -tags=test -v ./test/delivery
+        run: go test -tags=test -v ./internal/delivery/...
 
   test-sasl:
     name: Test SASL Authentication Service
@@ -155,25 +155,25 @@ jobs:
         run: make deps
 
       - name: Test SASL Server Creation
-        run: go test -tags=test -v ./test/sasl -run "TestNewServer"
+        run: go test -tags=test -v ./internal/sasl -run "TestNewServer"
 
       - name: Test SASL Server Startup and Shutdown
-        run: go test -tags=test -v ./test/sasl -run "TestServerStartShutdown|TestServerShutdownIdempotent"
+        run: go test -tags=test -v ./internal/sasl -run "TestServerStartShutdown|TestServerShutdownIdempotent"
 
       - name: Test SASL Protocol Handshake
-        run: go test -tags=test -v ./test/sasl -run "TestVersionHandshake|TestCPIDCommand"
+        run: go test -tags=test -v ./internal/sasl -run "TestVersionHandshake|TestCPIDCommand"
 
       - name: Test PLAIN Authentication
-        run: go test -tags=test -v ./test/sasl -run "TestPlainAuthentication"
+        run: go test -tags=test -v ./internal/sasl -run "TestPlainAuthentication"
 
       - name: Test SASL Authentication Mechanisms
-        run: go test -tags=test -v ./test/sasl -run "TestLoginMechanism|TestUnsupportedMechanism|TestAuthMechanismCaseInsensitive"
+        run: go test -tags=test -v ./internal/sasl -run "TestLoginMechanism|TestUnsupportedMechanism|TestAuthMechanismCaseInsensitive"
 
       - name: Test SASL Error Handling
-        run: go test -tags=test -v ./test/sasl -run "TestInvalidAuthCommand|TestAuthenticationAPIError"
+        run: go test -tags=test -v ./internal/sasl -run "TestInvalidAuthCommand|TestAuthenticationAPIError"
 
       - name: Test SASL Concurrent Connections
-        run: go test -tags=test -v ./test/sasl -run "TestConcurrentConnections|TestMultipleCommandsInSession"
+        run: go test -tags=test -v ./internal/sasl -run "TestConcurrentConnections|TestMultipleCommandsInSession"
 
       - name: Run All SASL Tests
-        run: go test -tags=test -v ./test/sasl
+        run: go test -tags=test -v ./internal/sasl
