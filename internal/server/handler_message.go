@@ -1021,7 +1021,161 @@ func (s *IMAPServer) handleCopy(conn net.Conn, tag string, parts []string, state
 
 // ===== APPEND =====
 
-// handleAppend handles the APPEND command to add a message to a mailbox
+// handleAppendWithReader handles the APPEND command with a buffered reader to properly read literal data
+func (s *IMAPServer) handleAppendWithReader(reader io.Reader, conn net.Conn, tag string, parts []string, fullLine string, state *models.ClientState) {
+	if !state.Authenticated {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		return
+	}
+
+	if len(parts) < 3 {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD APPEND requires folder name", tag))
+		return
+	}
+
+	// Get user database
+	userDB, err := s.GetUserDB(state.UserID)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
+	// Parse folder name (could be quoted)
+	folder := strings.Trim(parts[2], "\"")
+
+	// Validate folder exists using the database with new schema
+	mailboxID, err := db.GetMailboxByNamePerUser(userDB, state.UserID, folder)
+	if err != nil {
+		s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Folder does not exist", tag))
+		return
+	}
+
+	// Parse optional flags and date/time
+	// Format: tag APPEND folder [(flags)] [date-time] {size}
+	var flags string
+
+	// Look for flags in parentheses
+	if strings.Contains(fullLine, "(") && strings.Contains(fullLine, ")") {
+		startIdx := strings.Index(fullLine, "(")
+		endIdx := strings.Index(fullLine, ")")
+		if startIdx < endIdx {
+			flags = fullLine[startIdx+1 : endIdx]
+		}
+	}
+
+	// Look for literal size indicator {size} or {size+}
+	literalStartIdx := strings.Index(fullLine, "{")
+	literalEndIdx := strings.Index(fullLine, "}")
+
+	if literalStartIdx == -1 || literalEndIdx == -1 || literalStartIdx > literalEndIdx {
+		s.sendResponse(conn, fmt.Sprintf("%s BAD APPEND requires message size", tag))
+		return
+	}
+
+	// Extract the size and check for LITERAL+ (RFC 4466)
+	sizeStr := fullLine[literalStartIdx+1 : literalEndIdx]
+	isLiteralPlus := strings.HasSuffix(sizeStr, "+")
+	if isLiteralPlus {
+		sizeStr = strings.TrimSuffix(sizeStr, "+")
+	}
+
+	var messageSize int
+	fmt.Sscanf(sizeStr, "%d", &messageSize)
+
+	if messageSize <= 0 || messageSize > 50*1024*1024 { // Max 50MB
+		s.sendResponse(conn, fmt.Sprintf("%s NO Message size invalid or too large", tag))
+		return
+	}
+
+	// Send continuation response only for synchronizing literals
+	// RFC 4466: LITERAL+ ({size+}) means client sends data immediately without waiting
+	if !isLiteralPlus {
+		s.sendResponse(conn, "+ Ready for literal data")
+	}
+
+	// Read the message data using io.ReadFull from the buffered reader
+	messageData := make([]byte, messageSize)
+
+	conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
+	log.Printf("APPEND expecting %d bytes literal", messageSize)
+
+	n, err := io.ReadFull(reader, messageData)
+	if err != nil {
+		log.Printf("Error reading message data: expected %d bytes, read %d bytes, error: %v", messageSize, n, err)
+		s.sendResponse(conn, fmt.Sprintf("%s NO Failed to read message data", tag))
+		return
+	}
+
+	log.Printf("APPEND successfully read %d bytes", n)
+
+	// Read and discard the trailing CRLF after the literal data
+	// RFC 3501: The client sends CRLF after the literal data
+	// Use a short timeout to avoid delays
+	crlfBuf := make([]byte, 2)
+	conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	n, err = reader.Read(crlfBuf)
+	if err != nil && err != io.EOF {
+		log.Printf("Warning: Failed to read trailing CRLF after literal data: %v", err)
+		// Continue anyway - some clients might not send it
+	} else if n > 0 && !(crlfBuf[0] == '\r' || crlfBuf[0] == '\n') {
+		log.Printf("Warning: Expected CRLF after literal data, got: %v", crlfBuf[:n])
+		// Continue anyway - be lenient with protocol violations
+	}
+
+	rawMessage := string(messageData)
+
+	// Ensure message has CRLF line endings
+	if !strings.Contains(rawMessage, "\r\n") {
+		rawMessage = strings.ReplaceAll(rawMessage, "\n", "\r\n")
+	}
+
+	// Parse and store message using new schema
+	parsed, err := parser.ParseMIMEMessage(rawMessage)
+	if err != nil {
+		log.Printf("Failed to parse message: %v", err)
+		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to parse message", tag))
+		return
+	}
+
+	// Store message in database
+	messageID, err := parser.StoreMessagePerUser(userDB, parsed)
+	if err != nil {
+		log.Printf("Failed to store message: %v", err)
+		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to save message", tag))
+		return
+	}
+
+	// Add message to mailbox
+	internalDate := time.Now()
+	err = db.AddMessageToMailboxPerUser(userDB, messageID, mailboxID, flags, internalDate)
+	if err != nil {
+		log.Printf("Failed to add message to mailbox: %v", err)
+		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to add message to mailbox", tag))
+		return
+	}
+
+	// Get UID validity for APPENDUID response
+	uidValidity, _, err := db.GetMailboxInfoPerUser(userDB, mailboxID)
+	if err != nil {
+		uidValidity = 1
+	}
+
+	// Get the UID assigned to the message
+	var newUID int64
+	query := "SELECT uid FROM message_mailbox WHERE message_id = ? AND mailbox_id = ?"
+	err = userDB.QueryRow(query, messageID, mailboxID).Scan(&newUID)
+	if err != nil {
+		log.Printf("Failed to get new UID: %v", err)
+		newUID = 1
+	}
+
+	log.Printf("Message appended to folder '%s' with UID %d", folder, newUID)
+
+	// Send success response with APPENDUID (RFC 4315 - UIDPLUS extension)
+	s.sendResponse(conn, fmt.Sprintf("%s OK [APPENDUID %d %d] APPEND completed", tag, uidValidity, newUID))
+}
+
+// handleAppend handles the APPEND command to add a message to a mailbox (legacy - kept for compatibility)
 func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, fullLine string, state *models.ClientState) {
 	if !state.Authenticated {
 		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))

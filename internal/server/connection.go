@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"time"
@@ -10,15 +12,24 @@ import (
 )
 
 func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
-	buf := make([]byte, 4096)
+	// Use buffered reader to properly handle command lines and literal data
+	reader := bufio.NewReader(conn)
+
 	for {
 		conn.SetReadDeadline(time.Now().Add(30 * time.Minute))
-		n, err := conn.Read(buf)
+
+		// Read one line at a time (until CRLF or LF)
+		line, err := reader.ReadString('\n')
 		if err != nil {
-			return
+			if err != io.EOF {
+				return
+			}
+			if line == "" {
+				return
+			}
 		}
 
-		line := strings.TrimSpace(string(buf[:n]))
+		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
@@ -71,7 +82,7 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 		case "UNSELECT":
 			s.handleUnselect(conn, tag, state)
 		case "APPEND":
-			s.handleAppend(conn, tag, parts, line, state)
+			s.handleAppendWithReader(reader, conn, tag, parts, line, state)
 		case "NOOP":
 			s.handleNoop(conn, tag, state)
 		case "CHECK":
