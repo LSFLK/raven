@@ -4,6 +4,7 @@ import (
 	"net"
 
 	"raven/internal/models"
+	"raven/internal/server/auth"
 )
 
 // TestInterface provides access to internal methods for testing
@@ -20,12 +21,12 @@ func NewTestInterface(server *IMAPServer) *TestInterface {
 
 // HandleCapability exposes the capability handler for testing
 func (t *TestInterface) HandleCapability(conn net.Conn, tag string, state *models.ClientState) {
-	t.server.handleCapability(conn, tag, state)
+	auth.HandleCapability(t.server, conn, tag, state)
 }
 
 // HandleLogin exposes the login handler for testing
 func (t *TestInterface) HandleLogin(conn net.Conn, tag string, parts []string, state *models.ClientState) {
-	t.server.handleLogin(conn, tag, parts, state)
+	auth.HandleLogin(t.server, conn, tag, parts, state)
 }
 
 // HandleList exposes the list handler for testing
@@ -50,7 +51,7 @@ func (t *TestInterface) HandleRename(conn net.Conn, tag string, parts []string, 
 
 // HandleLogout exposes the logout handler for testing
 func (t *TestInterface) HandleLogout(conn net.Conn, tag string) {
-	t.server.handleLogout(conn, tag)
+	auth.HandleLogout(t.server, conn, tag)
 }
 
 // HandleIdle exposes the idle handler for testing
@@ -105,12 +106,15 @@ func (t *TestInterface) HandleAppend(conn net.Conn, tag string, parts []string, 
 
 // HandleAuthenticate exposes the authenticate handler for testing
 func (t *TestInterface) HandleAuthenticate(conn net.Conn, tag string, parts []string, state *models.ClientState) {
-	t.server.handleAuthenticate(conn, tag, parts, state)
+	auth.HandleAuthenticate(t.server, conn, tag, parts, state)
 }
 
 // HandleStartTLS exposes the STARTTLS handler for testing
 func (t *TestInterface) HandleStartTLS(conn net.Conn, tag string, parts []string) {
-	t.server.handleStartTLS(conn, tag, parts)
+	clientHandler := func(conn net.Conn, state *models.ClientState) {
+		handleClient(t.server, conn, state)
+	}
+	auth.HandleStartTLS(t.server, clientHandler, conn, tag, parts)
 }
 
 // HandleSubscribe exposes the subscribe handler for testing

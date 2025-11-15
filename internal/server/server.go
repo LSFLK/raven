@@ -9,6 +9,7 @@ import (
 	"raven/internal/conf"
 	"raven/internal/db"
 	"raven/internal/models"
+	"raven/internal/server/auth"
 )
 
 type IMAPServer struct {
@@ -136,4 +137,12 @@ func (s *IMAPServer) ExtractUsername(email string) string {
 		return parts[0]
 	}
 	return email
+}
+
+// HandleSSLConnection handles SSL/TLS connections (delegates to auth package)
+func (s *IMAPServer) HandleSSLConnection(conn net.Conn) {
+	clientHandler := func(conn net.Conn, state *models.ClientState) {
+		handleClient(s, conn, state)
+	}
+	auth.HandleSSLConnection(clientHandler, conn)
 }

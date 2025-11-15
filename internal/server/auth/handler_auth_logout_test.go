@@ -1,21 +1,21 @@
 //go:build test
 // +build test
 
-package server
+package auth_test
 
 import (
 	"strings"
 	"testing"
 
 	"raven/internal/models"
-	
+	"raven/internal/server"
 )
 
 // TestLogoutCommand_Unauthenticated tests LOGOUT before authentication
 // RFC 3501: LOGOUT can be used in any state
 func TestLogoutCommand_Unauthenticated(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
 
 	srv.HandleLogout(conn, "L001")
 
@@ -41,8 +41,8 @@ func TestLogoutCommand_Unauthenticated(t *testing.T) {
 
 // TestLogoutCommand_Authenticated tests LOGOUT after successful authentication
 func TestLogoutCommand_Authenticated(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
 
 	srv.HandleLogout(conn, "A023")
 
@@ -73,8 +73,8 @@ func TestLogoutCommand_Authenticated(t *testing.T) {
 
 // TestLogoutCommand_WithSelectedFolder tests LOGOUT with a folder selected
 func TestLogoutCommand_WithSelectedFolder(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
 
 	// Simulate state with selected folder
 	_ = &models.ClientState{
@@ -106,8 +106,8 @@ func TestLogoutCommand_WithSelectedFolder(t *testing.T) {
 // TestLogoutCommand_ResponseOrder tests that BYE is sent before OK
 // This is a MUST requirement from RFC 3501
 func TestLogoutCommand_ResponseOrder(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
 
 	srv.HandleLogout(conn, "L004")
 
@@ -147,7 +147,7 @@ func TestLogoutCommand_ResponseOrder(t *testing.T) {
 // TestLogoutCommand_MultipleSequentialLogouts tests multiple LOGOUT commands
 // (though in practice connection closes after first)
 func TestLogoutCommand_MultipleSequentialLogouts(t *testing.T) {
-	srv := SetupTestServerSimple(t)
+	srv := server.SetupTestServerSimple(t)
 
 	testCases := []struct {
 		tag          string
@@ -159,7 +159,7 @@ func TestLogoutCommand_MultipleSequentialLogouts(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		conn := NewMockConn()
+		conn := server.NewMockConn()
 		srv.HandleLogout(conn, tc.tag)
 
 		response := conn.GetWrittenData()
@@ -183,8 +183,8 @@ func TestLogoutCommand_MultipleSequentialLogouts(t *testing.T) {
 // TestLogoutCommand_AlwaysSucceeds tests that LOGOUT always returns OK
 // LOGOUT should never fail with BAD or NO response
 func TestLogoutCommand_AlwaysSucceeds(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
 
 	srv.HandleLogout(conn, "L005")
 
@@ -207,8 +207,8 @@ func TestLogoutCommand_AlwaysSucceeds(t *testing.T) {
 
 // TestLogoutCommand_NoArguments tests that LOGOUT doesn't require arguments
 func TestLogoutCommand_NoArguments(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
 
 	// LOGOUT takes no arguments, just tag
 	srv.HandleLogout(conn, "L006")
@@ -246,8 +246,8 @@ func TestLogoutCommand_TagFormat(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.description, func(t *testing.T) {
-			srv := SetupTestServerSimple(t)
-			conn := NewMockConn()
+			srv := server.SetupTestServerSimple(t)
+			conn := server.NewMockConn()
 
 			srv.HandleLogout(conn, tc.tag)
 
@@ -269,8 +269,8 @@ func TestLogoutCommand_TagFormat(t *testing.T) {
 
 // TestLogoutCommand_MessageContent tests the content of BYE message
 func TestLogoutCommand_MessageContent(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
 
 	srv.HandleLogout(conn, "L007")
 
