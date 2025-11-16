@@ -546,6 +546,12 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 				fmt.Printf("DEBUG ReconstructMessage: Filtering out stored MIME-Version header\n")
 				continue
 			}
+		} else if headerName == "content-transfer-encoding" {
+			// RFC 2045: multipart entities MUST NOT have a Content-Transfer-Encoding
+			if isMultipart {
+				fmt.Printf("DEBUG ReconstructMessage: Filtering out stored Content-Transfer-Encoding header for multipart\n")
+				continue
+			}
 		}
 		filteredHeaders = append(filteredHeaders, header)
 	}
@@ -651,12 +657,11 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 
 			// Classify as attachment or text part
 			isAttachment := false
-			// Check if disposition starts with "attachment" or "inline" (it may have parameters like filename)
-			if strings.HasPrefix(strings.ToLower(disposition), "attachment") ||
-			   strings.HasPrefix(strings.ToLower(disposition), "inline") {
+			dispLower := strings.ToLower(strings.TrimSpace(disposition))
+			if strings.HasPrefix(dispLower, "attachment") {
 				isAttachment = true
-			} else if !strings.HasPrefix(contentType, "text/") {
-				// Non-text types are likely attachments (images, etc.)
+			} else if !strings.HasPrefix(strings.ToLower(contentType), "text/") && !strings.HasPrefix(dispLower, "inline") {
+				// Non-text types are attachments unless explicitly inline
 				isAttachment = true
 			}
 
@@ -805,9 +810,11 @@ func writePartHeaders(buf *bytes.Buffer, part map[string]interface{}) {
 	}
 	buf.WriteString("\r\n")
 
-	// Write Content-Transfer-Encoding
-	if encoding, ok := part["content_transfer_encoding"].(string); ok && encoding != "" {
+	// Write Content-Transfer-Encoding (default to 7bit for text/* if missing)
+	if encoding, ok := part["content_transfer_encoding"].(string); ok && strings.TrimSpace(encoding) != "" {
 		buf.WriteString(fmt.Sprintf("Content-Transfer-Encoding: %s\r\n", encoding))
+	} else if strings.HasPrefix(strings.ToLower(contentType), "text/") {
+		buf.WriteString("Content-Transfer-Encoding: 7bit\r\n")
 	}
 
 	// Write Content-ID if present (critical for inline images in Apple Mail)
@@ -815,9 +822,16 @@ func writePartHeaders(buf *bytes.Buffer, part map[string]interface{}) {
 		buf.WriteString(fmt.Sprintf("Content-ID: %s\r\n", contentID))
 	}
 
-	// Write Content-Disposition if present
-	if disposition, ok := part["content_disposition"].(string); ok && disposition != "" {
+	// Write Content-Disposition. Default to inline for text/* when absent to help Apple Mail render body
+	if disposition, ok := part["content_disposition"].(string); ok && strings.TrimSpace(disposition) != "" {
 		buf.WriteString(fmt.Sprintf("Content-Disposition: %s", disposition))
+		if filename, ok := part["filename"].(string); ok && filename != "" {
+			buf.WriteString(fmt.Sprintf("; filename=\"%s\"", filename))
+		}
+		buf.WriteString("\r\n")
+	} else if strings.HasPrefix(strings.ToLower(contentType), "text/") {
+		// Explicit inline for text parts
+		buf.WriteString("Content-Disposition: inline")
 		if filename, ok := part["filename"].(string); ok && filename != "" {
 			buf.WriteString(fmt.Sprintf("; filename=\"%s\"", filename))
 		}
