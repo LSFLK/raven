@@ -272,6 +272,7 @@ func createMessagePartsTable(db *sql.DB) error {
 		content_transfer_encoding TEXT,
 		charset TEXT,
 		filename TEXT,
+		content_id TEXT,
 		blob_id INTEGER,
 		text_content TEXT,
 		size_bytes INTEGER NOT NULL,
@@ -280,8 +281,22 @@ func createMessagePartsTable(db *sql.DB) error {
 		FOREIGN KEY (blob_id) REFERENCES blobs(id)
 	);
 	`
-	_, err := db.Exec(schema)
-	return err
+	if _, err := db.Exec(schema); err != nil {
+		return err
+	}
+
+	// Migration: Add content_id column if it doesn't exist (for existing databases)
+	// Check if column exists
+	var columnExists bool
+	row := db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('message_parts') WHERE name='content_id'")
+	if err := row.Scan(&columnExists); err == nil && !columnExists {
+		_, err = db.Exec("ALTER TABLE message_parts ADD COLUMN content_id TEXT")
+		if err != nil {
+			return fmt.Errorf("failed to add content_id column: %v", err)
+		}
+	}
+
+	return nil
 }
 
 func createDeliveriesTable(db *sql.DB) error {
@@ -923,14 +938,14 @@ func GetMessageAddresses(db *sql.DB, messageID int64, addressType string) ([]str
 
 // Message part management functions
 
-func AddMessagePart(db *sql.DB, messageID int64, partNumber int, parentPartID sql.NullInt64, contentType, contentDisposition, contentTransferEncoding, charset, filename string, blobID sql.NullInt64, textContent string, sizeBytes int64) (int64, error) {
+func AddMessagePart(db *sql.DB, messageID int64, partNumber int, parentPartID sql.NullInt64, contentType, contentDisposition, contentTransferEncoding, charset, filename, contentID string, blobID sql.NullInt64, textContent string, sizeBytes int64) (int64, error) {
 	result, err := db.Exec(`
 		INSERT INTO message_parts (
 			message_id, part_number, parent_part_id, content_type,
 			content_disposition, content_transfer_encoding, charset,
-			filename, blob_id, text_content, size_bytes
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, messageID, partNumber, parentPartID, contentType, contentDisposition, contentTransferEncoding, charset, filename, blobID, textContent, sizeBytes)
+			filename, content_id, blob_id, text_content, size_bytes
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, messageID, partNumber, parentPartID, contentType, contentDisposition, contentTransferEncoding, charset, filename, contentID, blobID, textContent, sizeBytes)
 	if err != nil {
 		return 0, err
 	}
@@ -940,7 +955,7 @@ func AddMessagePart(db *sql.DB, messageID int64, partNumber int, parentPartID sq
 func GetMessageParts(db *sql.DB, messageID int64) ([]map[string]interface{}, error) {
 	rows, err := db.Query(`
 		SELECT id, part_number, parent_part_id, content_type, content_disposition,
-		       content_transfer_encoding, charset, filename, blob_id, text_content, size_bytes
+		       content_transfer_encoding, charset, filename, content_id, blob_id, text_content, size_bytes
 		FROM message_parts
 		WHERE message_id = ?
 		ORDER BY part_number
@@ -956,11 +971,11 @@ func GetMessageParts(db *sql.DB, messageID int64) ([]map[string]interface{}, err
 			id, partNumber, sizeBytes                                   int64
 			parentPartID, blobID                                        sql.NullInt64
 			contentType, contentDisposition, contentTransferEncoding    string
-			charset, filename, textContent                              sql.NullString
+			charset, filename, contentID, textContent                   sql.NullString
 		)
 
 		err := rows.Scan(&id, &partNumber, &parentPartID, &contentType, &contentDisposition,
-			&contentTransferEncoding, &charset, &filename, &blobID, &textContent, &sizeBytes)
+			&contentTransferEncoding, &charset, &filename, &contentID, &blobID, &textContent, &sizeBytes)
 		if err != nil {
 			continue
 		}
@@ -982,6 +997,9 @@ func GetMessageParts(db *sql.DB, messageID int64) ([]map[string]interface{}, err
 		}
 		if filename.Valid {
 			part["filename"] = filename.String
+		}
+		if contentID.Valid {
+			part["content_id"] = contentID.String
 		}
 		if blobID.Valid {
 			part["blob_id"] = blobID.Int64

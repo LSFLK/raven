@@ -61,6 +61,7 @@ type MessagePart struct {
 	ContentTransferEncoding string
 	Charset                 string
 	Filename                string
+	ContentID               string
 	BlobID                  sql.NullInt64
 	TextContent             string
 	SizeBytes               int64
@@ -215,23 +216,34 @@ func ParseMIMEMessage(rawMessage string) (*ParsedMessage, error) {
 		contentType = "text/plain; charset=us-ascii"
 	}
 
+	fmt.Printf("DEBUG ParseMIMEMessage: Content-Type='%s'\n", contentType)
+
 	mediaType, params, err := mime.ParseMediaType(contentType)
 	if err != nil {
+		fmt.Printf("DEBUG ParseMIMEMessage: Failed to parse Content-Type: %v\n", err)
 		mediaType = "text/plain"
 		params = map[string]string{"charset": "us-ascii"}
 	}
+
+	fmt.Printf("DEBUG ParseMIMEMessage: mediaType='%s', boundary='%s'\n", mediaType, params["boundary"])
 
 	// Handle multipart messages
 	if strings.HasPrefix(mediaType, "multipart/") {
 		boundary := params["boundary"]
 		if boundary != "" {
+			fmt.Printf("DEBUG ParseMIMEMessage: Parsing multipart with boundary='%s'\n", boundary)
 			parsed.Parts, err = parseMultipart(msg.Body, boundary, 0, sql.NullInt64{})
 			if err != nil {
+				fmt.Printf("DEBUG ParseMIMEMessage: multipart parsing failed: %v\n", err)
 				return nil, fmt.Errorf("failed to parse multipart: %v", err)
 			}
+			fmt.Printf("DEBUG ParseMIMEMessage: Successfully parsed %d parts\n", len(parsed.Parts))
+		} else {
+			fmt.Printf("DEBUG ParseMIMEMessage: multipart detected but no boundary!\n")
 		}
 	} else {
 		// Single part message
+		fmt.Printf("DEBUG ParseMIMEMessage: Single-part message (not multipart)\n")
 		bodyBytes, err := io.ReadAll(msg.Body)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read body: %v", err)
@@ -264,19 +276,24 @@ func parseMultipart(body io.Reader, boundary string, depth int, parentPartID sql
 	var parts []MessagePart
 	partNumber := 1
 
+	fmt.Printf("DEBUG parseMultipart: boundary='%s', depth=%d\n", boundary, depth)
+
 	mr := multipart.NewReader(body, boundary)
 	for {
 		p, err := mr.NextPart()
 		if err == io.EOF {
+			fmt.Printf("DEBUG parseMultipart: EOF reached, found %d parts\n", len(parts))
 			break
 		}
 		if err != nil {
+			fmt.Printf("DEBUG parseMultipart: NextPart error: %v\n", err)
 			return parts, err
 		}
 
 		// Read part content
 		content, err := io.ReadAll(p)
 		if err != nil {
+			fmt.Printf("DEBUG parseMultipart: ReadAll error: %v\n", err)
 			continue
 		}
 
@@ -296,6 +313,10 @@ func parseMultipart(body io.Reader, boundary string, depth int, parentPartID sql
 		encoding := p.Header.Get("Content-Transfer-Encoding")
 		disposition := p.Header.Get("Content-Disposition")
 		filename := p.FileName()
+		contentID := p.Header.Get("Content-ID")
+
+		fmt.Printf("DEBUG parseMultipart: Part %d: type='%s', disposition='%s', filename='%s', size=%d\n",
+			partNumber, mediaType, disposition, filename, len(content))
 
 		part := MessagePart{
 			PartNumber:              partNumber,
@@ -305,12 +326,14 @@ func parseMultipart(body io.Reader, boundary string, depth int, parentPartID sql
 			ContentTransferEncoding: encoding,
 			Charset:                 charset,
 			Filename:                filename,
+			ContentID:               contentID,
 			TextContent:             string(content),
 			SizeBytes:               int64(len(content)),
 		}
 
 		// If this is a multipart, recursively parse it
 		if strings.HasPrefix(mediaType, "multipart/") && params["boundary"] != "" {
+			fmt.Printf("DEBUG parseMultipart: Part %d is nested multipart with boundary='%s'\n", partNumber, params["boundary"])
 			// This part is a container, store it but don't store content
 			part.TextContent = ""
 			parts = append(parts, part)
@@ -385,6 +408,7 @@ func StoreMessage(database *sql.DB, parsed *ParsedMessage) (int64, error) {
 			part.ContentTransferEncoding,
 			part.Charset,
 			part.Filename,
+			part.ContentID,
 			blobID,
 			part.TextContent,
 			part.SizeBytes,
@@ -463,6 +487,7 @@ func StoreMessagePerUser(database *sql.DB, parsed *ParsedMessage) (int64, error)
 			part.ContentTransferEncoding,
 			part.Charset,
 			part.Filename,
+			part.ContentID,
 			blobID,
 			part.TextContent,
 			part.SizeBytes,
@@ -495,6 +520,42 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 		headers = []map[string]string{}
 	}
 
+	fmt.Printf("DEBUG ReconstructMessage: Starting reconstruction with %d headers, %d parts\n", len(headers), len(parts))
+
+	// For multipart messages, we need to determine this early to filter headers correctly
+	isMultipart := len(parts) > 1
+
+	// Check if we have stored Content-Type and MIME-Version headers
+	// For multipart messages, we need to filter these out from stored headers
+	// because we'll generate new ones with boundaries that match the reconstructed body
+	hasStoredContentType := false
+	filteredHeaders := []map[string]string{}
+	for _, header := range headers {
+		headerName := strings.ToLower(strings.TrimSpace(header["name"]))
+
+		if headerName == "content-type" {
+			hasStoredContentType = true
+			// Skip Content-Type header for multipart messages - we'll generate it
+			if isMultipart {
+				fmt.Printf("DEBUG ReconstructMessage: Filtering out stored Content-Type header\n")
+				continue
+			}
+		} else if headerName == "mime-version" {
+			// Skip MIME-Version for multipart messages - we'll add it when needed
+			if isMultipart {
+				fmt.Printf("DEBUG ReconstructMessage: Filtering out stored MIME-Version header\n")
+				continue
+			}
+		}
+		filteredHeaders = append(filteredHeaders, header)
+	}
+
+	// Use filtered headers for multipart messages
+	if isMultipart {
+		headers = filteredHeaders
+		fmt.Printf("DEBUG ReconstructMessage: After filtering, %d headers remain\n", len(headers))
+	}
+
 	// Build message headers
 	var buf bytes.Buffer
 
@@ -504,6 +565,7 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 		for _, header := range headers {
 			buf.WriteString(fmt.Sprintf("%s: %s\r\n", header["name"], header["value"]))
 		}
+		fmt.Printf("DEBUG ReconstructMessage: Wrote %d stored headers\n", len(headers))
 	} else {
 		// Fallback: Build minimal headers from addresses and metadata for old messages
 		fmt.Printf("WARNING: No stored headers found for message %d, using fallback\n", messageID)
@@ -535,48 +597,16 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 		buf.WriteString(fmt.Sprintf("Date: %s\r\n", date.Format(time.RFC1123Z)))
 	}
 
-	// Check if we need to add Content-Type headers (for backward compatibility with old messages)
-	// New messages will have these headers already stored in message_headers
-	hasContentType := false
-	var storedContentType string
-	for _, header := range headers {
-		if strings.EqualFold(header["name"], "Content-Type") {
-			hasContentType = true
-			storedContentType = header["value"]
-			break
-		}
-	}
-
-	// Extract boundaries from stored Content-Type header if present
-	boundaryAlt := "boundary-alt"
-	boundaryMixed := "boundary-mixed"
-	if storedContentType != "" {
-		// Try to extract boundary from Content-Type
-		if idx := strings.Index(storedContentType, "boundary="); idx != -1 {
-			boundaryStr := storedContentType[idx+9:] // Skip "boundary="
-			// Remove quotes if present
-			boundaryStr = strings.Trim(boundaryStr, "\"")
-			// Get only the boundary value (up to semicolon or end)
-			if semiIdx := strings.Index(boundaryStr, ";"); semiIdx != -1 {
-				boundaryStr = boundaryStr[:semiIdx]
-			}
-			boundaryStr = strings.TrimSpace(boundaryStr)
-
-			// Determine which type of boundary this is based on Content-Type
-			if strings.Contains(storedContentType, "multipart/alternative") {
-				boundaryAlt = boundaryStr
-			} else if strings.Contains(storedContentType, "multipart/mixed") {
-				boundaryMixed = boundaryStr
-			}
-		}
-	}
+	// Use consistent boundaries for reconstructed messages
+	boundaryAlt := "----=_Part_Alternative_" + fmt.Sprintf("%d", time.Now().UnixNano())
+	boundaryMixed := "----=_Part_Mixed_" + fmt.Sprintf("%d", time.Now().UnixNano()+1)
 
 	// For simple single-part messages
 	if len(parts) == 1 {
 		part := parts[0]
 
-		// Only add Content-Type if not already in headers
-		if !hasContentType {
+		// Only add Content-Type if not already in filtered headers
+		if !hasStoredContentType {
 			contentType := part["content_type"].(string)
 			if charset, ok := part["charset"].(string); ok && charset != "" {
 				buf.WriteString(fmt.Sprintf("Content-Type: %s; charset=%s\r\n", contentType, charset))
@@ -606,21 +636,32 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 		var textParts []map[string]interface{}
 		var attachments []map[string]interface{}
 
+		fmt.Printf("DEBUG ReconstructMessage: Processing %d parts\n", len(parts))
+
 		for _, part := range parts {
 			contentType := part["content_type"].(string)
 			disposition := ""
 			if d, ok := part["content_disposition"].(string); ok {
 				disposition = d
 			}
+			filename := ""
+			if f, ok := part["filename"].(string); ok {
+				filename = f
+			}
 
 			// Classify as attachment or text part
 			isAttachment := false
-			if disposition == "attachment" || disposition == "inline" {
+			// Check if disposition starts with "attachment" or "inline" (it may have parameters like filename)
+			if strings.HasPrefix(strings.ToLower(disposition), "attachment") ||
+			   strings.HasPrefix(strings.ToLower(disposition), "inline") {
 				isAttachment = true
 			} else if !strings.HasPrefix(contentType, "text/") {
 				// Non-text types are likely attachments (images, etc.)
 				isAttachment = true
 			}
+
+			fmt.Printf("DEBUG ReconstructMessage: Part type='%s', disposition='%s', filename='%s', isAttachment=%v\n",
+				contentType, disposition, filename, isAttachment)
 
 			if isAttachment {
 				attachments = append(attachments, part)
@@ -628,6 +669,8 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 				textParts = append(textParts, part)
 			}
 		}
+
+		fmt.Printf("DEBUG ReconstructMessage: Found %d text parts, %d attachments\n", len(textParts), len(attachments))
 
 		// Determine if we have attachments
 		hasAttachments := len(attachments) > 0
@@ -650,10 +693,10 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 
 		// Build the message structure
 		if hasAttachments {
-			// Only add Content-Type if not already in headers
-			if !hasContentType {
-				buf.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=\"%s\"\r\n", boundaryMixed))
-			}
+			fmt.Printf("DEBUG ReconstructMessage: Building multipart/mixed message\n")
+			// Always generate Content-Type header for multipart messages
+			buf.WriteString("MIME-Version: 1.0\r\n")
+			buf.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=\"%s\"\r\n", boundaryMixed))
 			buf.WriteString("\r\n")
 
 			// First part: the message body
@@ -696,9 +739,8 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 			buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryMixed))
 		} else if hasPlain && hasHTML {
 			// multipart/alternative (no attachments)
-			if !hasContentType {
-				buf.WriteString(fmt.Sprintf("Content-Type: multipart/alternative; boundary=\"%s\"\r\n", boundaryAlt))
-			}
+			buf.WriteString("MIME-Version: 1.0\r\n")
+			buf.WriteString(fmt.Sprintf("Content-Type: multipart/alternative; boundary=\"%s\"\r\n", boundaryAlt))
 			buf.WriteString("\r\n")
 
 			// Plain text version
@@ -718,9 +760,8 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 			writePartContent(&buf, database, textParts[0])
 		} else {
 			// Fallback: multipart/mixed for all parts
-			if !hasContentType {
-				buf.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=\"%s\"\r\n", boundaryMixed))
-			}
+			buf.WriteString("MIME-Version: 1.0\r\n")
+			buf.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=\"%s\"\r\n", boundaryMixed))
 			buf.WriteString("\r\n")
 
 			for _, part := range parts {
@@ -733,7 +774,18 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 		}
 	}
 
-	return buf.String(), nil
+	result := buf.String()
+	// Debug: Show the first part of the reconstructed message (headers)
+	headerEnd := strings.Index(result, "\r\n\r\n")
+	if headerEnd == -1 {
+		headerEnd = strings.Index(result, "\n\n")
+	}
+	if headerEnd > 0 && headerEnd < 1000 {
+		fmt.Printf("DEBUG ReconstructMessage: Reconstructed headers:\n%s\n", result[:headerEnd])
+	}
+	fmt.Printf("DEBUG ReconstructMessage: Total message size: %d bytes\n", len(result))
+
+	return result, nil
 }
 
 // writePartHeaders writes the MIME headers for a message part
@@ -756,6 +808,11 @@ func writePartHeaders(buf *bytes.Buffer, part map[string]interface{}) {
 	// Write Content-Transfer-Encoding
 	if encoding, ok := part["content_transfer_encoding"].(string); ok && encoding != "" {
 		buf.WriteString(fmt.Sprintf("Content-Transfer-Encoding: %s\r\n", encoding))
+	}
+
+	// Write Content-ID if present (critical for inline images in Apple Mail)
+	if contentID, ok := part["content_id"].(string); ok && contentID != "" {
+		buf.WriteString(fmt.Sprintf("Content-ID: %s\r\n", contentID))
 	}
 
 	// Write Content-Disposition if present

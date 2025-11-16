@@ -5,6 +5,7 @@ import (
 	"io"
 	"mime"
 	"mime/multipart"
+	"sort"
 	"strings"
 )
 
@@ -17,12 +18,17 @@ func BuildBodyStructure(rawMsg string) string {
 		contentType = "text/plain; charset=us-ascii"
 	}
 
+	fmt.Printf("DEBUG BuildBodyStructure: Extracted Content-Type='%s'\n", contentType)
+
 	// Parse content type and parameters
 	mediaType, params, err := mime.ParseMediaType(contentType)
 	if err != nil {
+		fmt.Printf("DEBUG BuildBodyStructure: Failed to parse Content-Type: %v\n", err)
 		mediaType = "text/plain"
 		params = map[string]string{"charset": "us-ascii"}
 	}
+
+	fmt.Printf("DEBUG BuildBodyStructure: mediaType='%s', boundary='%s'\n", mediaType, params["boundary"])
 
 	// Split media type into type and subtype
 	typeParts := strings.SplitN(mediaType, "/", 2)
@@ -37,8 +43,13 @@ func BuildBodyStructure(rawMsg string) string {
 	if strings.HasPrefix(strings.ToLower(mediaType), "multipart/") {
 		boundary := params["boundary"]
 		if boundary != "" {
+			fmt.Printf("DEBUG BuildBodyStructure: Building multipart BODYSTRUCTURE with boundary='%s'\n", boundary)
 			return buildMultipartBodyStructure(rawMsg, mainType, subType, boundary)
+		} else {
+			fmt.Printf("DEBUG BuildBodyStructure: WARNING - multipart but no boundary found!\n")
 		}
+	} else {
+		fmt.Printf("DEBUG BuildBodyStructure: Not multipart, building single-part structure\n")
 	}
 
 	// For non-multipart messages, return basic body structure
@@ -72,9 +83,10 @@ func BuildBodyStructure(rawMsg string) string {
 		lines = strings.Count(body, "\n")
 	}
 
-	// Format: (type subtype (params) id description encoding size [lines for text])
+	// Format: (type subtype (params) id description encoding size [lines for text] md5 disposition language)
+	// Add extension fields (MD5, disposition, language) as NIL so clients like Apple Mail do not misparse.
 	if mainType == "TEXT" {
-		return fmt.Sprintf("BODYSTRUCTURE (%s %s %s %s %s %s %d %d)",
+		return fmt.Sprintf("BODYSTRUCTURE (%s %s %s %s %s %s %d %d NIL NIL NIL)",
 			QuoteOrNIL(mainType),
 			QuoteOrNIL(subType),
 			paramList,
@@ -86,7 +98,7 @@ func BuildBodyStructure(rawMsg string) string {
 		)
 	}
 
-	return fmt.Sprintf("BODYSTRUCTURE (%s %s %s %s %s %s %d)",
+	return fmt.Sprintf("BODYSTRUCTURE (%s %s %s %s %s %s %d NIL NIL NIL)",
 		QuoteOrNIL(mainType),
 		QuoteOrNIL(subType),
 		paramList,
@@ -161,9 +173,14 @@ func buildMultipartBodyStructure(rawMsg, mainType, subType, boundary string) str
 		return buildFallbackMultipartBodyStructure(rawMsg, mainType, subType, boundary)
 	}
 
-	// Multipart BODYSTRUCTURE format: BODYSTRUCTURE ((part1)(part2)... subtype)
-	// Note: Each part is already a complete structure without BODYSTRUCTURE keyword
-	return fmt.Sprintf("BODYSTRUCTURE (%s %s)", strings.Join(parts, " "), QuoteOrNIL(subType))
+	// After collecting parts, build proper multipart BODYSTRUCTURE per RFC 3501:
+	// (part1 part2 ... SUBTYPE ("BOUNDARY" boundary) NIL NIL)
+	// Build deterministic parameter list containing boundary only.
+	boundaryParams := map[string]string{"BOUNDARY": boundary}
+	paramList := buildParamList(boundaryParams)
+
+	// Multipart BODYSTRUCTURE format: BODYSTRUCTURE ((part1)(part2) SUBTYPE (params) NIL NIL)
+	return fmt.Sprintf("BODYSTRUCTURE (%s %s %s NIL NIL)", strings.Join(parts, " "), QuoteOrNIL(subType), paramList)
 }
 
 // buildPartStructure builds BODYSTRUCTURE for a single MIME part
@@ -265,14 +282,19 @@ func buildParamList(params map[string]string) string {
 	if len(params) == 0 {
 		return "NIL"
 	}
-
+	// Ensure stable ordering for deterministic responses (important for some clients)
+	keys := make([]string, 0, len(params))
+	for k := range params {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
 	var paramPairs []string
-	for key, value := range params {
+	for _, key := range keys {
+		value := params[key]
 		paramPairs = append(paramPairs, fmt.Sprintf("%s %s",
 			QuoteOrNIL(strings.ToUpper(key)),
 			QuoteOrNIL(value)))
 	}
-
 	return fmt.Sprintf("(%s)", strings.Join(paramPairs, " "))
 }
 
