@@ -9,7 +9,13 @@ import (
 	"time"
 
 	"raven/internal/models"
+	"raven/internal/server/auth"
 )
+
+// HandleClient handles IMAP client connections (exported for auth package)
+func HandleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
+	handleClient(s, conn, state)
+}
 
 func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 	// Use buffered reader to properly handle command lines and literal data
@@ -46,11 +52,11 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 
 		switch cmd {
 		case "CAPABILITY":
-			s.handleCapability(conn, tag, state)
+			auth.HandleCapability(s, conn, tag, state)
 		case "LOGIN":
-			s.handleLogin(conn, tag, parts, state)
+			auth.HandleLogin(s, conn, tag, parts, state)
 		case "AUTHENTICATE":
-			s.handleAuthenticate(conn, tag, parts, state)
+			auth.HandleAuthenticate(s, conn, tag, parts, state)
 		case "LIST":
 			s.handleList(conn, tag, parts, state)
 		case "LSUB":
@@ -96,15 +102,24 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 		case "UNSUBSCRIBE":
 			s.handleUnsubscribe(conn, tag, parts, state)
 		case "LOGOUT":
-			s.handleLogout(conn, tag)
+			auth.HandleLogout(s, conn, tag)
 			return
 		case "STARTTLS":
-			s.handleStartTLS(conn, tag, parts)
+			// Create a client handler wrapper for the auth package
+			clientHandler := func(conn net.Conn, state *models.ClientState) {
+				handleClient(s, conn, state)
+			}
+			auth.HandleStartTLS(s, clientHandler, conn, tag, parts)
 			return
 		default:
 			s.sendResponse(conn, fmt.Sprintf("%s BAD Unknown command: %s", tag, cmd))
 		}
 	}
+}
+
+// SendResponse sends a response to the client (exported for auth package)
+func (s *IMAPServer) SendResponse(conn net.Conn, response string) {
+	s.sendResponse(conn, response)
 }
 
 func (s *IMAPServer) sendResponse(conn net.Conn, response string) {

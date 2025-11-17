@@ -1,4 +1,4 @@
-package server
+package auth
 
 import (
 	"crypto/tls"
@@ -15,9 +15,23 @@ import (
 	"raven/internal/models"
 )
 
+// ServerDeps defines the dependencies that auth handlers need from the server
+type ServerDeps interface {
+	SendResponse(conn net.Conn, response string)
+	ExtractUsername(username string) string
+	GetUserDomain(username string) string
+	EnsureUserAndMailboxes(username, domain string) (userID int64, domainID int64, err error)
+	GetDBManager() *db.DBManager
+	GetCertPath() string
+	GetKeyPath() string
+}
+
+// ClientHandler is a function type for handling client connections
+type ClientHandler func(conn net.Conn, state *models.ClientState)
+
 // ===== CAPABILITY =====
 
-func (s *IMAPServer) handleCapability(conn net.Conn, tag string, state *models.ClientState) {
+func HandleCapability(deps ServerDeps, conn net.Conn, tag string, state *models.ClientState) {
 	// Base capabilities
 	capabilities := []string{"IMAP4rev1"}
 
@@ -51,16 +65,16 @@ func (s *IMAPServer) handleCapability(conn net.Conn, tag string, state *models.C
 	)
 
 	// Send CAPABILITY response
-	s.sendResponse(conn, "* CAPABILITY "+strings.Join(capabilities, " "))
-	s.sendResponse(conn, fmt.Sprintf("%s OK CAPABILITY completed", tag))
+	deps.SendResponse(conn, "* CAPABILITY "+strings.Join(capabilities, " "))
+	deps.SendResponse(conn, fmt.Sprintf("%s OK CAPABILITY completed", tag))
 }
 
 // ===== LOGIN =====
 
-func (s *IMAPServer) handleLogin(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+func HandleLogin(deps ServerDeps, conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	// Check if LOGIN command has correct number of arguments
 	if len(parts) < 4 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD LOGIN requires username and password", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD LOGIN requires username and password", tag))
 		return
 	}
 
@@ -79,7 +93,7 @@ func (s *IMAPServer) handleLogin(conn net.Conn, tag string, parts []string, stat
 	// Per RFC 3501: If LOGINDISABLED capability is advertised (i.e., no TLS),
 	// reject the LOGIN command
 	if !isTLS {
-		s.sendResponse(conn, fmt.Sprintf("%s NO [PRIVACYREQUIRED] LOGIN is disabled on insecure connection. Use STARTTLS first.", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO [PRIVACYREQUIRED] LOGIN is disabled on insecure connection. Use STARTTLS first.", tag))
 		return
 	}
 
@@ -88,14 +102,14 @@ func (s *IMAPServer) handleLogin(conn net.Conn, tag string, parts []string, stat
 	password := strings.Trim(parts[3], "\"")
 
 	// Use common authentication logic
-	s.authenticateUser(conn, tag, username, password, state)
+	authenticateUser(deps, conn, tag, username, password, state)
 }
 
 // ===== AUTHENTICATE =====
 
-func (s *IMAPServer) handleAuthenticate(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+func HandleAuthenticate(deps ServerDeps, conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	if len(parts) < 3 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD AUTHENTICATE requires authentication mechanism", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD AUTHENTICATE requires authentication mechanism", tag))
 		return
 	}
 
@@ -113,19 +127,19 @@ func (s *IMAPServer) handleAuthenticate(conn net.Conn, tag string, parts []strin
 			}
 		}
 		if !isTLS {
-			s.sendResponse(conn, fmt.Sprintf("%s NO Plaintext authentication disallowed without TLS", tag))
+			deps.SendResponse(conn, fmt.Sprintf("%s NO Plaintext authentication disallowed without TLS", tag))
 			return
 		}
 
 		// Send continuation request
-		s.sendResponse(conn, "+ ")
+		deps.SendResponse(conn, "+ ")
 
 		// Read the authentication data
 		buf := make([]byte, 8192)
 		conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 		n, err := conn.Read(buf)
 		if err != nil {
-			s.sendResponse(conn, fmt.Sprintf("%s NO Authentication failed", tag))
+			deps.SendResponse(conn, fmt.Sprintf("%s NO Authentication failed", tag))
 			return
 		}
 
@@ -133,7 +147,7 @@ func (s *IMAPServer) handleAuthenticate(conn net.Conn, tag string, parts []strin
 
 		// Client may cancel authentication with a single "*"
 		if authData == "*" {
-			s.sendResponse(conn, fmt.Sprintf("%s BAD Authentication exchange cancelled", tag))
+			deps.SendResponse(conn, fmt.Sprintf("%s BAD Authentication exchange cancelled", tag))
 			return
 		}
 
@@ -166,51 +180,51 @@ func (s *IMAPServer) handleAuthenticate(conn net.Conn, tag string, parts []strin
 			log.Printf("AUTHENTICATE PLAIN: fallback extracted username=%s (password length=%d)", username, len(password))
 		} else {
 			log.Printf("AUTHENTICATE PLAIN: invalid format, expected 2-3 parts, got %d", len(partsNull))
-			s.sendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Invalid credentials format", tag))
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Invalid credentials format", tag))
 			return
 		}
 
 		if username == "" || password == "" {
 			log.Printf("AUTHENTICATE PLAIN: empty username or password")
-			s.sendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Invalid credentials", tag))
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Invalid credentials", tag))
 			return
 		}
 
 		// Reuse the existing login logic
-		s.authenticateUser(conn, tag, username, password, state)
+		authenticateUser(deps, conn, tag, username, password, state)
 		return
 
 	default:
-		s.sendResponse(conn, fmt.Sprintf("%s NO Unsupported authentication mechanism", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Unsupported authentication mechanism", tag))
 	}
 }
 
 // ===== STARTTLS =====
 
-func (s *IMAPServer) handleStartTLS(conn net.Conn, tag string, parts []string) {
+func HandleStartTLS(deps ServerDeps, clientHandler ClientHandler, conn net.Conn, tag string, parts []string) {
 	// RFC 3501: STARTTLS takes no arguments
 	if len(parts) > 2 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD STARTTLS command does not accept arguments", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD STARTTLS command does not accept arguments", tag))
 		return
 	}
 
 	// Check if already on TLS connection
 	if _, ok := conn.(*tls.Conn); ok {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD TLS already active", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD TLS already active", tag))
 		return
 	}
 
 	// Also check mock TLS connections
 	type tlsAware interface{ IsTLS() bool }
 	if ta, ok := any(conn).(tlsAware); ok && ta.IsTLS() {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD TLS already active", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD TLS already active", tag))
 		return
 	}
 
-	cert, err := tls.LoadX509KeyPair(s.certPath, s.keyPath)
+	cert, err := tls.LoadX509KeyPair(deps.GetCertPath(), deps.GetKeyPath())
 	if err != nil {
 		fmt.Printf("Failed to load TLS cert/key: %v\n", err)
-		s.sendResponse(conn, fmt.Sprintf("%s BAD TLS not available", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD TLS not available", tag))
 		return
 	}
 
@@ -219,36 +233,36 @@ func (s *IMAPServer) handleStartTLS(conn net.Conn, tag string, parts []string) {
 	}
 
 	// RFC 3501: Send OK response before starting TLS negotiation
-	s.sendResponse(conn, fmt.Sprintf("%s OK Begin TLS negotiation now", tag))
+	deps.SendResponse(conn, fmt.Sprintf("%s OK Begin TLS negotiation now", tag))
 
 	tlsConn := tls.Server(conn, tlsConfig)
 
 	// RFC 3501: Client MUST discard cached server capabilities after STARTTLS
 	// Restart handler with upgraded TLS connection and fresh state
-	handleClient(s, tlsConn, &models.ClientState{})
+	clientHandler(tlsConn, &models.ClientState{})
 }
 
 // ===== LOGOUT =====
 
-func (s *IMAPServer) handleLogout(conn net.Conn, tag string) {
-	s.sendResponse(conn, "* BYE IMAP4rev1 Server logging out")
-	s.sendResponse(conn, fmt.Sprintf("%s OK LOGOUT completed", tag))
+func HandleLogout(deps ServerDeps, conn net.Conn, tag string) {
+	deps.SendResponse(conn, "* BYE IMAP4rev1 Server logging out")
+	deps.SendResponse(conn, fmt.Sprintf("%s OK LOGOUT completed", tag))
 }
 
 // ===== AUTHENTICATE USER (Shared Auth Logic) =====
 
 // Extract common authentication logic
-func (s *IMAPServer) authenticateUser(conn net.Conn, tag string, username string, password string, state *models.ClientState) {
+func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username string, password string, state *models.ClientState) {
 	// Load domain from config file
 	cfg, err := conf.LoadConfig()
 	if err != nil {
 		log.Printf("LoadConfig error: %v", err)
-		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Configuration error", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Configuration error", tag))
 		return
 	}
 
 	if cfg.Domain == "" || cfg.AuthServerURL == "" {
-		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Configuration error", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Configuration error", tag))
 		return
 	}
 
@@ -267,7 +281,7 @@ func (s *IMAPServer) authenticateUser(conn net.Conn, tag string, username string
 	// Create HTTP request
 	req, err := http.NewRequest("POST", cfg.AuthServerURL, strings.NewReader(requestBody))
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Internal error", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Internal error", tag))
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -282,7 +296,7 @@ func (s *IMAPServer) authenticateUser(conn net.Conn, tag string, username string
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("LOGIN: error reaching auth server: %v", err)
-		s.sendResponse(conn, fmt.Sprintf("%s NO [UNAVAILABLE] Authentication service unavailable", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO [UNAVAILABLE] Authentication service unavailable", tag))
 		return
 	}
 	defer resp.Body.Close()
@@ -291,14 +305,14 @@ func (s *IMAPServer) authenticateUser(conn net.Conn, tag string, username string
 		log.Printf("Accepting login for user: %s", username)
 
 		// Extract username and domain
-		actualUsername := s.ExtractUsername(username)
-		domain := s.GetUserDomain(username)
+		actualUsername := deps.ExtractUsername(username)
+		domain := deps.GetUserDomain(username)
 
 		// Ensure user exists in database and has default mailboxes
-		userID, domainID, err := s.EnsureUserAndMailboxes(actualUsername, domain)
+		userID, domainID, err := deps.EnsureUserAndMailboxes(actualUsername, domain)
 		if err != nil {
 			log.Printf("Failed to create user and mailboxes: %v", err)
-			s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Server error", tag))
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Server error", tag))
 			return
 		}
 
@@ -308,7 +322,7 @@ func (s *IMAPServer) authenticateUser(conn net.Conn, tag string, username string
 		state.DomainID = domainID
 
 		// Load role mailbox assignments for this user
-		roleMailboxIDs, err := db.GetUserRoleAssignments(s.dbManager.GetSharedDB(), userID)
+		roleMailboxIDs, err := db.GetUserRoleAssignments(deps.GetDBManager().GetSharedDB(), userID)
 		if err != nil {
 			log.Printf("Failed to load role assignments for user %d: %v", userID, err)
 			// Don't fail authentication, just continue without role mailboxes
@@ -337,16 +351,15 @@ func (s *IMAPServer) authenticateUser(conn net.Conn, tag string, username string
 		} else {
 			capabilities += " STARTTLS LOGINDISABLED UIDPLUS IDLE NAMESPACE UNSELECT LITERAL+"
 		}
-		s.sendResponse(conn, fmt.Sprintf("%s OK [CAPABILITY %s] Authenticated", tag, capabilities))
+		deps.SendResponse(conn, fmt.Sprintf("%s OK [CAPABILITY %s] Authenticated", tag, capabilities))
 	} else {
-		s.sendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
 	}
 }
 
 // ===== HANDLE SSL CONNECTION =====
 
-func (s *IMAPServer) HandleSSLConnection(conn net.Conn) {
-
+func HandleSSLConnection(clientHandler ClientHandler, conn net.Conn) {
 	certPath := "/certs/fullchain.pem"
 	keyPath := "/certs/privkey.pem"
 
@@ -364,12 +377,5 @@ func (s *IMAPServer) HandleSSLConnection(conn net.Conn) {
 	tlsConn := tls.Server(conn, tlsConfig)
 
 	// Start IMAP session over TLS
-	handleClient(s, tlsConn, &models.ClientState{})
-}
-
-// ===== EXPORTED HANDLER FOR TESTING =====
-
-// HandleCapability exports the capability handler for testing
-func (s *IMAPServer) HandleCapability(conn net.Conn, tag string, state *models.ClientState) {
-	s.handleCapability(conn, tag, state)
+	clientHandler(tlsConn, &models.ClientState{})
 }

@@ -8,8 +8,8 @@ import (
 	
 )
 
-// Helper to check capability tokens exactly (avoids substring matches like LOGIN in LOGINDISABLED)
-func hasCapabilityToken(line, token string) bool {
+// HasCapabilityToken is a helper to check capability tokens exactly (avoids substring matches like LOGIN in LOGINDISABLED)
+func HasCapabilityToken(line, token string) bool {
 	line = strings.TrimSpace(line)
 	const prefix = "* CAPABILITY "
 	if !strings.HasPrefix(line, prefix) {
@@ -69,7 +69,7 @@ func TestCapabilityCommand_NonTLSConnection(t *testing.T) {
 	}
 
 	// Use exact token matching to avoid matching LOGIN within LOGINDISABLED
-	if hasCapabilityToken(capLine, "LOGIN") {
+	if HasCapabilityToken(capLine, "LOGIN") {
 		t.Errorf("Non-TLS connection should not advertise LOGIN, got: %s", capLine)
 	}
 

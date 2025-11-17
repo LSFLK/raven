@@ -1,4 +1,4 @@
-package server
+package auth_test
 
 import (
 	"fmt"
@@ -6,8 +6,24 @@ import (
 	"testing"
 
 	"raven/internal/models"
-	
+	"raven/internal/server"
 )
+
+// Helper to check capability tokens exactly (avoids substring matches like LOGIN in LOGINDISABLED)
+func hasCapabilityToken(line, token string) bool {
+	line = strings.TrimSpace(line)
+	const prefix = "* CAPABILITY "
+	if !strings.HasPrefix(line, prefix) {
+		return false
+	}
+	caps := strings.Fields(strings.TrimSpace(line[len(prefix):]))
+	for _, c := range caps {
+		if c == token {
+			return true
+		}
+	}
+	return false
+}
 
 // TestCapabilityCommand_RFCCompliance tests RFC 3501 compliance
 func TestCapabilityCommand_RFCCompliance(t *testing.T) {
@@ -57,17 +73,17 @@ func TestCapabilityCommand_RFCCompliance(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := SetupTestServerSimple(t)
-			var conn MockConnInterface
+			srv := server.SetupTestServerSimple(t)
+			var conn server.MockConnInterface
 
 			if tt.connType == "tls" {
-				conn = NewMockTLSConn()
+				conn = server.NewMockTLSConn()
 			} else {
-				conn = NewMockConn()
+				conn = server.NewMockConn()
 			}
 
 			state := &models.ClientState{Authenticated: false}
-			srv.HandleCapability(conn, "TEST", state)
+			srv.HandleCapability(conn,"TEST", state)
 
 			response := conn.GetWrittenData()
 			lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -111,11 +127,11 @@ func TestCapabilityCommand_TagHandling(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("Tag_%s", tc.tag), func(t *testing.T) {
-			srv := SetupTestServerSimple(t)
-			conn := NewMockConn()
+			srv := server.SetupTestServerSimple(t)
+			conn := server.NewMockConn()
 			state := &models.ClientState{Authenticated: false}
 
-			srv.HandleCapability(conn, tc.tag, state)
+			srv.HandleCapability(conn,tc.tag, state)
 
 			response := conn.GetWrittenData()
 			lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -137,8 +153,8 @@ func TestCapabilityCommand_TagHandling(t *testing.T) {
 
 // TestCapabilityCommand_CapabilityFormatting tests capability string formatting
 func TestCapabilityCommand_CapabilityFormatting(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
 	state := &models.ClientState{Authenticated: false}
 
 	srv.HandleCapability(conn, "FORMAT", state)
@@ -194,11 +210,11 @@ func TestCapabilityCommand_CapabilityFormatting(t *testing.T) {
 // TestCapabilityCommand_EdgeCases tests edge cases and error conditions
 func TestCapabilityCommand_EdgeCases(t *testing.T) {
 	t.Run("EmptyTag", func(t *testing.T) {
-		srv := SetupTestServerSimple(t)
-		conn := NewMockConn()
+		srv := server.SetupTestServerSimple(t)
+		conn := server.NewMockConn()
 		state := &models.ClientState{Authenticated: false}
 
-		srv.HandleCapability(conn, "", state)
+		srv.HandleCapability(conn,"", state)
 
 		response := conn.GetWrittenData()
 		// Should still work with empty tag
@@ -211,8 +227,8 @@ func TestCapabilityCommand_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("NilState", func(t *testing.T) {
-		srv := SetupTestServerSimple(t)
-		conn := NewMockConn()
+		srv := server.SetupTestServerSimple(t)
+		conn := server.NewMockConn()
 
 		// This should not panic
 		defer func() {
@@ -221,14 +237,14 @@ func TestCapabilityCommand_EdgeCases(t *testing.T) {
 			}
 		}()
 
-		srv.HandleCapability(conn, "NIL", nil)
+		srv.HandleCapability(conn,"NIL", nil)
 	})
 }
 
 // TestCapabilityCommand_ResponseTiming tests response timing and ordering
 func TestCapabilityCommand_ResponseTiming(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
 	state := &models.ClientState{Authenticated: false}
 
 	srv.HandleCapability(conn, "TIMING", state)
@@ -259,13 +275,13 @@ func TestCapabilityCommand_ResponseTiming(t *testing.T) {
 
 // TestCapabilityCommand_MemoryUsage tests for memory leaks or excessive allocation
 func TestCapabilityCommand_MemoryUsage(t *testing.T) {
-	srv := SetupTestServerSimple(t)
+	srv := server.SetupTestServerSimple(t)
 	
 	// Run many capability commands to check for memory issues
 	for i := 0; i < 1000; i++ {
-		conn := NewMockConn()
+		conn := server.NewMockConn()
 		state := &models.ClientState{Authenticated: false}
-		srv.HandleCapability(conn, fmt.Sprintf("MEM%d", i), state)
+		srv.HandleCapability(conn,fmt.Sprintf("MEM%d", i), state)
 		
 		// Verify response is still correct
 		response := conn.GetWrittenData()
@@ -278,7 +294,7 @@ func TestCapabilityCommand_MemoryUsage(t *testing.T) {
 
 // TestCapabilityCommand_StateIsolation tests that different states don't interfere
 func TestCapabilityCommand_StateIsolation(t *testing.T) {
-	srv := SetupTestServerSimple(t)
+	srv := server.SetupTestServerSimple(t)
 
 	states := []*models.ClientState{
 		{Authenticated: false, Username: ""},
@@ -291,8 +307,8 @@ func TestCapabilityCommand_StateIsolation(t *testing.T) {
 
 	// Get capability response for each state
 	for i, state := range states {
-		conn := NewMockConn()
-		srv.HandleCapability(conn, fmt.Sprintf("STATE%d", i), state)
+		conn := server.NewMockConn()
+		srv.HandleCapability(conn,fmt.Sprintf("STATE%d", i), state)
 		responses[i] = conn.GetWrittenData()
 	}
 
