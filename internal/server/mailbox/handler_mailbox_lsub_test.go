@@ -1,14 +1,14 @@
 //go:build test
 // +build test
 
-package server
+package mailbox_test
 
 import (
 	"strings"
 	"testing"
 
 	"raven/internal/models"
-	
+	"raven/internal/server"
 )
 
 // TestLsubCommand_BasicUsage tests LSUB with basic wildcard patterns

@@ -1,7 +1,7 @@
 //go:build test
 // +build test
 
-package server
+package mailbox_test
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"raven/internal/models"
-	
+	"raven/internal/server"
 )
 
 // TestStatusCommand_Authentication tests STATUS command authentication requirements

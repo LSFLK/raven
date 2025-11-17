@@ -1,17 +1,17 @@
-package server
+package mailbox_test
 
 import (
 	"strings"
 	"testing"
 
 	"raven/internal/models"
-	
+	"raven/internal/server"
 )
 
 // TestCreateCommand_Unauthenticated tests CREATE command without authentication
 func TestCreateCommand_Unauthenticated(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
 	state := &models.ClientState{
 		Authenticated: false,
 	}
@@ -27,9 +27,9 @@ func TestCreateCommand_Unauthenticated(t *testing.T) {
 
 // TestCreateCommand_InvalidArguments tests CREATE command with invalid arguments
 func TestCreateCommand_InvalidArguments(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test CREATE command without mailbox name
 	srv.HandleCreate(conn, "A001", []string{"A001", "CREATE"}, state)
@@ -42,9 +42,9 @@ func TestCreateCommand_InvalidArguments(t *testing.T) {
 
 // TestCreateCommand_CreateINBOX tests attempting to create INBOX
 func TestCreateCommand_CreateINBOX(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test creating INBOX (should fail)
 	srv.HandleCreate(conn, "A001", []string{"A001", "CREATE", "INBOX"}, state)
@@ -57,9 +57,9 @@ func TestCreateCommand_CreateINBOX(t *testing.T) {
 
 // TestCreateCommand_CreateINBOXCaseInsensitive tests attempting to create inbox with different case
 func TestCreateCommand_CreateINBOXCaseInsensitive(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test creating inbox (lowercase - should fail)
 	srv.HandleCreate(conn, "A001", []string{"A001", "CREATE", "inbox"}, state)
@@ -72,9 +72,9 @@ func TestCreateCommand_CreateINBOXCaseInsensitive(t *testing.T) {
 
 // TestCreateCommand_EmptyMailboxName tests creating mailbox with empty name
 func TestCreateCommand_EmptyMailboxName(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test creating mailbox with empty name
 	srv.HandleCreate(conn, "A001", []string{"A001", "CREATE", "\"\""}, state)
@@ -87,9 +87,9 @@ func TestCreateCommand_EmptyMailboxName(t *testing.T) {
 
 // TestCreateCommand_ValidMailbox tests creating a valid mailbox
 func TestCreateCommand_ValidMailbox(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test creating a valid mailbox
 	srv.HandleCreate(conn, "A001", []string{"A001", "CREATE", "Projects"}, state)
@@ -102,9 +102,9 @@ func TestCreateCommand_ValidMailbox(t *testing.T) {
 
 // TestCreateCommand_QuotedMailboxName tests creating mailbox with quoted name
 func TestCreateCommand_QuotedMailboxName(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test creating a quoted mailbox name
 	srv.HandleCreate(conn, "A001", []string{"A001", "CREATE", "\"My Projects\""}, state)
@@ -117,9 +117,9 @@ func TestCreateCommand_QuotedMailboxName(t *testing.T) {
 
 // TestCreateCommand_DuplicateMailbox tests creating the same mailbox twice
 func TestCreateCommand_DuplicateMailbox(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Create mailbox first time
 	srv.HandleCreate(conn, "A001", []string{"A001", "CREATE", "TestDupe"}, state)
@@ -141,9 +141,9 @@ func TestCreateCommand_DuplicateMailbox(t *testing.T) {
 
 // TestCreateCommand_DefaultMailboxes tests attempting to create default mailboxes
 func TestCreateCommand_DefaultMailboxes(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	defaultMailboxes := []string{"Sent", "Drafts", "Trash"}
 
@@ -159,9 +159,9 @@ func TestCreateCommand_DefaultMailboxes(t *testing.T) {
 
 // TestCreateCommand_HierarchicalMailbox tests creating hierarchical mailboxes
 func TestCreateCommand_HierarchicalMailbox(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test creating hierarchical mailbox
 	srv.HandleCreate(conn, "A001", []string{"A001", "CREATE", "Projects/Work/Important"}, state)
@@ -174,9 +174,9 @@ func TestCreateCommand_HierarchicalMailbox(t *testing.T) {
 
 // TestCreateCommand_TrailingHierarchySeparator tests creating mailbox with trailing separator
 func TestCreateCommand_TrailingHierarchySeparator(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test creating mailbox with trailing hierarchy separator
 	srv.HandleCreate(conn, "A001", []string{"A001", "CREATE", "Projects/"}, state)
@@ -198,9 +198,9 @@ func TestCreateCommand_TrailingHierarchySeparator(t *testing.T) {
 
 // TestCreateCommand_ListShowsCreatedMailbox tests that LIST shows newly created mailboxes
 func TestCreateCommand_ListShowsCreatedMailbox(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Create a new mailbox
 	srv.HandleCreate(conn, "A001", []string{"A001", "CREATE", "NewMailbox"}, state)
@@ -228,12 +228,12 @@ func TestCreateCommand_ListShowsCreatedMailbox(t *testing.T) {
 
 // TestCreateCommand_MultipleUsers tests that mailboxes are user-specific
 func TestCreateCommand_MultipleUsers(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+
 	// User 1 creates a mailbox
-	state1 := SetupAuthenticatedState(t, srv, "user1")
-	
+	state1 := server.SetupAuthenticatedState(t, srv, "user1")
+
 	srv.HandleCreate(conn, "A001", []string{"A001", "CREATE", "User1Mailbox"}, state1)
 	response1 := conn.GetWrittenData()
 	if !strings.Contains(response1, "A001 OK CREATE completed") {
@@ -244,8 +244,8 @@ func TestCreateCommand_MultipleUsers(t *testing.T) {
 	conn.ClearWriteBuffer()
 
 	// User 2 should be able to create a mailbox with the same name
-	state2 := SetupAuthenticatedState(t, srv, "user2")
-	
+	state2 := server.SetupAuthenticatedState(t, srv, "user2")
+
 	srv.HandleCreate(conn, "A002", []string{"A002", "CREATE", "User1Mailbox"}, state2)
 	response2 := conn.GetWrittenData()
 	if !strings.Contains(response2, "A002 OK CREATE completed") {
@@ -255,9 +255,9 @@ func TestCreateCommand_MultipleUsers(t *testing.T) {
 
 // TestCreateCommand_RFCExample tests the example from RFC 3501
 func TestCreateCommand_RFCExample(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test the RFC 3501 example: CREATE owatagusiam/
 	srv.HandleCreate(conn, "A003", []string{"A003", "CREATE", "owatagusiam/"}, state)

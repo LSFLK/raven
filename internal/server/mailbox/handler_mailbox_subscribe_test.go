@@ -1,18 +1,18 @@
-package server
+package mailbox_test
 
 import (
 	"strings"
 	"testing"
 
 	"raven/internal/models"
-	
+	"raven/internal/server"
 )
 
 // TestSubscribeCommand_ValidMailbox tests SUBSCRIBE command with valid mailbox
 func TestSubscribeCommand_ValidMailbox(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test SUBSCRIBE command
 	srv.HandleSubscribe(conn, "A001", []string{"A001", "SUBSCRIBE", "TestFolder"}, state)
@@ -27,9 +27,9 @@ func TestSubscribeCommand_ValidMailbox(t *testing.T) {
 
 // TestSubscribeCommand_QuotedMailbox tests SUBSCRIBE command with quoted mailbox name
 func TestSubscribeCommand_QuotedMailbox(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test SUBSCRIBE command with quoted mailbox
 	srv.HandleSubscribe(conn, "A002", []string{"A002", "SUBSCRIBE", "\"Test Folder\""}, state)
@@ -44,9 +44,9 @@ func TestSubscribeCommand_QuotedMailbox(t *testing.T) {
 
 // TestSubscribeCommand_INBOXMailbox tests SUBSCRIBE command with INBOX
 func TestSubscribeCommand_INBOXMailbox(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test SUBSCRIBE command with INBOX
 	srv.HandleSubscribe(conn, "A003", []string{"A003", "SUBSCRIBE", "INBOX"}, state)
@@ -61,8 +61,8 @@ func TestSubscribeCommand_INBOXMailbox(t *testing.T) {
 
 // TestSubscribeCommand_NotAuthenticated tests SUBSCRIBE command without authentication
 func TestSubscribeCommand_NotAuthenticated(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
 	state := &models.ClientState{
 		Authenticated: false,
 	}
@@ -80,9 +80,9 @@ func TestSubscribeCommand_NotAuthenticated(t *testing.T) {
 
 // TestSubscribeCommand_MissingArgument tests SUBSCRIBE command without mailbox argument
 func TestSubscribeCommand_MissingArgument(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test SUBSCRIBE command without mailbox argument
 	srv.HandleSubscribe(conn, "A005", []string{"A005", "SUBSCRIBE"}, state)
@@ -97,9 +97,9 @@ func TestSubscribeCommand_MissingArgument(t *testing.T) {
 
 // TestSubscribeCommand_EmptyMailboxName tests SUBSCRIBE command with empty mailbox name
 func TestSubscribeCommand_EmptyMailboxName(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test SUBSCRIBE command with empty mailbox name
 	srv.HandleSubscribe(conn, "A006", []string{"A006", "SUBSCRIBE", ""}, state)
@@ -114,9 +114,9 @@ func TestSubscribeCommand_EmptyMailboxName(t *testing.T) {
 
 // TestUnsubscribeCommand_ValidMailbox tests UNSUBSCRIBE command with valid mailbox
 func TestUnsubscribeCommand_ValidMailbox(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// First subscribe to a mailbox
 	srv.HandleSubscribe(conn, "A001", []string{"A001", "SUBSCRIBE", "TestFolder"}, state)
@@ -135,8 +135,8 @@ func TestUnsubscribeCommand_ValidMailbox(t *testing.T) {
 
 // TestUnsubscribeCommand_NotAuthenticated tests UNSUBSCRIBE command without authentication
 func TestUnsubscribeCommand_NotAuthenticated(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
 	state := &models.ClientState{
 		Authenticated: false,
 	}
@@ -154,9 +154,9 @@ func TestUnsubscribeCommand_NotAuthenticated(t *testing.T) {
 
 // TestUnsubscribeCommand_MissingArgument tests UNSUBSCRIBE command without mailbox argument
 func TestUnsubscribeCommand_MissingArgument(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test UNSUBSCRIBE command without mailbox argument
 	srv.HandleUnsubscribe(conn, "A004", []string{"A004", "UNSUBSCRIBE"}, state)
@@ -171,9 +171,9 @@ func TestUnsubscribeCommand_MissingArgument(t *testing.T) {
 
 // TestUnsubscribeCommand_EmptyMailboxName tests UNSUBSCRIBE command with empty mailbox name
 func TestUnsubscribeCommand_EmptyMailboxName(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test UNSUBSCRIBE command with empty mailbox name
 	srv.HandleUnsubscribe(conn, "A005", []string{"A005", "UNSUBSCRIBE", ""}, state)
@@ -188,9 +188,9 @@ func TestUnsubscribeCommand_EmptyMailboxName(t *testing.T) {
 
 // TestUnsubscribeCommand_QuotedMailbox tests UNSUBSCRIBE command with quoted mailbox name
 func TestUnsubscribeCommand_QuotedMailbox(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// First subscribe to a quoted mailbox
 	srv.HandleSubscribe(conn, "A001", []string{"A001", "SUBSCRIBE", "\"Test Folder\""}, state)
@@ -209,9 +209,9 @@ func TestUnsubscribeCommand_QuotedMailbox(t *testing.T) {
 
 // TestUnsubscribeCommand_NonSubscribed tests UNSUBSCRIBE command with mailbox that was never subscribed
 func TestUnsubscribeCommand_NonSubscribed(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test UNSUBSCRIBE command on a mailbox that was never subscribed
 	srv.HandleUnsubscribe(conn, "A007", []string{"A007", "UNSUBSCRIBE", "NonExistentFolder"}, state)
@@ -226,9 +226,9 @@ func TestUnsubscribeCommand_NonSubscribed(t *testing.T) {
 
 // TestUnsubscribeCommand_ExampleFromRFC tests the exact example from RFC 3501
 func TestUnsubscribeCommand_ExampleFromRFC(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// First subscribe to the RFC example mailbox
 	srv.HandleSubscribe(conn, "A001", []string{"A001", "SUBSCRIBE", "#news.comp.mail.mime"}, state)
@@ -248,9 +248,9 @@ func TestUnsubscribeCommand_ExampleFromRFC(t *testing.T) {
 
 // TestSubscribeCommand_ExampleFromRFC tests the exact example from RFC 3501
 func TestSubscribeCommand_ExampleFromRFC(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test the RFC example: C: A002 SUBSCRIBE #news.comp.mail.mime
 	srv.HandleSubscribe(conn, "A002", []string{"A002", "SUBSCRIBE", "#news.comp.mail.mime"}, state)
@@ -265,9 +265,9 @@ func TestSubscribeCommand_ExampleFromRFC(t *testing.T) {
 
 // TestSubscribeCommand_DuplicateSubscription tests subscribing to the same mailbox twice
 func TestSubscribeCommand_DuplicateSubscription(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Subscribe to a mailbox twice
 	srv.HandleSubscribe(conn, "A001", []string{"A001", "SUBSCRIBE", "TestFolder"}, state)

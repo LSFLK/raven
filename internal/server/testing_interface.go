@@ -5,6 +5,7 @@ import (
 
 	"raven/internal/models"
 	"raven/internal/server/auth"
+	"raven/internal/server/mailbox"
 )
 
 // TestInterface provides access to internal methods for testing
@@ -31,22 +32,22 @@ func (t *TestInterface) HandleLogin(conn net.Conn, tag string, parts []string, s
 
 // HandleList exposes the list handler for testing
 func (t *TestInterface) HandleList(conn net.Conn, tag string, parts []string, state *models.ClientState) {
-	t.server.handleList(conn, tag, parts, state)
+	mailbox.HandleList(t.server, conn, tag, parts, state)
 }
 
 // HandleCreate exposes the create handler for testing
 func (t *TestInterface) HandleCreate(conn net.Conn, tag string, parts []string, state *models.ClientState) {
-	t.server.handleCreate(conn, tag, parts, state)
+	mailbox.HandleCreate(t.server, conn, tag, parts, state)
 }
 
 // HandleDelete exposes the delete handler for testing
 func (t *TestInterface) HandleDelete(conn net.Conn, tag string, parts []string, state *models.ClientState) {
-	t.server.handleDelete(conn, tag, parts, state)
+	mailbox.HandleDelete(t.server, conn, tag, parts, state)
 }
 
 // HandleRename exposes the rename handler for testing
 func (t *TestInterface) HandleRename(conn net.Conn, tag string, parts []string, state *models.ClientState) {
-	t.server.handleRename(conn, tag, parts, state)
+	mailbox.HandleRename(t.server, conn, tag, parts, state)
 }
 
 // HandleLogout exposes the logout handler for testing
@@ -119,22 +120,22 @@ func (t *TestInterface) HandleStartTLS(conn net.Conn, tag string, parts []string
 
 // HandleSubscribe exposes the subscribe handler for testing
 func (t *TestInterface) HandleSubscribe(conn net.Conn, tag string, parts []string, state *models.ClientState) {
-	t.server.handleSubscribe(conn, tag, parts, state)
+	mailbox.HandleSubscribe(t.server, conn, tag, parts, state)
 }
 
 // HandleUnsubscribe exposes the unsubscribe handler for testing
 func (t *TestInterface) HandleUnsubscribe(conn net.Conn, tag string, parts []string, state *models.ClientState) {
-	t.server.handleUnsubscribe(conn, tag, parts, state)
+	mailbox.HandleUnsubscribe(t.server, conn, tag, parts, state)
 }
 
 // HandleLsub exposes the lsub handler for testing
 func (t *TestInterface) HandleLsub(conn net.Conn, tag string, parts []string, state *models.ClientState) {
-	t.server.handleLsub(conn, tag, parts, state)
+	mailbox.HandleLsub(t.server, conn, tag, parts, state)
 }
 
 // HandleStatus exposes the status handler for testing
 func (t *TestInterface) HandleStatus(conn net.Conn, tag string, parts []string, state *models.ClientState) {
-	t.server.handleStatus(conn, tag, parts, state)
+	mailbox.HandleStatus(t.server, conn, tag, parts, state)
 }
 
 // HandleSearch exposes the search handler for testing
