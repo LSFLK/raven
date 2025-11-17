@@ -1,4 +1,4 @@
-package server
+package mailbox_test
 
 import (
 	"fmt"
@@ -6,14 +6,14 @@ import (
 	"testing"
 
 	"raven/internal/models"
-	
+	"raven/internal/server"
 )
 
 // TestListCommand_RFC3501_Examples tests examples from RFC 3501 Section 6.3.8
 func TestListCommand_RFC3501_Examples(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	testCases := []struct {
 		name              string
@@ -78,9 +78,9 @@ func TestListCommand_RFC3501_Examples(t *testing.T) {
 
 // TestListCommand_WildcardEdgeCases tests edge cases with wildcard patterns
 func TestListCommand_WildcardEdgeCases(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	testCases := []struct {
 		pattern          string
@@ -162,9 +162,9 @@ func TestListCommand_WildcardEdgeCases(t *testing.T) {
 
 // TestListCommand_HierarchyDelimiterVariations tests various hierarchy delimiter scenarios
 func TestListCommand_HierarchyDelimiterVariations(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	testCases := []struct {
 		reference         string
@@ -208,9 +208,9 @@ func TestListCommand_HierarchyDelimiterVariations(t *testing.T) {
 
 // TestListCommand_ReferencePatternCombination tests combination of reference and pattern
 func TestListCommand_ReferencePatternCombination(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	testCases := []struct {
 		reference       string
@@ -257,8 +257,8 @@ func TestListCommand_ReferencePatternCombination(t *testing.T) {
 
 // TestListCommand_ErrorConditions tests various error conditions
 func TestListCommand_ErrorConditions(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
 
 	// Test unauthenticated state
 	t.Run("Unauthenticated", func(t *testing.T) {
@@ -302,9 +302,9 @@ func TestListCommand_ErrorConditions(t *testing.T) {
 
 // TestListCommand_SpecialCharacters tests LIST with special characters in patterns
 func TestListCommand_SpecialCharacters(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	testCases := []struct {
 		pattern     string

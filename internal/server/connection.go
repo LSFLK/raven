@@ -10,6 +10,7 @@ import (
 
 	"raven/internal/models"
 	"raven/internal/server/auth"
+	"raven/internal/server/mailbox"
 )
 
 // HandleClient handles IMAP client connections (exported for auth package)
@@ -58,15 +59,15 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 		case "AUTHENTICATE":
 			auth.HandleAuthenticate(s, conn, tag, parts, state)
 		case "LIST":
-			s.handleList(conn, tag, parts, state)
+			mailbox.HandleList(s, conn, tag, parts, state)
 		case "LSUB":
-			s.handleLsub(conn, tag, parts, state)
+			mailbox.HandleLsub(s, conn, tag, parts, state)
 		case "CREATE":
-			s.handleCreate(conn, tag, parts, state)
+			mailbox.HandleCreate(s, conn, tag, parts, state)
 		case "DELETE":
-			s.handleDelete(conn, tag, parts, state)
+			mailbox.HandleDelete(s, conn, tag, parts, state)
 		case "RENAME":
-			s.handleRename(conn, tag, parts, state)
+			mailbox.HandleRename(s, conn, tag, parts, state)
 		case "SELECT", "EXAMINE":
 			s.handleSelect(conn, tag, parts, state)
 		case "FETCH":
@@ -78,7 +79,7 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 		case "COPY":
 			s.handleCopy(conn, tag, parts, state)
 		case "STATUS":
-			s.handleStatus(conn, tag, parts, state)
+			mailbox.HandleStatus(s, conn, tag, parts, state)
 		case "UID":
 			s.handleUID(conn, tag, parts, state)
 		case "IDLE":
@@ -98,9 +99,9 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 		case "EXPUNGE":
 			s.handleExpunge(conn, tag, state)
 		case "SUBSCRIBE":
-			s.handleSubscribe(conn, tag, parts, state)
+			mailbox.HandleSubscribe(s, conn, tag, parts, state)
 		case "UNSUBSCRIBE":
-			s.handleUnsubscribe(conn, tag, parts, state)
+			mailbox.HandleUnsubscribe(s, conn, tag, parts, state)
 		case "LOGOUT":
 			auth.HandleLogout(s, conn, tag)
 			return
