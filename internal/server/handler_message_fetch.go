@@ -252,6 +252,132 @@ func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64,
 			responseParts = append(responseParts, bodyStructure)
 		}
 
+		// Handle numeric BODY sections like BODY.PEEK[1], BODY[2], BODY[1.MIME] with optional partial ranges
+		if strings.Contains(itemsUpper, "BODY[") || strings.Contains(itemsUpper, "BODY.PEEK[") {
+			// Lazy-load parts for this message if needed
+			var parts []map[string]interface{}
+			loadParts := func() {
+				if parts == nil {
+					p, err := db.GetMessageParts(targetDB, messageID)
+					if err == nil {
+						parts = p
+					}
+				}
+			}
+
+			orig := items
+			upper := itemsUpper
+			pos := 0
+			for {
+				idxPeek := strings.Index(upper[pos:], "BODY.PEEK[")
+				idxBody := strings.Index(upper[pos:], "BODY[")
+				if idxPeek == -1 && idxBody == -1 {
+					break
+				}
+				offset := pos
+				prefix := "BODY["
+				if idxPeek != -1 && (idxBody == -1 || idxPeek < idxBody) {
+					offset += idxPeek
+					prefix = "BODY.PEEK["
+				} else {
+					offset += idxBody
+				}
+
+				// Find closing bracket
+				start := offset + len(prefix)
+				end := strings.Index(upper[start:], "]")
+				if end == -1 {
+					break
+				}
+				end = start + end
+
+				sectionSpec := orig[start:end] // preserve original case/format for echo
+				sectionUpper := strings.ToUpper(sectionSpec)
+
+				// Only handle numeric sections here; others handled elsewhere
+				if len(sectionSpec) > 0 && sectionSpec[0] >= '0' && sectionSpec[0] <= '9' {
+					// Determine if .MIME requested
+					wantMIME := false
+					partNumStr := sectionSpec
+					if strings.Contains(sectionUpper, ".MIME") {
+						wantMIME = true
+						partNumStr = sectionSpec[:strings.Index(sectionUpper, ".MIME")]
+					}
+					// Parse part number
+					pn, err := strconv.Atoi(partNumStr)
+					if err == nil && pn > 0 {
+						loadParts()
+						var target map[string]interface{}
+						for _, p := range parts {
+							if n, ok := p["part_number"].(int64); ok && int(n) == pn {
+								target = p
+								break
+							}
+							if n2, ok := p["part_number"].(int); ok && n2 == pn { // fallback type
+								target = p
+								break
+							}
+						}
+
+						payload := ""
+						if target != nil {
+							if wantMIME {
+								// Build MIME headers for the part
+								hdr := buildMIMEHeadersForPart(target)
+								payload = hdr
+							} else {
+								// Part body only
+								if blobID, ok := target["blob_id"].(int64); ok {
+									if content, err := db.GetBlob(targetDB, blobID); err == nil {
+										payload = content
+									}
+								} else if textContent, ok := target["text_content"].(string); ok {
+									payload = textContent
+								}
+							}
+						}
+
+						// Check for partial spec immediately following the closing bracket
+						after := end + 1
+						if after < len(upper) && upper[after] == '<' {
+							close := strings.Index(upper[after:], ">")
+							if close != -1 {
+								rangeSpec := upper[after+1 : after+close]
+								var startPos, length int
+								if _, err := fmt.Sscanf(rangeSpec, "%d.%d", &startPos, &length); err == nil {
+									if startPos < len(payload) {
+										endPos := startPos + length
+										if endPos > len(payload) {
+											endPos = len(payload)
+										}
+										payload = payload[startPos:endPos]
+									} else {
+										payload = ""
+									}
+								}
+								// Advance parser position past the range
+								end = after + close
+							}
+						}
+
+						// Append response
+						if payload == "" {
+							responseParts = append(responseParts, fmt.Sprintf("BODY[%s] NIL", sectionSpec))
+						} else {
+							if literalData != "" {
+								literalData += " "
+							}
+							responseParts = append(responseParts, fmt.Sprintf("BODY[%s]", sectionSpec))
+							literalData += fmt.Sprintf("{%d}\r\n%s", len(payload), payload)
+						}
+					}
+				}
+
+				// Move past this section for next search
+				pos = end + 1
+			}
+		}
+
 		// Handle multiple body parts - process each separately
 		// Handle BODY.PEEK[HEADER.FIELDS (...)] or BODY[HEADER.FIELDS (...)] - specific header fields
 		if strings.Contains(itemsUpper, "BODY.PEEK[HEADER.FIELDS") || strings.Contains(itemsUpper, "BODY[HEADER.FIELDS") {
@@ -432,5 +558,37 @@ func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64,
 	} else {
 		s.sendResponse(conn, fmt.Sprintf("* %d FETCH (FLAGS ())", seqNum))
 	}
+}
+
+// buildMIMEHeadersForPart reconstructs MIME headers for a specific part
+func buildMIMEHeadersForPart(part map[string]interface{}) string {
+	var b strings.Builder
+	contentType := part["content_type"].(string)
+	if charset, ok := part["charset"].(string); ok && strings.TrimSpace(charset) != "" {
+		b.WriteString(fmt.Sprintf("Content-Type: %s; charset=%s\r\n", contentType, charset))
+	} else {
+		b.WriteString(fmt.Sprintf("Content-Type: %s\r\n", contentType))
+	}
+	if filename, ok := part["filename"].(string); ok && strings.TrimSpace(filename) != "" {
+		// Include name parameter consistent with reconstruction
+		// Append to last Content-Type header line (simpler: add separate header accepted by clients)
+		// Many clients accept name= on Content-Type or only in Content-Disposition; include both when present
+		// Here we include in Content-Disposition below; name on Content-Type already done during full reconstruction
+	}
+	if encoding, ok := part["content_transfer_encoding"].(string); ok && strings.TrimSpace(encoding) != "" {
+		b.WriteString(fmt.Sprintf("Content-Transfer-Encoding: %s\r\n", encoding))
+	}
+	if contentID, ok := part["content_id"].(string); ok && strings.TrimSpace(contentID) != "" {
+		b.WriteString(fmt.Sprintf("Content-ID: %s\r\n", contentID))
+	}
+	if disp, ok := part["content_disposition"].(string); ok && strings.TrimSpace(disp) != "" {
+		b.WriteString(fmt.Sprintf("Content-Disposition: %s", disp))
+		if filename, ok := part["filename"].(string); ok && strings.TrimSpace(filename) != "" {
+			b.WriteString(fmt.Sprintf("; filename=\"%s\"", filename))
+		}
+		b.WriteString("\r\n")
+	}
+	b.WriteString("\r\n")
+	return b.String()
 }
 

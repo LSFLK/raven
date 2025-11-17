@@ -123,21 +123,46 @@ func (s *IMAPServer) SendResponse(conn net.Conn, response string) {
 }
 
 func (s *IMAPServer) sendResponse(conn net.Conn, response string) {
-	// Avoid logging full message bodies
-	if strings.Contains(response, "BODY[] ") || strings.Contains(response, "BODY[HEADER] ") || strings.Contains(response, "RFC822.HEADER ") || strings.Contains(response, "RFC822.TEXT ") {
-		// Log only the first line/metadata, mask the body
-		if idx := strings.Index(response, "{"); idx != -1 {
-			endIdx := strings.Index(response[idx:], "}\r\n")
-			if endIdx != -1 {
-				endIdx += idx + 3 // include }\r\n
-				fmt.Printf("Server: %s [BODY OMITTED]\n", response[:endIdx])
-			} else {
-				fmt.Printf("Server: %s [BODY OMITTED]\n", response[:idx])
+	// Sanitize response for logging to avoid printing large message bodies
+	logResponse := s.sanitizeResponseForLogging(response)
+	fmt.Printf("Server: %s\n", logResponse)
+	conn.Write([]byte(response + "\r\n"))
+}
+
+// sanitizeResponseForLogging removes or masks large message bodies from responses
+func (s *IMAPServer) sanitizeResponseForLogging(response string) string {
+	// Check for FETCH responses that contain message bodies
+	// This includes BODY[], BODY[HEADER], BODY[TEXT], RFC822, etc.
+	if strings.Contains(response, "FETCH (") &&
+	   (strings.Contains(response, "BODY") ||
+	    strings.Contains(response, "RFC822")) {
+
+		// Find the literal string marker {number}
+		idx := strings.Index(response, "{")
+		if idx != -1 {
+			// Find the closing brace
+			closeIdx := strings.Index(response[idx:], "}")
+			if closeIdx != -1 {
+				closeIdx += idx
+				// Extract the literal size
+				literalSizeStr := response[idx+1 : closeIdx]
+
+				// Check if this is a large literal (likely contains encoded data)
+				// If size > 100 bytes, it's probably message content we want to mask
+				var literalSize int
+				if _, err := fmt.Sscanf(literalSizeStr, "%d", &literalSize); err == nil && literalSize > 100 {
+					// Return everything up to and including the literal size marker
+					// followed by a mask indicator
+					return response[:closeIdx+1] + "\r\n[MESSAGE CONTENT OMITTED - " + literalSizeStr + " bytes]"
+				}
 			}
-			conn.Write([]byte(response + "\r\n"))
-			return
 		}
 	}
-	fmt.Printf("Server: %s\n", response)
-	conn.Write([]byte(response + "\r\n"))
+
+	// If response is very long (>2000 chars), truncate it to prevent console spam
+	if len(response) > 2000 {
+		return response[:2000] + "... [TRUNCATED - " + fmt.Sprintf("%d", len(response)) + " total bytes]"
+	}
+
+	return response
 }
