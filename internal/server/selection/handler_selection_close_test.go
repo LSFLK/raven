@@ -1,14 +1,14 @@
 //go:build test
 // +build test
 
-package server
+package selection
 
 import (
 	"strings"
 	"testing"
 
 	"raven/internal/models"
-	
+
 )
 
 // TestCloseCommand_Unauthenticated tests CLOSE before authentication

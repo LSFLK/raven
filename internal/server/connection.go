@@ -13,6 +13,7 @@ import (
 	"raven/internal/server/extension"
 	"raven/internal/server/mailbox"
 	"raven/internal/server/message"
+	"raven/internal/server/selection"
 )
 
 // HandleClient handles IMAP client connections (exported for auth package)
@@ -71,7 +72,7 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 		case "RENAME":
 			mailbox.HandleRename(s, conn, tag, parts, state)
 		case "SELECT", "EXAMINE":
-			s.handleSelect(conn, tag, parts, state)
+			selection.HandleSelect(s, conn, tag, parts, state)
 		case "FETCH":
 			message.HandleFetch(s, conn, tag, parts, state)
 		case "SEARCH":
@@ -89,7 +90,7 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 		case "NAMESPACE":
 			extension.HandleNamespace(s, conn, tag, state)
 		case "UNSELECT":
-			s.handleUnselect(conn, tag, state)
+			selection.HandleUnselect(s, conn, tag, state)
 		case "APPEND":
 			message.HandleAppendWithReader(s, reader, conn, tag, parts, line, state)
 		case "NOOP":
@@ -97,7 +98,7 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 		case "CHECK":
 			message.HandleCheck(s, conn, tag, state)
 		case "CLOSE":
-			s.handleClose(conn, tag, state)
+			selection.HandleClose(s, conn, tag, state)
 		case "EXPUNGE":
 			message.HandleExpunge(s, conn, tag, state)
 		case "SUBSCRIBE":

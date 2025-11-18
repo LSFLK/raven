@@ -1,4 +1,4 @@
-package server
+package selection
 
 import (
 	"database/sql"
@@ -10,17 +10,25 @@ import (
 	"raven/internal/models"
 )
 
+// ServerDeps defines the dependencies that selection handlers need from the server
+type ServerDeps interface {
+	SendResponse(conn net.Conn, response string)
+	GetUserDB(userID int64) (*sql.DB, error)
+	GetSharedDB() *sql.DB
+	GetDBManager() *db.DBManager
+}
+
 // ===== SELECT / EXAMINE =====
 
-func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+func HandleSelect(deps ServerDeps, conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	if !state.Authenticated {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
 		return
 	}
 
 	if len(parts) < 3 {
 		cmd := strings.ToUpper(parts[1])
-		s.sendResponse(conn, fmt.Sprintf("%s BAD %s requires folder name", tag, cmd))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD %s requires folder name", tag, cmd))
 		return
 	}
 
@@ -36,7 +44,7 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 		// Parse role mailbox path: Roles/email@domain.com/MAILBOX
 		pathParts := strings.SplitN(folder, "/", 3)
 		if len(pathParts) < 3 {
-			s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Invalid role mailbox path", tag))
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Invalid role mailbox path", tag))
 			return
 		}
 
@@ -44,24 +52,24 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 		actualMailboxName = pathParts[2]
 
 		// Get role mailbox ID from email
-		sharedDB := s.GetSharedDB()
+		sharedDB := deps.GetSharedDB()
 		roleMailboxID, _, err := db.GetRoleMailboxByEmail(sharedDB, roleEmail)
 		if err != nil {
-			s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Role mailbox does not exist", tag))
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Role mailbox does not exist", tag))
 			return
 		}
 
 		// Check if user is assigned to this role mailbox
 		isAssigned, err := db.IsUserAssignedToRoleMailbox(sharedDB, state.UserID, roleMailboxID)
 		if err != nil || !isAssigned {
-			s.sendResponse(conn, fmt.Sprintf("%s NO [AUTHORIZATIONFAILED] Not authorized to access this role mailbox", tag))
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHORIZATIONFAILED] Not authorized to access this role mailbox", tag))
 			return
 		}
 
 		// Get role mailbox database
-		targetDB, err = s.GetDBManager().GetRoleMailboxDB(roleMailboxID)
+		targetDB, err = deps.GetDBManager().GetRoleMailboxDB(roleMailboxID)
 		if err != nil {
-			s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+			deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 			return
 		}
 
@@ -72,9 +80,9 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 	} else {
 		// Regular user mailbox
 		var err error
-		targetDB, err = s.GetUserDB(state.UserID)
+		targetDB, err = deps.GetUserDB(state.UserID)
 		if err != nil {
-			s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+			deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 			return
 		}
 		targetUserID = state.UserID
@@ -86,7 +94,7 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 	// Get mailbox ID using new schema
 	mailboxID, err := db.GetMailboxByNamePerUser(targetDB, targetUserID, actualMailboxName)
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Mailbox does not exist", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Mailbox does not exist", tag))
 		return
 	}
 
@@ -95,7 +103,7 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 	// Get mailbox info (UID validity and next UID)
 	uidValidity, uidNext, err := db.GetMailboxInfoPerUser(targetDB, mailboxID)
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Server error: cannot get mailbox info", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Server error: cannot get mailbox info", tag))
 		return
 	}
 
@@ -140,51 +148,51 @@ func (s *IMAPServer) handleSelect(conn net.Conn, tag string, parts []string, sta
 	// For SELECT: FLAGS, EXISTS, RECENT
 	// For EXAMINE: EXISTS, RECENT, then FLAGS (per RFC 3501 example)
 	if !isExamine {
-		s.sendResponse(conn, "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
+		deps.SendResponse(conn, "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
 	}
-	s.sendResponse(conn, fmt.Sprintf("* %d EXISTS", count))
-	s.sendResponse(conn, fmt.Sprintf("* %d RECENT", recent))
+	deps.SendResponse(conn, fmt.Sprintf("* %d EXISTS", count))
+	deps.SendResponse(conn, fmt.Sprintf("* %d RECENT", recent))
 
 	// Send REQUIRED OK untagged responses
 	if hasUnseen {
-		s.sendResponse(conn, fmt.Sprintf("* OK [UNSEEN %d] Message %d is first unseen", unseenSeqNum, unseenSeqNum))
+		deps.SendResponse(conn, fmt.Sprintf("* OK [UNSEEN %d] Message %d is first unseen", unseenSeqNum, unseenSeqNum))
 	}
-	s.sendResponse(conn, fmt.Sprintf("* OK [UIDVALIDITY %d] UIDs valid", uidValidity))
-	s.sendResponse(conn, fmt.Sprintf("* OK [UIDNEXT %d] Predicted next UID", uidNext))
+	deps.SendResponse(conn, fmt.Sprintf("* OK [UIDVALIDITY %d] UIDs valid", uidValidity))
+	deps.SendResponse(conn, fmt.Sprintf("* OK [UIDNEXT %d] Predicted next UID", uidNext))
 
 	// FLAGS for EXAMINE comes after OK untagged responses
 	if isExamine {
-		s.sendResponse(conn, "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
+		deps.SendResponse(conn, "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)")
 	}
 
 	// PERMANENTFLAGS: Empty for EXAMINE (read-only), full for SELECT
 	if isExamine {
-		s.sendResponse(conn, "* OK [PERMANENTFLAGS ()] No permanent flags permitted")
+		deps.SendResponse(conn, "* OK [PERMANENTFLAGS ()] No permanent flags permitted")
 	} else {
-		s.sendResponse(conn, "* OK [PERMANENTFLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft \\*)] Limited")
+		deps.SendResponse(conn, "* OK [PERMANENTFLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft \\*)] Limited")
 	}
 
 	// Send tagged completion response
 	if cmd == "SELECT" {
-		s.sendResponse(conn, fmt.Sprintf("%s OK [READ-WRITE] SELECT completed", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s OK [READ-WRITE] SELECT completed", tag))
 	} else {
-		s.sendResponse(conn, fmt.Sprintf("%s OK [READ-ONLY] EXAMINE completed", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s OK [READ-ONLY] EXAMINE completed", tag))
 	}
 }
 
 // ===== CLOSE =====
 
-func (s *IMAPServer) handleClose(conn net.Conn, tag string, state *models.ClientState) {
+func HandleClose(deps ServerDeps, conn net.Conn, tag string, state *models.ClientState) {
 	// CLOSE command requires authentication
 	if !state.Authenticated {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
 		return
 	}
 
 	// CLOSE command requires a selected mailbox (Selected state)
 	// Per RFC 3501: CLOSE is only valid in Selected state
 	if state.SelectedMailboxID == 0 {
-		s.sendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
 		return
 	}
 
@@ -199,12 +207,12 @@ func (s *IMAPServer) handleClose(conn net.Conn, tag string, state *models.Client
 	// TODO: Add ReadOnly field to ClientState to properly handle EXAMINE
 
 	// Get user database
-	userDB, err := s.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.UserID)
 	if err != nil {
 		// Clear selection and return
 		state.SelectedMailboxID = 0
 		state.SelectedFolder = ""
-		s.sendResponse(conn, fmt.Sprintf("%s OK CLOSE completed", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s OK CLOSE completed", tag))
 		return
 	}
 
@@ -243,19 +251,19 @@ func (s *IMAPServer) handleClose(conn net.Conn, tag string, state *models.Client
 	state.UIDNext = 0
 
 	// Always complete successfully per RFC 3501
-	s.sendResponse(conn, fmt.Sprintf("%s OK CLOSE completed", tag))
+	deps.SendResponse(conn, fmt.Sprintf("%s OK CLOSE completed", tag))
 }
 
 // ===== UNSELECT =====
 
-func (s *IMAPServer) handleUnselect(conn net.Conn, tag string, state *models.ClientState) {
+func HandleUnselect(deps ServerDeps, conn net.Conn, tag string, state *models.ClientState) {
 	if !state.Authenticated {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
 		return
 	}
 
 	if state.SelectedMailboxID == 0 {
-		s.sendResponse(conn, fmt.Sprintf("%s NO No folder selected", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO No folder selected", tag))
 		return
 	}
 
@@ -267,5 +275,5 @@ func (s *IMAPServer) handleUnselect(conn net.Conn, tag string, state *models.Cli
 	state.LastRecentCount = 0
 	state.UIDValidity = 0
 	state.UIDNext = 0
-	s.sendResponse(conn, fmt.Sprintf("%s OK UNSELECT completed", tag))
+	deps.SendResponse(conn, fmt.Sprintf("%s OK UNSELECT completed", tag))
 }
