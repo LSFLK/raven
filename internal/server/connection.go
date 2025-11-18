@@ -10,6 +10,7 @@ import (
 
 	"raven/internal/models"
 	"raven/internal/server/auth"
+	"raven/internal/server/extension"
 	"raven/internal/server/mailbox"
 	"raven/internal/server/message"
 )
@@ -84,15 +85,15 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 		case "UID":
 			s.handleUID(conn, tag, parts, state)
 		case "IDLE":
-			s.handleIdle(conn, tag, state)
+			extension.HandleIdle(s, conn, tag, state)
 		case "NAMESPACE":
-			s.handleNamespace(conn, tag, state)
+			extension.HandleNamespace(s, conn, tag, state)
 		case "UNSELECT":
 			s.handleUnselect(conn, tag, state)
 		case "APPEND":
 			message.HandleAppendWithReader(s, reader, conn, tag, parts, line, state)
 		case "NOOP":
-			s.handleNoop(conn, tag, state)
+			extension.HandleNoop(s, conn, tag, state)
 		case "CHECK":
 			message.HandleCheck(s, conn, tag, state)
 		case "CLOSE":

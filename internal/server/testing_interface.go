@@ -5,6 +5,7 @@ import (
 
 	"raven/internal/models"
 	"raven/internal/server/auth"
+	"raven/internal/server/extension"
 	"raven/internal/server/mailbox"
 	"raven/internal/server/message"
 )
@@ -58,12 +59,12 @@ func (t *TestInterface) HandleLogout(conn net.Conn, tag string) {
 
 // HandleIdle exposes the idle handler for testing
 func (t *TestInterface) HandleIdle(conn net.Conn, tag string, state *models.ClientState) {
-	t.server.handleIdle(conn, tag, state)
+	extension.HandleIdle(t.server, conn, tag, state)
 }
 
 // HandleNamespace exposes the namespace handler for testing
 func (t *TestInterface) HandleNamespace(conn net.Conn, tag string, state *models.ClientState) {
-	t.server.handleNamespace(conn, tag, state)
+	extension.HandleNamespace(t.server, conn, tag, state)
 }
 
 // HandleUnselect exposes the unselect handler for testing
@@ -73,7 +74,7 @@ func (t *TestInterface) HandleUnselect(conn net.Conn, tag string, state *models.
 
 // HandleNoop exposes the noop handler for testing
 func (t *TestInterface) HandleNoop(conn net.Conn, tag string, state *models.ClientState) {
-	t.server.handleNoop(conn, tag, state)
+	extension.HandleNoop(t.server, conn, tag, state)
 }
 
 // HandleCheck exposes the check handler for testing

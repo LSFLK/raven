@@ -1,6 +1,7 @@
-package server
+package extension
 
 import (
+	"database/sql"
 	"fmt"
 	"net"
 	"strings"
@@ -10,17 +11,23 @@ import (
 	"raven/internal/models"
 )
 
+// ServerDeps defines the dependencies that extension handlers need from the server
+type ServerDeps interface {
+	SendResponse(conn net.Conn, response string)
+	GetUserDB(userID int64) (*sql.DB, error)
+}
+
 // ===== NOOP =====
 
-func (s *IMAPServer) handleNoop(conn net.Conn, tag string, state *models.ClientState) {
+func HandleNoop(deps ServerDeps, conn net.Conn, tag string, state *models.ClientState) {
 	// NOOP can be used before authentication
 	// If authenticated and a folder is selected, check for mailbox updates
 	// and send untagged responses per RFC 3501
 	if state.Authenticated && state.SelectedMailboxID > 0 {
 		// Get user database
-		userDB, err := s.GetUserDB(state.UserID)
+		userDB, err := deps.GetUserDB(state.UserID)
 		if err != nil {
-			s.sendResponse(conn, fmt.Sprintf("%s OK NOOP completed", tag))
+			deps.SendResponse(conn, fmt.Sprintf("%s OK NOOP completed", tag))
 			return
 		}
 
@@ -28,7 +35,7 @@ func (s *IMAPServer) handleNoop(conn net.Conn, tag string, state *models.ClientS
 		currentCount, err := db.GetMessageCountPerUser(userDB, state.SelectedMailboxID)
 		if err != nil {
 			// If there's a database error, just complete normally
-			s.sendResponse(conn, fmt.Sprintf("%s OK NOOP completed", tag))
+			deps.SendResponse(conn, fmt.Sprintf("%s OK NOOP completed", tag))
 			return
 		}
 
@@ -43,12 +50,12 @@ func (s *IMAPServer) handleNoop(conn net.Conn, tag string, state *models.ClientS
 
 		// Check for new messages (EXISTS response)
 		if currentCount > state.LastMessageCount {
-			s.sendResponse(conn, fmt.Sprintf("* %d EXISTS", currentCount))
+			deps.SendResponse(conn, fmt.Sprintf("* %d EXISTS", currentCount))
 
 			// Calculate new recent messages
 			newRecent := currentCount - state.LastMessageCount
 			if newRecent > 0 {
-				s.sendResponse(conn, fmt.Sprintf("* %d RECENT", newRecent))
+				deps.SendResponse(conn, fmt.Sprintf("* %d RECENT", newRecent))
 			}
 		}
 
@@ -58,7 +65,7 @@ func (s *IMAPServer) handleNoop(conn net.Conn, tag string, state *models.ClientS
 			// Note: In a real implementation, you'd track which specific messages
 			// were expunged. Here we send generic expunge notifications.
 			for i := state.LastMessageCount; i > currentCount; i-- {
-				s.sendResponse(conn, fmt.Sprintf("* %d EXPUNGE", i))
+				deps.SendResponse(conn, fmt.Sprintf("* %d EXPUNGE", i))
 			}
 		}
 
@@ -68,7 +75,7 @@ func (s *IMAPServer) handleNoop(conn net.Conn, tag string, state *models.ClientS
 			// In a full implementation, you'd send FETCH responses with updated flags
 			// For now, we send an informational message
 			if currentRecent > 0 {
-				s.sendResponse(conn, fmt.Sprintf("* %d RECENT", currentRecent))
+				deps.SendResponse(conn, fmt.Sprintf("* %d RECENT", currentRecent))
 			}
 		}
 
@@ -78,31 +85,31 @@ func (s *IMAPServer) handleNoop(conn net.Conn, tag string, state *models.ClientS
 	}
 
 	// Always complete successfully per RFC 3501
-	s.sendResponse(conn, fmt.Sprintf("%s OK NOOP completed", tag))
+	deps.SendResponse(conn, fmt.Sprintf("%s OK NOOP completed", tag))
 }
 
 // ===== IDLE =====
 
-func (s *IMAPServer) handleIdle(conn net.Conn, tag string, state *models.ClientState) {
+func HandleIdle(deps ServerDeps, conn net.Conn, tag string, state *models.ClientState) {
 	if !state.Authenticated {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
 		return
 	}
 
 	if state.SelectedMailboxID == 0 {
-		s.sendResponse(conn, fmt.Sprintf("%s NO No folder selected", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO No folder selected", tag))
 		return
 	}
 
 	// Tell client we're entering idle mode
-	s.sendResponse(conn, "+ idling")
+	deps.SendResponse(conn, "+ idling")
 
 	buf := make([]byte, 4096)
 
 	// Get user database
-	userDB, err := s.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.UserID)
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
 
@@ -120,23 +127,23 @@ func (s *IMAPServer) handleIdle(conn net.Conn, tag string, state *models.ClientS
 
 		// Notify about new messages
 		if count > prevCount {
-			s.sendResponse(conn, fmt.Sprintf("* %d EXISTS", count))
+			deps.SendResponse(conn, fmt.Sprintf("* %d EXISTS", count))
 			newRecent := count - prevCount
 			if newRecent > 0 {
-				s.sendResponse(conn, fmt.Sprintf("* %d RECENT", newRecent))
+				deps.SendResponse(conn, fmt.Sprintf("* %d RECENT", newRecent))
 			}
 		}
 
 		// Notify about expunged (deleted) messages
 		if count < prevCount {
 			for i := prevCount; i > count; i-- {
-				s.sendResponse(conn, fmt.Sprintf("* %d EXPUNGE", i))
+				deps.SendResponse(conn, fmt.Sprintf("* %d EXPUNGE", i))
 			}
 		}
 
 		// Notify about unseen count change
 		if unseen != prevUnseen {
-			s.sendResponse(conn, fmt.Sprintf("* OK [UNSEEN %d] Message %d is first unseen", unseen, unseen))
+			deps.SendResponse(conn, fmt.Sprintf("* OK [UNSEEN %d] Message %d is first unseen", unseen, unseen))
 		}
 
 		// Update cached values
@@ -147,7 +154,7 @@ func (s *IMAPServer) handleIdle(conn net.Conn, tag string, state *models.ClientS
 		conn.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
 		n, err := conn.Read(buf)
 		if err == nil && strings.TrimSpace(strings.ToUpper(string(buf[:n]))) == "DONE" {
-			s.sendResponse(conn, fmt.Sprintf("%s OK IDLE terminated", tag))
+			deps.SendResponse(conn, fmt.Sprintf("%s OK IDLE terminated", tag))
 			return
 		}
 	}
@@ -155,13 +162,13 @@ func (s *IMAPServer) handleIdle(conn net.Conn, tag string, state *models.ClientS
 
 // ===== NAMESPACE =====
 
-func (s *IMAPServer) handleNamespace(conn net.Conn, tag string, state *models.ClientState) {
+func HandleNamespace(deps ServerDeps, conn net.Conn, tag string, state *models.ClientState) {
 	if !state.Authenticated {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
 		return
 	}
 
 	// Send namespace response - simple single personal namespace
-	s.sendResponse(conn, `* NAMESPACE (("" "/")) NIL NIL`)
-	s.sendResponse(conn, fmt.Sprintf("%s OK NAMESPACE completed", tag))
+	deps.SendResponse(conn, `* NAMESPACE (("" "/")) NIL NIL`)
+	deps.SendResponse(conn, fmt.Sprintf("%s OK NAMESPACE completed", tag))
 }

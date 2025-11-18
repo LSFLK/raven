@@ -1,14 +1,14 @@
 //go:build test
 // +build test
 
-package server
+package extension
 
 import (
 	"strings"
 	"testing"
 
 	"raven/internal/models"
-	
+
 )
 
 // TestNoopCommand_Unauthenticated tests NOOP before authentication
