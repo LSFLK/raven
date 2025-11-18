@@ -6,6 +6,7 @@ import (
 	"raven/internal/models"
 	"raven/internal/server/auth"
 	"raven/internal/server/mailbox"
+	"raven/internal/server/message"
 )
 
 // TestInterface provides access to internal methods for testing
@@ -77,7 +78,7 @@ func (t *TestInterface) HandleNoop(conn net.Conn, tag string, state *models.Clie
 
 // HandleCheck exposes the check handler for testing
 func (t *TestInterface) HandleCheck(conn net.Conn, tag string, state *models.ClientState) {
-	t.server.handleCheck(conn, tag, state)
+	message.HandleCheck(t.server, conn, tag, state)
 }
 
 // HandleClose exposes the close handler for testing
@@ -87,7 +88,7 @@ func (t *TestInterface) HandleClose(conn net.Conn, tag string, state *models.Cli
 
 // HandleExpunge exposes the expunge handler for testing
 func (t *TestInterface) HandleExpunge(conn net.Conn, tag string, state *models.ClientState) {
-	t.server.handleExpunge(conn, tag, state)
+	message.HandleExpunge(t.server, conn, tag, state)
 }
 
 // HandleSelect exposes the select handler for testing
@@ -102,7 +103,7 @@ func (t *TestInterface) HandleExamine(conn net.Conn, tag string, parts []string,
 
 // HandleAppend exposes the append handler for testing
 func (t *TestInterface) HandleAppend(conn net.Conn, tag string, parts []string, fullLine string, state *models.ClientState) {
-	t.server.handleAppend(conn, tag, parts, fullLine, state)
+	message.HandleAppend(t.server, conn, tag, parts, fullLine, state)
 }
 
 // HandleAuthenticate exposes the authenticate handler for testing
@@ -140,22 +141,22 @@ func (t *TestInterface) HandleStatus(conn net.Conn, tag string, parts []string, 
 
 // HandleSearch exposes the search handler for testing
 func (t *TestInterface) HandleSearch(conn net.Conn, tag string, parts []string, state *models.ClientState) {
-	t.server.handleSearch(conn, tag, parts, state)
+	message.HandleSearch(t.server, conn, tag, parts, state)
 }
 
 // HandleFetch exposes the fetch handler for testing
 func (t *TestInterface) HandleFetch(conn net.Conn, tag string, parts []string, state *models.ClientState) {
-	t.server.handleFetch(conn, tag, parts, state)
+	message.HandleFetch(t.server, conn, tag, parts, state)
 }
 
 // HandleStore exposes the store handler for testing
 func (t *TestInterface) HandleStore(conn net.Conn, tag string, parts []string, state *models.ClientState) {
-	t.server.handleStore(conn, tag, parts, state)
+	message.HandleStore(t.server, conn, tag, parts, state)
 }
 
 // HandleCopy exposes the copy handler for testing
 func (t *TestInterface) HandleCopy(conn net.Conn, tag string, parts []string, state *models.ClientState) {
-	t.server.handleCopy(conn, tag, parts, state)
+	message.HandleCopy(t.server, conn, tag, parts, state)
 }
 
 // HandleUID exposes the UID handler for testing

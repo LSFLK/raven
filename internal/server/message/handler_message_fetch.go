@@ -1,4 +1,4 @@
-package server
+package message
 
 import (
 	"database/sql"
@@ -16,10 +16,10 @@ import (
 
 // ===== FETCH =====
 
-// handleFetchForUIDs handles FETCH for a list of UIDs (used by UID FETCH command)
-func (s *IMAPServer) handleFetchForUIDs(conn net.Conn, tag string, uids []int, items string, state *models.ClientState) {
+// HandleFetchForUIDs handles FETCH for a list of UIDs (used by UID FETCH command)
+func HandleFetchForUIDs(deps ServerDeps, conn net.Conn, tag string, uids []int, items string, state *models.ClientState) {
 	// Get appropriate database (user or role mailbox)
-	targetDB, _, err := s.GetSelectedDB(state)
+	targetDB, _, err := deps.GetSelectedDB(state)
 	if err != nil {
 		return
 	}
@@ -44,30 +44,30 @@ func (s *IMAPServer) handleFetchForUIDs(conn net.Conn, tag string, uids []int, i
 		}
 
 		// Process this message using the same logic as handleFetch
-		s.processFetchForMessage(conn, messageID, int64(uid), seqNum, flags.String, items, state)
+		processFetchForMessage(deps, conn, messageID, int64(uid), seqNum, flags.String, items, state)
 	}
 }
 
-func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+func HandleFetch(deps ServerDeps, conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	if !state.Authenticated {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
 		return
 	}
 
 	if state.SelectedMailboxID == 0 {
-		s.sendResponse(conn, fmt.Sprintf("%s NO No folder selected", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO No folder selected", tag))
 		return
 	}
 
 	if len(parts) < 4 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD FETCH requires sequence and items", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD FETCH requires sequence and items", tag))
 		return
 	}
 
 	// Get appropriate database (user or role mailbox)
-	targetDB, _, err := s.GetSelectedDB(state)
+	targetDB, _, err := deps.GetSelectedDB(state)
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
 
@@ -102,7 +102,7 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		} else {
 			start, err = strconv.Atoi(seqRange[0])
 			if err != nil || start < 1 {
-				s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence number", tag))
+				deps.SendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence number", tag))
 				return
 			}
 		}
@@ -112,7 +112,7 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		} else {
 			end, err = strconv.Atoi(seqRange[1])
 			if err != nil || end < 1 {
-				s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence number", tag))
+				deps.SendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence number", tag))
 				return
 			}
 		}
@@ -137,7 +137,7 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 	} else {
 		msgNum, parseErr := strconv.Atoi(sequence)
 		if parseErr != nil {
-			s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence number", tag))
+			deps.SendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence number", tag))
 			return
 		}
 		query := `SELECT mm.message_id, mm.uid, mm.flags
@@ -148,7 +148,7 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 	}
 
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
 	defer rows.Close()
@@ -171,17 +171,17 @@ func (s *IMAPServer) handleFetch(conn net.Conn, tag string, parts []string, stat
 		}
 
 		// Process this message
-		s.processFetchForMessage(conn, messageID, uid, seqNum, flags, items, state)
+		processFetchForMessage(deps, conn, messageID, uid, seqNum, flags, items, state)
 		seqNum++
 	}
 
-	s.sendResponse(conn, fmt.Sprintf("%s OK FETCH completed", tag))
+	deps.SendResponse(conn, fmt.Sprintf("%s OK FETCH completed", tag))
 }
 
 // processFetchForMessage processes a single message for FETCH/UID FETCH
-func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64, seqNum int, flags, items string, state *models.ClientState) {
+func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64, seqNum int, flags, items string, state *models.ClientState) {
 	// Get appropriate database (user or role mailbox)
-	targetDB, _, err := s.GetSelectedDB(state)
+	targetDB, _, err := deps.GetSelectedDB(state)
 	if err != nil {
 		return
 	}
@@ -554,9 +554,9 @@ func (s *IMAPServer) processFetchForMessage(conn net.Conn, messageID, uid int64,
 		} else {
 			responseStr += ")"
 		}
-		s.sendResponse(conn, responseStr)
+		deps.SendResponse(conn, responseStr)
 	} else {
-		s.sendResponse(conn, fmt.Sprintf("* %d FETCH (FLAGS ())", seqNum))
+		deps.SendResponse(conn, fmt.Sprintf("* %d FETCH (FLAGS ())", seqNum))
 	}
 }
 

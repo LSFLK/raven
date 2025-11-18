@@ -1,4 +1,4 @@
-package server
+package message
 
 import (
 	"database/sql"
@@ -16,6 +16,15 @@ import (
 	"raven/internal/server/utils"
 )
 
+// ServerDeps defines the dependencies that message handlers need from the server
+type ServerDeps interface {
+	SendResponse(conn net.Conn, response string)
+	GetUserDB(userID int64) (*sql.DB, error)
+	GetSelectedDB(state *models.ClientState) (*sql.DB, int64, error)
+	GetSharedDB() *sql.DB
+	GetDBManager() *db.DBManager
+}
+
 // ===== SEARCH =====
 
 // messageInfo holds metadata about a message for search operations
@@ -27,27 +36,27 @@ type messageInfo struct {
 	seqNum       int
 }
 
-func (s *IMAPServer) handleSearch(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+func HandleSearch(deps ServerDeps, conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	if !state.Authenticated {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
 		return
 	}
 
 	if state.SelectedMailboxID == 0 {
-		s.sendResponse(conn, fmt.Sprintf("%s NO No folder selected", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO No folder selected", tag))
 		return
 	}
 
 	// Get appropriate database (user or role mailbox)
-	targetDB, targetUserID, err := s.GetSelectedDB(state)
+	targetDB, targetUserID, err := deps.GetSelectedDB(state)
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
 
 	// Parse search criteria
 	if len(parts) < 3 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD SEARCH requires search criteria", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD SEARCH requires search criteria", tag))
 		return
 	}
 
@@ -61,13 +70,13 @@ func (s *IMAPServer) handleSearch(conn net.Conn, tag string, parts []string, sta
 		// RFC 3501: US-ASCII MUST be supported, other charsets MAY be supported
 		if charset != "US-ASCII" && charset != "UTF-8" {
 			// Return tagged NO with BADCHARSET response code
-			s.sendResponse(conn, fmt.Sprintf("%s NO [BADCHARSET (US-ASCII UTF-8)] Charset not supported", tag))
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [BADCHARSET (US-ASCII UTF-8)] Charset not supported", tag))
 			return
 		}
 	}
 
 	if searchStart >= len(parts) {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD SEARCH requires search criteria", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD SEARCH requires search criteria", tag))
 		return
 	}
 
@@ -81,7 +90,7 @@ func (s *IMAPServer) handleSearch(conn net.Conn, tag string, parts []string, sta
 	`
 	rows, err := targetDB.Query(query, state.SelectedMailboxID)
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Search failed: %v", tag, err))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Search failed: %v", tag, err))
 		return
 	}
 	defer rows.Close()
@@ -107,7 +116,7 @@ func (s *IMAPServer) handleSearch(conn net.Conn, tag string, parts []string, sta
 
 	// Parse and evaluate search criteria
 	criteria := strings.Join(parts[searchStart:], " ")
-	matchingSeqNums := s.evaluateSearchCriteria(messages, criteria, charset, targetUserID)
+	matchingSeqNums := evaluateSearchCriteria(messages, criteria, charset, targetUserID, deps)
 
 	// Build response
 	if len(matchingSeqNums) > 0 {
@@ -115,15 +124,15 @@ func (s *IMAPServer) handleSearch(conn net.Conn, tag string, parts []string, sta
 		for _, seq := range matchingSeqNums {
 			results = append(results, strconv.Itoa(seq))
 		}
-		s.sendResponse(conn, fmt.Sprintf("* SEARCH %s", strings.Join(results, " ")))
+		deps.SendResponse(conn, fmt.Sprintf("* SEARCH %s", strings.Join(results, " ")))
 	} else {
-		s.sendResponse(conn, "* SEARCH")
+		deps.SendResponse(conn, "* SEARCH")
 	}
-	s.sendResponse(conn, fmt.Sprintf("%s OK SEARCH completed", tag))
+	deps.SendResponse(conn, fmt.Sprintf("%s OK SEARCH completed", tag))
 }
 
 // evaluateSearchCriteria evaluates search criteria against messages
-func (s *IMAPServer) evaluateSearchCriteria(messages []messageInfo, criteria string, charset string, userID int64) []int {
+func evaluateSearchCriteria(messages []messageInfo, criteria string, charset string, userID int64, deps ServerDeps) []int {
 	var matchingSeqNums []int
 
 	// Default to ALL if no criteria specified
@@ -132,11 +141,11 @@ func (s *IMAPServer) evaluateSearchCriteria(messages []messageInfo, criteria str
 	}
 
 	// Parse criteria into tokens
-	tokens := s.parseSearchTokens(criteria)
+	tokens := parseSearchTokens(criteria)
 
 	// Evaluate each message
 	for _, msg := range messages {
-		if s.matchesSearchCriteria(msg, tokens, charset, userID) {
+		if matchesSearchCriteria(msg, tokens, charset, userID, deps) {
 			matchingSeqNums = append(matchingSeqNums, msg.seqNum)
 		}
 	}
@@ -145,7 +154,7 @@ func (s *IMAPServer) evaluateSearchCriteria(messages []messageInfo, criteria str
 }
 
 // parseSearchTokens tokenizes search criteria
-func (s *IMAPServer) parseSearchTokens(criteria string) []string {
+func parseSearchTokens(criteria string) []string {
 	var tokens []string
 	var current strings.Builder
 	inQuotes := false
@@ -188,25 +197,25 @@ func (s *IMAPServer) parseSearchTokens(criteria string) []string {
 }
 
 // matchesSearchCriteria checks if a message matches the search criteria
-func (s *IMAPServer) matchesSearchCriteria(msg messageInfo, tokens []string, charset string, userID int64) bool {
+func matchesSearchCriteria(msg messageInfo, tokens []string, charset string, userID int64, deps ServerDeps) bool {
 	// Default to ALL - match everything
 	if len(tokens) == 0 {
 		return true
 	}
 
 	// Process tokens (AND logic by default)
-	return s.evaluateTokens(msg, tokens, charset, userID)
+	return evaluateTokens(msg, tokens, charset, userID, deps)
 }
 
 // evaluateTokens evaluates a list of search tokens
-func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset string, userID int64) bool {
+func evaluateTokens(msg messageInfo, tokens []string, charset string, userID int64, deps ServerDeps) bool {
 	i := 0
 	for i < len(tokens) {
 		token := strings.ToUpper(tokens[i])
 
 		// Handle sequence set (numbers and ranges)
-		if s.isSequenceSet(token) {
-			if !s.matchesSequenceSet(msg.seqNum, token) {
+		if isSequenceSet(token) {
+			if !matchesSequenceSet(msg.seqNum, token) {
 				return false
 			}
 			i++
@@ -307,11 +316,11 @@ func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset st
 			// Evaluate next token and negate result
 			nextTokens := []string{tokens[i]}
 			// Handle NOT with arguments (e.g., NOT FROM "Smith")
-			if i+1 < len(tokens) && s.requiresArgument(strings.ToUpper(tokens[i])) {
+			if i+1 < len(tokens) && requiresArgument(strings.ToUpper(tokens[i])) {
 				i++
 				nextTokens = append(nextTokens, tokens[i])
 			}
-			if s.evaluateTokens(msg, nextTokens, charset, userID) {
+			if evaluateTokens(msg, nextTokens, charset, userID, deps) {
 				return false
 			}
 			i++
@@ -323,17 +332,17 @@ func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset st
 			}
 			i++
 			key1Tokens := []string{tokens[i]}
-			if i+1 < len(tokens) && s.requiresArgument(strings.ToUpper(tokens[i])) {
+			if i+1 < len(tokens) && requiresArgument(strings.ToUpper(tokens[i])) {
 				i++
 				key1Tokens = append(key1Tokens, tokens[i])
 			}
 			i++
 			key2Tokens := []string{tokens[i]}
-			if i+1 < len(tokens) && s.requiresArgument(strings.ToUpper(tokens[i])) {
+			if i+1 < len(tokens) && requiresArgument(strings.ToUpper(tokens[i])) {
 				i++
 				key2Tokens = append(key2Tokens, tokens[i])
 			}
-			if !s.evaluateTokens(msg, key1Tokens, charset, userID) && !s.evaluateTokens(msg, key2Tokens, charset, userID) {
+			if !evaluateTokens(msg, key1Tokens, charset, userID, deps) && !evaluateTokens(msg, key2Tokens, charset, userID, deps) {
 				return false
 			}
 			i++
@@ -344,8 +353,8 @@ func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset st
 				return false
 			}
 			i++
-			searchStr := s.unquote(tokens[i])
-			if !s.matchesHeaderOrBody(msg, token, searchStr, charset, userID) {
+			searchStr := unquote(tokens[i])
+			if !matchesHeaderOrBody(msg, token, searchStr, charset, userID, deps) {
 				return false
 			}
 			i++
@@ -356,10 +365,10 @@ func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset st
 				return false
 			}
 			i++
-			fieldName := s.unquote(tokens[i])
+			fieldName := unquote(tokens[i])
 			i++
-			searchStr := s.unquote(tokens[i])
-			if !s.matchesHeader(msg, fieldName, searchStr, charset, userID) {
+			searchStr := unquote(tokens[i])
+			if !matchesHeader(msg, fieldName, searchStr, charset, userID, deps) {
 				return false
 			}
 			i++
@@ -370,7 +379,7 @@ func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset st
 				return false
 			}
 			i++
-			keyword := s.unquote(tokens[i])
+			keyword := unquote(tokens[i])
 			if !strings.Contains(msg.flags, keyword) {
 				return false
 			}
@@ -382,7 +391,7 @@ func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset st
 				return false
 			}
 			i++
-			keyword := s.unquote(tokens[i])
+			keyword := unquote(tokens[i])
 			if strings.Contains(msg.flags, keyword) {
 				return false
 			}
@@ -395,7 +404,7 @@ func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset st
 			}
 			i++
 			size, err := strconv.Atoi(tokens[i])
-			if err != nil || !s.matchesSize(msg, size, true, userID) {
+			if err != nil || !matchesSize(msg, size, true, userID, deps) {
 				return false
 			}
 			i++
@@ -407,7 +416,7 @@ func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset st
 			}
 			i++
 			size, err := strconv.Atoi(tokens[i])
-			if err != nil || !s.matchesSize(msg, size, false, userID) {
+			if err != nil || !matchesSize(msg, size, false, userID, deps) {
 				return false
 			}
 			i++
@@ -418,7 +427,7 @@ func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset st
 				return false
 			}
 			i++
-			if !s.matchesUIDSet(int(msg.uid), tokens[i]) {
+			if !matchesUIDSet(int(msg.uid), tokens[i]) {
 				return false
 			}
 			i++
@@ -429,8 +438,8 @@ func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset st
 				return false
 			}
 			i++
-			dateStr := s.unquote(tokens[i])
-			if !s.matchesDate(msg.internalDate, dateStr, token) {
+			dateStr := unquote(tokens[i])
+			if !matchesDate(msg.internalDate, dateStr, token) {
 				return false
 			}
 			i++
@@ -441,8 +450,8 @@ func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset st
 				return false
 			}
 			i++
-			dateStr := s.unquote(tokens[i])
-			if !s.matchesSentDate(msg, dateStr, token, userID) {
+			dateStr := unquote(tokens[i])
+			if !matchesSentDate(msg, dateStr, token, userID, deps) {
 				return false
 			}
 			i++
@@ -458,7 +467,7 @@ func (s *IMAPServer) evaluateTokens(msg messageInfo, tokens []string, charset st
 
 // Helper functions for search criteria evaluation
 
-func (s *IMAPServer) isSequenceSet(token string) bool {
+func isSequenceSet(token string) bool {
 	// Check if token looks like a sequence number or range (e.g., "1", "2:4", "1:*", "*")
 	if token == "*" {
 		return true
@@ -471,7 +480,7 @@ func (s *IMAPServer) isSequenceSet(token string) bool {
 	return len(token) > 0 && (token[0] >= '0' && token[0] <= '9' || token[0] == '*')
 }
 
-func (s *IMAPServer) matchesSequenceSet(seqNum int, set string) bool {
+func matchesSequenceSet(seqNum int, set string) bool {
 	// Handle single number
 	if !strings.Contains(set, ":") && set != "*" {
 		num, err := strconv.Atoi(set)
@@ -505,14 +514,14 @@ func (s *IMAPServer) matchesSequenceSet(seqNum int, set string) bool {
 	return seqNum >= start && seqNum <= end
 }
 
-func (s *IMAPServer) matchesUIDSet(uid int, set string) bool {
+func matchesUIDSet(uid int, set string) bool {
 	// Similar to sequence set but for UIDs
-	return s.matchesSequenceSet(uid, set)
+	return matchesSequenceSet(uid, set)
 }
 
-func (s *IMAPServer) matchesHeaderOrBody(msg messageInfo, field string, searchStr string, charset string, userID int64) bool {
+func matchesHeaderOrBody(msg messageInfo, field string, searchStr string, charset string, userID int64, deps ServerDeps) bool {
 	// Get user database
-	userDB, err := s.GetUserDB(userID)
+	userDB, err := deps.GetUserDB(userID)
 	if err != nil {
 		return false
 	}
@@ -527,15 +536,15 @@ func (s *IMAPServer) matchesHeaderOrBody(msg messageInfo, field string, searchSt
 
 	switch field {
 	case "FROM":
-		return s.headerContains(rawMsg, "From", searchStrUpper)
+		return headerContains(rawMsg, "From", searchStrUpper)
 	case "TO":
-		return s.headerContains(rawMsg, "To", searchStrUpper)
+		return headerContains(rawMsg, "To", searchStrUpper)
 	case "CC":
-		return s.headerContains(rawMsg, "Cc", searchStrUpper)
+		return headerContains(rawMsg, "Cc", searchStrUpper)
 	case "BCC":
-		return s.headerContains(rawMsg, "Bcc", searchStrUpper)
+		return headerContains(rawMsg, "Bcc", searchStrUpper)
 	case "SUBJECT":
-		return s.headerContains(rawMsg, "Subject", searchStrUpper)
+		return headerContains(rawMsg, "Subject", searchStrUpper)
 	case "BODY":
 		// Search only in message body
 		headerEnd := strings.Index(rawMsg, "\r\n\r\n")
@@ -555,9 +564,9 @@ func (s *IMAPServer) matchesHeaderOrBody(msg messageInfo, field string, searchSt
 	return false
 }
 
-func (s *IMAPServer) matchesHeader(msg messageInfo, fieldName string, searchStr string, charset string, userID int64) bool {
+func matchesHeader(msg messageInfo, fieldName string, searchStr string, charset string, userID int64, deps ServerDeps) bool {
 	// Get user database
-	userDB, err := s.GetUserDB(userID)
+	userDB, err := deps.GetUserDB(userID)
 	if err != nil {
 		return false
 	}
@@ -569,13 +578,13 @@ func (s *IMAPServer) matchesHeader(msg messageInfo, fieldName string, searchStr 
 
 	// Special case: empty search string matches any message with that header
 	if searchStr == "" {
-		return s.hasHeader(rawMsg, fieldName)
+		return hasHeader(rawMsg, fieldName)
 	}
 
-	return s.headerContains(rawMsg, fieldName, strings.ToUpper(searchStr))
+	return headerContains(rawMsg, fieldName, strings.ToUpper(searchStr))
 }
 
-func (s *IMAPServer) hasHeader(rawMsg string, fieldName string) bool {
+func hasHeader(rawMsg string, fieldName string) bool {
 	lines := strings.Split(rawMsg, "\n")
 	fieldNameUpper := strings.ToUpper(fieldName)
 
@@ -591,7 +600,7 @@ func (s *IMAPServer) hasHeader(rawMsg string, fieldName string) bool {
 	return false
 }
 
-func (s *IMAPServer) headerContains(rawMsg string, fieldName string, searchStr string) bool {
+func headerContains(rawMsg string, fieldName string, searchStr string) bool {
 	lines := strings.Split(rawMsg, "\n")
 	fieldNameUpper := strings.ToUpper(fieldName)
 	searchStrUpper := strings.ToUpper(searchStr)
@@ -629,9 +638,9 @@ func (s *IMAPServer) headerContains(rawMsg string, fieldName string, searchStr s
 	return strings.Contains(strings.ToUpper(headerValue.String()), searchStrUpper)
 }
 
-func (s *IMAPServer) matchesSize(msg messageInfo, size int, larger bool, userID int64) bool {
+func matchesSize(msg messageInfo, size int, larger bool, userID int64, deps ServerDeps) bool {
 	// Get user database
-	userDB, err := s.GetUserDB(userID)
+	userDB, err := deps.GetUserDB(userID)
 	if err != nil {
 		return false
 	}
@@ -648,9 +657,9 @@ func (s *IMAPServer) matchesSize(msg messageInfo, size int, larger bool, userID 
 	return msgSize < size
 }
 
-func (s *IMAPServer) matchesDate(internalDate time.Time, dateStr string, comparison string) bool {
+func matchesDate(internalDate time.Time, dateStr string, comparison string) bool {
 	// Parse RFC 3501 date format: "1-Feb-1994" or "01-Feb-1994"
-	targetDate, err := s.parseIMAPDate(dateStr)
+	targetDate, err := parseIMAPDate(dateStr)
 	if err != nil {
 		return false
 	}
@@ -671,9 +680,9 @@ func (s *IMAPServer) matchesDate(internalDate time.Time, dateStr string, compari
 	return false
 }
 
-func (s *IMAPServer) matchesSentDate(msg messageInfo, dateStr string, comparison string, userID int64) bool {
+func matchesSentDate(msg messageInfo, dateStr string, comparison string, userID int64, deps ServerDeps) bool {
 	// Get user database
-	userDB, err := s.GetUserDB(userID)
+	userDB, err := deps.GetUserDB(userID)
 	if err != nil {
 		return false
 	}
@@ -717,10 +726,10 @@ func (s *IMAPServer) matchesSentDate(msg messageInfo, dateStr string, comparison
 
 	// Use the date matching logic
 	comparisonType := strings.TrimPrefix(comparison, "SENT")
-	return s.matchesDate(sentDate, dateStr, comparisonType)
+	return matchesDate(sentDate, dateStr, comparisonType)
 }
 
-func (s *IMAPServer) parseIMAPDate(dateStr string) (time.Time, error) {
+func parseIMAPDate(dateStr string) (time.Time, error) {
 	// RFC 3501 date format: "1-Feb-1994" or "01-Feb-1994"
 	// Try both formats
 	t, err := time.Parse("2-Jan-2006", dateStr)
@@ -730,7 +739,7 @@ func (s *IMAPServer) parseIMAPDate(dateStr string) (time.Time, error) {
 	return t, err
 }
 
-func (s *IMAPServer) unquote(str string) string {
+func unquote(str string) string {
 	str = strings.TrimSpace(str)
 	if len(str) >= 2 && str[0] == '"' && str[len(str)-1] == '"' {
 		return str[1 : len(str)-1]
@@ -738,7 +747,7 @@ func (s *IMAPServer) unquote(str string) string {
 	return str
 }
 
-func (s *IMAPServer) requiresArgument(token string) bool {
+func requiresArgument(token string) bool {
 	switch token {
 	case "BCC", "CC", "FROM", "SUBJECT", "TO", "BODY", "TEXT",
 		"KEYWORD", "UNKEYWORD", "LARGER", "SMALLER", "UID",
@@ -752,21 +761,21 @@ func (s *IMAPServer) requiresArgument(token string) bool {
 
 // ===== STORE =====
 
-func (s *IMAPServer) handleStore(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+func HandleStore(deps ServerDeps, conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	// RFC 3501: STORE requires authentication and selected mailbox
 	if !state.Authenticated {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
 		return
 	}
 
 	if state.SelectedMailboxID == 0 {
-		s.sendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
 		return
 	}
 
 	// Parse command: STORE sequence data-item value
 	if len(parts) < 4 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD STORE requires sequence set, data item, and value", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD STORE requires sequence set, data item, and value", tag))
 		return
 	}
 
@@ -786,21 +795,21 @@ func (s *IMAPServer) handleStore(conn net.Conn, tag string, parts []string, stat
 
 	// Validate data item
 	if dataItem != "FLAGS" && dataItem != "+FLAGS" && dataItem != "-FLAGS" {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid data item: %s", tag, parts[3]))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD Invalid data item: %s", tag, parts[3]))
 		return
 	}
 
 	// Get user database
-	userDB, err := s.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.UserID)
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
 
 	// Parse sequence set
 	sequences := utils.ParseSequenceSetWithDB(sequenceSet, state.SelectedMailboxID, userDB)
 	if len(sequences) == 0 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence set", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence set", tag))
 		return
 	}
 
@@ -823,7 +832,7 @@ func (s *IMAPServer) handleStore(conn net.Conn, tag string, parts []string, stat
 		}
 
 		// Calculate new flags based on operation
-		updatedFlags := s.calculateNewFlags(currentFlags, newFlags, dataItem)
+		updatedFlags := CalculateNewFlags(currentFlags, newFlags, dataItem)
 
 		// Update flags in database
 		updateQuery := "UPDATE message_mailbox SET flags = ? WHERE message_id = ? AND mailbox_id = ?"
@@ -839,15 +848,15 @@ func (s *IMAPServer) handleStore(conn net.Conn, tag string, parts []string, stat
 			if updatedFlags != "" {
 				flagsFormatted = fmt.Sprintf("(%s)", updatedFlags)
 			}
-			s.sendResponse(conn, fmt.Sprintf("* %d FETCH (FLAGS %s)", seqNum, flagsFormatted))
+			deps.SendResponse(conn, fmt.Sprintf("* %d FETCH (FLAGS %s)", seqNum, flagsFormatted))
 		}
 	}
 
-	s.sendResponse(conn, fmt.Sprintf("%s OK STORE completed", tag))
+	deps.SendResponse(conn, fmt.Sprintf("%s OK STORE completed", tag))
 }
 
-// calculateNewFlags determines the new flags based on the operation
-func (s *IMAPServer) calculateNewFlags(currentFlags string, newFlags []string, operation string) string {
+// CalculateNewFlags determines the new flags based on the operation
+func CalculateNewFlags(currentFlags string, newFlags []string, operation string) string {
 	// Parse current flags into a map
 	flagMap := make(map[string]bool)
 	if currentFlags != "" {
@@ -896,22 +905,22 @@ func (s *IMAPServer) calculateNewFlags(currentFlags string, newFlags []string, o
 
 // handleCopy implements the COPY command (RFC 3501 Section 6.4.7)
 // Syntax: COPY sequence-set mailbox-name
-func (s *IMAPServer) handleCopy(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+func HandleCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	// Check authentication
 	if !state.Authenticated {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
 		return
 	}
 
 	// Check if mailbox is selected
 	if state.SelectedMailboxID == 0 {
-		s.sendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
 		return
 	}
 
 	// Parse command: COPY sequence-set mailbox-name
 	if len(parts) < 3 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid COPY command syntax", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD Invalid COPY command syntax", tag))
 		return
 	}
 
@@ -919,16 +928,16 @@ func (s *IMAPServer) handleCopy(conn net.Conn, tag string, parts []string, state
 	destMailbox := strings.Trim(strings.Join(parts[2:], " "), "\"")
 
 	// Get user database
-	userDB, err := s.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.UserID)
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
 
 	// Parse sequence set
 	sequences := utils.ParseSequenceSetWithDB(sequenceSet, state.SelectedMailboxID, userDB)
 	if len(sequences) == 0 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence set", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence set", tag))
 		return
 	}
 
@@ -941,14 +950,14 @@ func (s *IMAPServer) handleCopy(conn net.Conn, tag string, parts []string, state
 
 	if err != nil {
 		// Destination mailbox doesn't exist - return NO with [TRYCREATE]
-		s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Destination mailbox does not exist", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Destination mailbox does not exist", tag))
 		return
 	}
 
 	// Begin transaction to ensure atomicity
 	tx, err := userDB.Begin()
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
 		return
 	}
 	defer tx.Rollback()
@@ -962,7 +971,7 @@ func (s *IMAPServer) handleCopy(conn net.Conn, tag string, parts []string, state
 	`, destMailboxID).Scan(&nextUID)
 
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
 		return
 	}
 
@@ -981,7 +990,7 @@ func (s *IMAPServer) handleCopy(conn net.Conn, tag string, parts []string, state
 		`, state.SelectedMailboxID, seqNum-1).Scan(&messageID, &flags, &internalDate)
 
 		if err != nil {
-			s.sendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
+			deps.SendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
 			return
 		}
 
@@ -1002,7 +1011,7 @@ func (s *IMAPServer) handleCopy(conn net.Conn, tag string, parts []string, state
 		`, messageID, destMailboxID, nextUID, copyFlags, internalDate)
 
 		if err != nil {
-			s.sendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
+			deps.SendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
 			return
 		}
 
@@ -1012,31 +1021,31 @@ func (s *IMAPServer) handleCopy(conn net.Conn, tag string, parts []string, state
 	// Commit transaction
 	err = tx.Commit()
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
 		return
 	}
 
-	s.sendResponse(conn, fmt.Sprintf("%s OK COPY completed", tag))
+	deps.SendResponse(conn, fmt.Sprintf("%s OK COPY completed", tag))
 }
 
 // ===== APPEND =====
 
 // handleAppendWithReader handles the APPEND command with a buffered reader to properly read literal data
-func (s *IMAPServer) handleAppendWithReader(reader io.Reader, conn net.Conn, tag string, parts []string, fullLine string, state *models.ClientState) {
+func HandleAppendWithReader(deps ServerDeps, reader io.Reader, conn net.Conn, tag string, parts []string, fullLine string, state *models.ClientState) {
 	if !state.Authenticated {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
 		return
 	}
 
 	if len(parts) < 3 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD APPEND requires folder name", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD APPEND requires folder name", tag))
 		return
 	}
 
 	// Get user database
-	userDB, err := s.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.UserID)
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
 
@@ -1046,7 +1055,7 @@ func (s *IMAPServer) handleAppendWithReader(reader io.Reader, conn net.Conn, tag
 	// Validate folder exists using the database with new schema
 	mailboxID, err := db.GetMailboxByNamePerUser(userDB, state.UserID, folder)
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Folder does not exist", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Folder does not exist", tag))
 		return
 	}
 
@@ -1068,7 +1077,7 @@ func (s *IMAPServer) handleAppendWithReader(reader io.Reader, conn net.Conn, tag
 	literalEndIdx := strings.Index(fullLine, "}")
 
 	if literalStartIdx == -1 || literalEndIdx == -1 || literalStartIdx > literalEndIdx {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD APPEND requires message size", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD APPEND requires message size", tag))
 		return
 	}
 
@@ -1083,14 +1092,14 @@ func (s *IMAPServer) handleAppendWithReader(reader io.Reader, conn net.Conn, tag
 	fmt.Sscanf(sizeStr, "%d", &messageSize)
 
 	if messageSize <= 0 || messageSize > 50*1024*1024 { // Max 50MB
-		s.sendResponse(conn, fmt.Sprintf("%s NO Message size invalid or too large", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Message size invalid or too large", tag))
 		return
 	}
 
 	// Send continuation response only for synchronizing literals
 	// RFC 4466: LITERAL+ ({size+}) means client sends data immediately without waiting
 	if !isLiteralPlus {
-		s.sendResponse(conn, "+ Ready for literal data")
+		deps.SendResponse(conn, "+ Ready for literal data")
 	}
 
 	// Read the message data using io.ReadFull from the buffered reader
@@ -1102,7 +1111,7 @@ func (s *IMAPServer) handleAppendWithReader(reader io.Reader, conn net.Conn, tag
 	n, err := io.ReadFull(reader, messageData)
 	if err != nil {
 		log.Printf("Error reading message data: expected %d bytes, read %d bytes, error: %v", messageSize, n, err)
-		s.sendResponse(conn, fmt.Sprintf("%s NO Failed to read message data", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Failed to read message data", tag))
 		return
 	}
 
@@ -1133,7 +1142,7 @@ func (s *IMAPServer) handleAppendWithReader(reader io.Reader, conn net.Conn, tag
 	parsed, err := parser.ParseMIMEMessage(rawMessage)
 	if err != nil {
 		log.Printf("Failed to parse message: %v", err)
-		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to parse message", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to parse message", tag))
 		return
 	}
 
@@ -1141,7 +1150,7 @@ func (s *IMAPServer) handleAppendWithReader(reader io.Reader, conn net.Conn, tag
 	messageID, err := parser.StoreMessagePerUser(userDB, parsed)
 	if err != nil {
 		log.Printf("Failed to store message: %v", err)
-		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to save message", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to save message", tag))
 		return
 	}
 
@@ -1150,7 +1159,7 @@ func (s *IMAPServer) handleAppendWithReader(reader io.Reader, conn net.Conn, tag
 	err = db.AddMessageToMailboxPerUser(userDB, messageID, mailboxID, flags, internalDate)
 	if err != nil {
 		log.Printf("Failed to add message to mailbox: %v", err)
-		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to add message to mailbox", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to add message to mailbox", tag))
 		return
 	}
 
@@ -1172,25 +1181,25 @@ func (s *IMAPServer) handleAppendWithReader(reader io.Reader, conn net.Conn, tag
 	log.Printf("Message appended to folder '%s' with UID %d", folder, newUID)
 
 	// Send success response with APPENDUID (RFC 4315 - UIDPLUS extension)
-	s.sendResponse(conn, fmt.Sprintf("%s OK [APPENDUID %d %d] APPEND completed", tag, uidValidity, newUID))
+	deps.SendResponse(conn, fmt.Sprintf("%s OK [APPENDUID %d %d] APPEND completed", tag, uidValidity, newUID))
 }
 
 // handleAppend handles the APPEND command to add a message to a mailbox (legacy - kept for compatibility)
-func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, fullLine string, state *models.ClientState) {
+func HandleAppend(deps ServerDeps, conn net.Conn, tag string, parts []string, fullLine string, state *models.ClientState) {
 	if !state.Authenticated {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
 		return
 	}
 
 	if len(parts) < 3 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD APPEND requires folder name", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD APPEND requires folder name", tag))
 		return
 	}
 
 	// Get user database
-	userDB, err := s.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.UserID)
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
 
@@ -1200,7 +1209,7 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 	// Validate folder exists using the database with new schema
 	mailboxID, err := db.GetMailboxByNamePerUser(userDB, state.UserID, folder)
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Folder does not exist", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Folder does not exist", tag))
 		return
 	}
 
@@ -1222,7 +1231,7 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 	literalEndIdx := strings.Index(fullLine, "}")
 
 	if literalStartIdx == -1 || literalEndIdx == -1 || literalStartIdx > literalEndIdx {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD APPEND requires message size", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD APPEND requires message size", tag))
 		return
 	}
 
@@ -1237,14 +1246,14 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 	fmt.Sscanf(sizeStr, "%d", &messageSize)
 
 	if messageSize <= 0 || messageSize > 50*1024*1024 { // Max 50MB
-		s.sendResponse(conn, fmt.Sprintf("%s NO Message size invalid or too large", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Message size invalid or too large", tag))
 		return
 	}
 
 	// Send continuation response only for synchronizing literals
 	// RFC 4466: LITERAL+ ({size+}) means client sends data immediately without waiting
 	if !isLiteralPlus {
-		s.sendResponse(conn, "+ Ready for literal data")
+		deps.SendResponse(conn, "+ Ready for literal data")
 	}
 
 	// Read the message data using io.ReadFull to ensure we read exactly messageSize bytes
@@ -1256,7 +1265,7 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 	n, err := io.ReadFull(conn, messageData)
 	if err != nil {
 		log.Printf("Error reading message data: expected %d bytes, read %d bytes, error: %v", messageSize, n, err)
-		s.sendResponse(conn, fmt.Sprintf("%s NO Failed to read message data", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Failed to read message data", tag))
 		return
 	}
 
@@ -1287,7 +1296,7 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 	parsed, err := parser.ParseMIMEMessage(rawMessage)
 	if err != nil {
 		log.Printf("Failed to parse message: %v", err)
-		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to parse message", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to parse message", tag))
 		return
 	}
 
@@ -1295,7 +1304,7 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 	messageID, err := parser.StoreMessagePerUser(userDB, parsed)
 	if err != nil {
 		log.Printf("Failed to store message: %v", err)
-		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to save message", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to save message", tag))
 		return
 	}
 
@@ -1304,7 +1313,7 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 	err = db.AddMessageToMailboxPerUser(userDB, messageID, mailboxID, flags, internalDate)
 	if err != nil {
 		log.Printf("Failed to add message to mailbox: %v", err)
-		s.sendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to add message to mailbox", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to add message to mailbox", tag))
 		return
 	}
 
@@ -1326,22 +1335,22 @@ func (s *IMAPServer) handleAppend(conn net.Conn, tag string, parts []string, ful
 	log.Printf("Message appended to folder '%s' with UID %d", folder, newUID)
 
 	// Send success response with APPENDUID (RFC 4315 - UIDPLUS extension)
-	s.sendResponse(conn, fmt.Sprintf("%s OK [APPENDUID %d %d] APPEND completed", tag, uidValidity, newUID))
+	deps.SendResponse(conn, fmt.Sprintf("%s OK [APPENDUID %d %d] APPEND completed", tag, uidValidity, newUID))
 }
 
 // ===== EXPUNGE =====
 
-func (s *IMAPServer) handleExpunge(conn net.Conn, tag string, state *models.ClientState) {
+func HandleExpunge(deps ServerDeps, conn net.Conn, tag string, state *models.ClientState) {
 	// EXPUNGE command requires authentication
 	if !state.Authenticated {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
 		return
 	}
 
 	// EXPUNGE command requires a selected mailbox (Selected state)
 	// Per RFC 3501: EXPUNGE is only valid in Selected state
 	if state.SelectedMailboxID == 0 {
-		s.sendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
 		return
 	}
 
@@ -1355,9 +1364,9 @@ func (s *IMAPServer) handleExpunge(conn net.Conn, tag string, state *models.Clie
 	// TODO: Add ReadOnly field to ClientState to properly handle EXAMINE
 
 	// Get user database
-	userDB, err := s.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.UserID)
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
 
@@ -1370,7 +1379,7 @@ func (s *IMAPServer) handleExpunge(conn net.Conn, tag string, state *models.Clie
 	`, state.SelectedMailboxID)
 
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO EXPUNGE failed: %v", tag, err))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO EXPUNGE failed: %v", tag, err))
 		return
 	}
 	defer rows.Close()
@@ -1391,7 +1400,7 @@ func (s *IMAPServer) handleExpunge(conn net.Conn, tag string, state *models.Clie
 
 	// If no messages to delete, just return OK
 	if len(messagesToDelete) == 0 {
-		s.sendResponse(conn, fmt.Sprintf("%s OK EXPUNGE completed", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s OK EXPUNGE completed", tag))
 		return
 	}
 
@@ -1403,7 +1412,7 @@ func (s *IMAPServer) handleExpunge(conn net.Conn, tag string, state *models.Clie
 	`, state.SelectedMailboxID)
 
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO EXPUNGE failed: %v", tag, err))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO EXPUNGE failed: %v", tag, err))
 		return
 	}
 	defer allRows.Close()
@@ -1433,7 +1442,7 @@ func (s *IMAPServer) handleExpunge(conn net.Conn, tag string, state *models.Clie
 		adjustedSeqNum := originalSeqNum - deletedCount
 
 		// Send untagged EXPUNGE response with the adjusted sequence number
-		s.sendResponse(conn, fmt.Sprintf("* %d EXPUNGE", adjustedSeqNum))
+		deps.SendResponse(conn, fmt.Sprintf("* %d EXPUNGE", adjustedSeqNum))
 
 		// Delete the message from the mailbox
 		userDB.Exec(`DELETE FROM message_mailbox WHERE id = ?`, msg.id)
@@ -1448,29 +1457,29 @@ func (s *IMAPServer) handleExpunge(conn net.Conn, tag string, state *models.Clie
 	}
 
 	// Send completion response
-	s.sendResponse(conn, fmt.Sprintf("%s OK EXPUNGE completed", tag))
+	deps.SendResponse(conn, fmt.Sprintf("%s OK EXPUNGE completed", tag))
 }
 
 // ===== CHECK =====
 
-func (s *IMAPServer) handleCheck(conn net.Conn, tag string, state *models.ClientState) {
+func HandleCheck(deps ServerDeps, conn net.Conn, tag string, state *models.ClientState) {
 	// CHECK command requires authentication
 	if !state.Authenticated {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
 		return
 	}
 
 	// CHECK command requires a selected mailbox (Selected state)
 	// Per RFC 3501: CHECK is only valid in Selected state
 	if state.SelectedMailboxID == 0 {
-		s.sendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
 		return
 	}
 
 	// Get user database
-	userDB, err := s.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.UserID)
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s OK CHECK completed", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s OK CHECK completed", tag))
 		return
 	}
 
@@ -1483,7 +1492,7 @@ func (s *IMAPServer) handleCheck(conn net.Conn, tag string, state *models.Client
 	if err != nil {
 		// If there's a database error, still complete normally per RFC 3501
 		// CHECK should always succeed even if housekeeping fails
-		s.sendResponse(conn, fmt.Sprintf("%s OK CHECK completed", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s OK CHECK completed", tag))
 		return
 	}
 
@@ -1504,12 +1513,5 @@ func (s *IMAPServer) handleCheck(conn net.Conn, tag string, state *models.Client
 	// Therefore, we do NOT send untagged responses here
 
 	// Always complete successfully per RFC 3501
-	s.sendResponse(conn, fmt.Sprintf("%s OK CHECK completed", tag))
-}
-
-// ===== EXPORTED METHODS FOR TESTING =====
-
-// HandleCheck exports the check handler for testing
-func (s *IMAPServer) HandleCheck(conn net.Conn, tag string, state *models.ClientState) {
-	s.handleCheck(conn, tag, state)
+	deps.SendResponse(conn, fmt.Sprintf("%s OK CHECK completed", tag))
 }
