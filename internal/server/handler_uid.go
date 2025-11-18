@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"raven/internal/models"
+	"raven/internal/server/message"
 	"raven/internal/server/utils"
 )
 
@@ -80,9 +81,9 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 		return
 	}
 
-	// Convert UIDs to a sequence set format that handleFetchForUIDs can use
+	// Convert UIDs to a sequence set format that HandleFetchForUIDs can use
 	// For each UID, we need to fetch using the same logic as handleFetch
-	s.handleFetchForUIDs(conn, tag, uids, items, state)
+	message.HandleFetchForUIDs(s, conn, tag, uids, items, state)
 
 	s.sendResponse(conn, fmt.Sprintf("%s OK UID FETCH completed", tag))
 }
@@ -249,7 +250,7 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 		}
 
 		// Calculate new flags based on operation
-		updatedFlags := s.calculateNewFlags(currentFlags, newFlags, dataItem)
+		updatedFlags := message.CalculateNewFlags(currentFlags, newFlags, dataItem)
 
 		// Update flags in database
 		_, err = targetDB.Exec(`
