@@ -1,7 +1,7 @@
 //go:build test
 // +build test
 
-package server
+package uid
 
 import (
 	"fmt"

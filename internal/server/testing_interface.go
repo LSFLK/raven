@@ -9,6 +9,7 @@ import (
 	"raven/internal/server/mailbox"
 	"raven/internal/server/message"
 	"raven/internal/server/selection"
+	"raven/internal/server/uid"
 )
 
 // TestInterface provides access to internal methods for testing
@@ -163,7 +164,7 @@ func (t *TestInterface) HandleCopy(conn net.Conn, tag string, parts []string, st
 
 // HandleUID exposes the UID handler for testing
 func (t *TestInterface) HandleUID(conn net.Conn, tag string, parts []string, state *models.ClientState) {
-	t.server.handleUID(conn, tag, parts, state)
+	uid.HandleUID(t.server, conn, tag, parts, state)
 }
 
 // SetTLSCertificates sets custom TLS certificate paths for testing
