@@ -8,6 +8,7 @@ import (
 	"raven/internal/server/extension"
 	"raven/internal/server/mailbox"
 	"raven/internal/server/message"
+	"raven/internal/server/selection"
 )
 
 // TestInterface provides access to internal methods for testing
@@ -69,7 +70,7 @@ func (t *TestInterface) HandleNamespace(conn net.Conn, tag string, state *models
 
 // HandleUnselect exposes the unselect handler for testing
 func (t *TestInterface) HandleUnselect(conn net.Conn, tag string, state *models.ClientState) {
-	t.server.handleUnselect(conn, tag, state)
+	selection.HandleUnselect(t.server, conn, tag, state)
 }
 
 // HandleNoop exposes the noop handler for testing
@@ -84,7 +85,7 @@ func (t *TestInterface) HandleCheck(conn net.Conn, tag string, state *models.Cli
 
 // HandleClose exposes the close handler for testing
 func (t *TestInterface) HandleClose(conn net.Conn, tag string, state *models.ClientState) {
-	t.server.handleClose(conn, tag, state)
+	selection.HandleClose(t.server, conn, tag, state)
 }
 
 // HandleExpunge exposes the expunge handler for testing
@@ -94,12 +95,12 @@ func (t *TestInterface) HandleExpunge(conn net.Conn, tag string, state *models.C
 
 // HandleSelect exposes the select handler for testing
 func (t *TestInterface) HandleSelect(conn net.Conn, tag string, parts []string, state *models.ClientState) {
-	t.server.handleSelect(conn, tag, parts, state)
+	selection.HandleSelect(t.server, conn, tag, parts, state)
 }
 
 // HandleExamine exposes the examine handler for testing (uses same handler as SELECT)
 func (t *TestInterface) HandleExamine(conn net.Conn, tag string, parts []string, state *models.ClientState) {
-	t.server.handleSelect(conn, tag, parts, state)
+	selection.HandleSelect(t.server, conn, tag, parts, state)
 }
 
 // HandleAppend exposes the append handler for testing

@@ -1,7 +1,7 @@
 //go:build test
 // +build test
 
-package server
+package selection
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"raven/internal/models"
-	
+
 )
 
 // TestSelectCommand_BasicFlow tests the basic SELECT command with an existing mailbox
