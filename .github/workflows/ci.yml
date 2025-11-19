@@ -5,14 +5,25 @@ permissions:
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: [main]
     paths:
-      - '**.go'
+      - "**.go"
       - go.mod
       - go.sum
       - .github/workflows/**
 
 jobs:
+  golangci-lint:
+    name: Run golangci-lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Golangci-lint
+        uses: golangci/golangci-lint-action@v9.0.0
+
+      - name: Gosec Security Checker
+        uses: securego/gosec@v2.22.10
+
   test-commands:
     name: Run Specific Tests
     runs-on: ubuntu-latest
@@ -24,7 +35,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: "1.23"
           cache: true
 
       - name: Install dependencies
@@ -119,7 +130,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: "1.23"
           cache: true
 
       - name: Install dependencies
@@ -148,7 +159,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: "1.23"
           cache: true
 
       - name: Install dependencies
