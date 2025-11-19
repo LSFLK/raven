@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - master
   pull_request:
   schedule:
     - cron: "0 0 * * 0" # Runs every Sunday at 00:00 UTC
@@ -41,6 +40,6 @@ jobs:
         with:
           args: "-no-fail -fmt sarif -out results.sarif ./..."
       - name: Upload SARIF file
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: results.sarif
