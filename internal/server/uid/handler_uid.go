@@ -1,49 +1,60 @@
-package server
+package uid
 
 import (
+	"database/sql"
 	"fmt"
 	"net"
 	"strconv"
 	"strings"
 
+	"raven/internal/db"
 	"raven/internal/models"
 	"raven/internal/server/message"
 	"raven/internal/server/utils"
 )
 
+// ServerDeps defines the dependencies that UID handlers need from the server
+type ServerDeps interface {
+	SendResponse(conn net.Conn, response string)
+	GetSelectedDB(state *models.ClientState) (*sql.DB, int64, error)
+	GetUserDB(userID int64) (*sql.DB, error)
+	GetSharedDB() *sql.DB
+	GetDBManager() *db.DBManager
+}
+
 // ===== UID (Main Dispatcher) =====
 
-// handleUID implements the UID command (RFC 3501 Section 6.4.8)
+// HandleUID implements the UID command (RFC 3501 Section 6.4.8)
 // Syntax: UID <command> <arguments>
 // Supports: UID FETCH, UID SEARCH, UID STORE, UID COPY
-func (s *IMAPServer) handleUID(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+func HandleUID(deps ServerDeps, conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	if !state.Authenticated {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
 		return
 	}
 
 	if state.SelectedMailboxID == 0 {
-		s.sendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO No mailbox selected", tag))
 		return
 	}
 
 	if len(parts) < 3 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD UID requires sub-command", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD UID requires sub-command", tag))
 		return
 	}
 
 	subCmd := strings.ToUpper(parts[2])
 	switch subCmd {
 	case "FETCH":
-		s.handleUIDFetch(conn, tag, parts, state)
+		handleUIDFetch(deps, conn, tag, parts, state)
 	case "SEARCH":
-		s.handleUIDSearch(conn, tag, parts, state)
+		handleUIDSearch(deps, conn, tag, parts, state)
 	case "STORE":
-		s.handleUIDStore(conn, tag, parts, state)
+		handleUIDStore(deps, conn, tag, parts, state)
 	case "COPY":
-		s.handleUIDCopy(conn, tag, parts, state)
+		handleUIDCopy(deps, conn, tag, parts, state)
 	default:
-		s.sendResponse(conn, fmt.Sprintf("%s BAD Unknown UID command: %s", tag, subCmd))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD Unknown UID command: %s", tag, subCmd))
 	}
 }
 
@@ -51,9 +62,9 @@ func (s *IMAPServer) handleUID(conn net.Conn, tag string, parts []string, state 
 
 // handleUIDFetch implements UID FETCH command
 // Note: UID is always included in FETCH response, even if not requested
-func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+func handleUIDFetch(deps ServerDeps, conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	if len(parts) < 5 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD UID FETCH requires UID sequence and items", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD UID FETCH requires UID sequence and items", tag))
 		return
 	}
 
@@ -67,9 +78,9 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 	}
 
 	// Get appropriate database (user or role mailbox)
-	targetDB, _, err := s.GetSelectedDB(state)
+	targetDB, _, err := deps.GetSelectedDB(state)
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
 
@@ -77,31 +88,31 @@ func (s *IMAPServer) handleUIDFetch(conn net.Conn, tag string, parts []string, s
 	uids := utils.ParseUIDSequenceSetWithDB(uidSequence, state.SelectedMailboxID, targetDB)
 	if len(uids) == 0 {
 		// Non-existent UIDs are ignored without error - just return OK
-		s.sendResponse(conn, fmt.Sprintf("%s OK UID FETCH completed", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s OK UID FETCH completed", tag))
 		return
 	}
 
 	// Convert UIDs to a sequence set format that HandleFetchForUIDs can use
 	// For each UID, we need to fetch using the same logic as handleFetch
-	message.HandleFetchForUIDs(s, conn, tag, uids, items, state)
+	message.HandleFetchForUIDs(deps, conn, tag, uids, items, state)
 
-	s.sendResponse(conn, fmt.Sprintf("%s OK UID FETCH completed", tag))
+	deps.SendResponse(conn, fmt.Sprintf("%s OK UID FETCH completed", tag))
 }
 
 // ===== UID SEARCH =====
 
 // handleUIDSearch implements UID SEARCH command
 // Returns UIDs instead of message sequence numbers
-func (s *IMAPServer) handleUIDSearch(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+func handleUIDSearch(deps ServerDeps, conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	if len(parts) < 4 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD UID SEARCH requires search criteria", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD UID SEARCH requires search criteria", tag))
 		return
 	}
 
 	// Get appropriate database (user or role mailbox)
-	targetDB, _, err := s.GetSelectedDB(state)
+	targetDB, _, err := deps.GetSelectedDB(state)
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
 
@@ -119,7 +130,7 @@ func (s *IMAPServer) handleUIDSearch(conn net.Conn, tag string, parts []string, 
 	`, state.SelectedMailboxID)
 
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO UID SEARCH failed: %v", tag, err))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO UID SEARCH failed: %v", tag, err))
 		return
 	}
 	defer func() { _ = rows.Close() }()
@@ -180,24 +191,24 @@ func (s *IMAPServer) handleUIDSearch(conn net.Conn, tag string, parts []string, 
 	}
 
 	// Return matching UIDs
-	s.sendResponse(conn, fmt.Sprintf("* SEARCH %s", strings.Join(matchingUIDs, " ")))
-	s.sendResponse(conn, fmt.Sprintf("%s OK UID SEARCH completed", tag))
+	deps.SendResponse(conn, fmt.Sprintf("* SEARCH %s", strings.Join(matchingUIDs, " ")))
+	deps.SendResponse(conn, fmt.Sprintf("%s OK UID SEARCH completed", tag))
 }
 
 // ===== UID STORE =====
 
 // handleUIDStore implements UID STORE command
 // Updates flags for messages by UID
-func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+func handleUIDStore(deps ServerDeps, conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	if len(parts) < 6 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD UID STORE requires UID sequence, operation, and flags", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD UID STORE requires UID sequence, operation, and flags", tag))
 		return
 	}
 
 	// Get appropriate database (user or role mailbox)
-	targetDB, _, err := s.GetSelectedDB(state)
+	targetDB, _, err := deps.GetSelectedDB(state)
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
 
@@ -218,7 +229,7 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 
 	// Validate data item
 	if dataItem != "FLAGS" && dataItem != "+FLAGS" && dataItem != "-FLAGS" {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD Invalid data item: %s", tag, dataItem))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD Invalid data item: %s", tag, dataItem))
 		return
 	}
 
@@ -226,7 +237,7 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 	uids := utils.ParseUIDSequenceSetWithDB(uidSequence, state.SelectedMailboxID, targetDB)
 	if len(uids) == 0 {
 		// Non-existent UIDs are ignored without error
-		s.sendResponse(conn, fmt.Sprintf("%s OK UID STORE completed", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s OK UID STORE completed", tag))
 		return
 	}
 
@@ -260,7 +271,7 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 		`, updatedFlags, state.SelectedMailboxID, uid)
 
 		if err != nil {
-			s.sendResponse(conn, fmt.Sprintf("%s NO UID STORE failed: %v", tag, err))
+			deps.SendResponse(conn, fmt.Sprintf("%s NO UID STORE failed: %v", tag, err))
 			return
 		}
 
@@ -270,27 +281,27 @@ func (s *IMAPServer) handleUIDStore(conn net.Conn, tag string, parts []string, s
 			if updatedFlags != "" {
 				flagsResponse = fmt.Sprintf("(%s)", updatedFlags)
 			}
-			s.sendResponse(conn, fmt.Sprintf("* %d FETCH (FLAGS %s UID %d)", seqNum, flagsResponse, uid))
+			deps.SendResponse(conn, fmt.Sprintf("* %d FETCH (FLAGS %s UID %d)", seqNum, flagsResponse, uid))
 		}
 	}
 
-	s.sendResponse(conn, fmt.Sprintf("%s OK UID STORE completed", tag))
+	deps.SendResponse(conn, fmt.Sprintf("%s OK UID STORE completed", tag))
 }
 
 // ===== UID COPY =====
 
 // handleUIDCopy implements UID COPY command
 // Copies messages by UID to destination mailbox
-func (s *IMAPServer) handleUIDCopy(conn net.Conn, tag string, parts []string, state *models.ClientState) {
+func handleUIDCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	if len(parts) < 5 {
-		s.sendResponse(conn, fmt.Sprintf("%s BAD UID COPY requires UID sequence and destination mailbox", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD UID COPY requires UID sequence and destination mailbox", tag))
 		return
 	}
 
 	// Get appropriate database (user or role mailbox)
-	targetDB, targetUserID, err := s.GetSelectedDB(state)
+	targetDB, targetUserID, err := deps.GetSelectedDB(state)
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
 
@@ -301,7 +312,7 @@ func (s *IMAPServer) handleUIDCopy(conn net.Conn, tag string, parts []string, st
 	uids := utils.ParseUIDSequenceSetWithDB(uidSequence, state.SelectedMailboxID, targetDB)
 	if len(uids) == 0 {
 		// Non-existent UIDs are ignored without error
-		s.sendResponse(conn, fmt.Sprintf("%s OK UID COPY completed", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s OK UID COPY completed", tag))
 		return
 	}
 
@@ -313,14 +324,14 @@ func (s *IMAPServer) handleUIDCopy(conn net.Conn, tag string, parts []string, st
 	`, destMailbox, targetUserID).Scan(&destMailboxID)
 
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Destination mailbox does not exist", tag))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Destination mailbox does not exist", tag))
 		return
 	}
 
 	// Begin transaction
 	tx, err := targetDB.Begin()
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO UID COPY failed: %v", tag, err))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO UID COPY failed: %v", tag, err))
 		return
 	}
 	defer func() { _ = tx.Rollback() }()
@@ -334,7 +345,7 @@ func (s *IMAPServer) handleUIDCopy(conn net.Conn, tag string, parts []string, st
 	`, destMailboxID).Scan(&nextUID)
 
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO UID COPY failed: %v", tag, err))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO UID COPY failed: %v", tag, err))
 		return
 	}
 
@@ -371,7 +382,7 @@ func (s *IMAPServer) handleUIDCopy(conn net.Conn, tag string, parts []string, st
 		`, messageID, destMailboxID, nextUID, copyFlags, internalDate)
 
 		if err != nil {
-			s.sendResponse(conn, fmt.Sprintf("%s NO UID COPY failed: %v", tag, err))
+			deps.SendResponse(conn, fmt.Sprintf("%s NO UID COPY failed: %v", tag, err))
 			return
 		}
 
@@ -381,10 +392,9 @@ func (s *IMAPServer) handleUIDCopy(conn net.Conn, tag string, parts []string, st
 	// Commit transaction
 	err = tx.Commit()
 	if err != nil {
-		s.sendResponse(conn, fmt.Sprintf("%s NO UID COPY failed: %v", tag, err))
+		deps.SendResponse(conn, fmt.Sprintf("%s NO UID COPY failed: %v", tag, err))
 		return
 	}
 
-	s.sendResponse(conn, fmt.Sprintf("%s OK UID COPY completed", tag))
+	deps.SendResponse(conn, fmt.Sprintf("%s OK UID COPY completed", tag))
 }
-

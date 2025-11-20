@@ -14,6 +14,7 @@ import (
 	"raven/internal/server/mailbox"
 	"raven/internal/server/message"
 	"raven/internal/server/selection"
+	"raven/internal/server/uid"
 )
 
 // HandleClient handles IMAP client connections (exported for auth package)
@@ -84,7 +85,7 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 		case "STATUS":
 			mailbox.HandleStatus(s, conn, tag, parts, state)
 		case "UID":
-			s.handleUID(conn, tag, parts, state)
+			uid.HandleUID(s, conn, tag, parts, state)
 		case "IDLE":
 			extension.HandleIdle(s, conn, tag, state)
 		case "NAMESPACE":
