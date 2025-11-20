@@ -5,9 +5,9 @@ permissions:
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: [main]
     paths:
-      - '**.go'
+      - "**.go"
       - go.mod
       - go.sum
       - .github/workflows/**
@@ -24,7 +24,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: "1.23"
           cache: true
 
       - name: Install dependencies
@@ -119,7 +119,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: "1.23"
           cache: true
 
       - name: Install dependencies
@@ -148,7 +148,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: "1.23"
           cache: true
 
       - name: Install dependencies
