@@ -46,7 +46,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize database manager: %v", err)
 	}
-	defer dbManager.Close()
+	defer func() {
+		if err := dbManager.Close(); err != nil {
+			log.Printf("Error closing database manager: %v", err)
+		}
+	}()
 
 	log.Printf("Database manager initialized: %s", cfg.Database.Path)
 

@@ -17,32 +17,32 @@ import (
 
 // Message represents a parsed email message (simple format for LMTP)
 type Message struct {
-	From        string
-	To          []string
-	Subject     string
-	Date        time.Time
-	MessageID   string
-	Headers     map[string]string
-	Body        string
-	RawMessage  string
-	Size        int64
+	From       string
+	To         []string
+	Subject    string
+	Date       time.Time
+	MessageID  string
+	Headers    map[string]string
+	Body       string
+	RawMessage string
+	Size       int64
 }
 
 // ParsedMessage represents a parsed email message with full MIME structure
 type ParsedMessage struct {
-	MessageID   int64
-	Subject     string
-	From        []mail.Address
-	To          []mail.Address
-	Cc          []mail.Address
-	Bcc         []mail.Address
-	Date        time.Time
-	InReplyTo   string
-	References  string
-	Headers     []MessageHeader
-	Parts       []MessagePart
-	RawMessage  string
-	SizeBytes   int64
+	MessageID  int64
+	Subject    string
+	From       []mail.Address
+	To         []mail.Address
+	Cc         []mail.Address
+	Bcc        []mail.Address
+	Date       time.Time
+	InReplyTo  string
+	References string
+	Headers    []MessageHeader
+	Parts      []MessagePart
+	RawMessage string
+	SizeBytes  int64
 }
 
 // MessageHeader represents a single email header
@@ -80,7 +80,7 @@ func ParseMessage(r io.Reader) (*Message, error) {
 	}
 
 	// Read remaining data to ensure buf has complete message
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 	rawMessage := buf.String()
 
 	// Extract headers
@@ -687,10 +687,11 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 
 		for _, part := range textParts {
 			contentType := part["content_type"].(string)
-			if contentType == "text/plain" {
+			switch contentType {
+			case "text/plain":
 				hasPlain = true
 				plainPart = part
-			} else if contentType == "text/html" {
+			case "text/html":
 				hasHTML = true
 				htmlPart = part
 			}
@@ -799,41 +800,41 @@ func writePartHeaders(buf *bytes.Buffer, part map[string]interface{}) {
 
 	// Write Content-Type with charset if available
 	if charset, ok := part["charset"].(string); ok && charset != "" {
-		buf.WriteString(fmt.Sprintf("Content-Type: %s; charset=%s", contentType, charset))
+		fmt.Fprintf(buf, "Content-Type: %s; charset=%s", contentType, charset)
 	} else {
-		buf.WriteString(fmt.Sprintf("Content-Type: %s", contentType))
+		fmt.Fprintf(buf, "Content-Type: %s", contentType)
 	}
 
 	// Add filename to Content-Type if present (for attachments)
 	if filename, ok := part["filename"].(string); ok && filename != "" {
-		buf.WriteString(fmt.Sprintf("; name=\"%s\"", filename))
+		fmt.Fprintf(buf, "; name=\"%s\"", filename)
 	}
 	buf.WriteString("\r\n")
 
 	// Write Content-Transfer-Encoding (default to 7bit for text/* if missing)
 	if encoding, ok := part["content_transfer_encoding"].(string); ok && strings.TrimSpace(encoding) != "" {
-		buf.WriteString(fmt.Sprintf("Content-Transfer-Encoding: %s\r\n", encoding))
+		fmt.Fprintf(buf, "Content-Transfer-Encoding: %s\r\n", encoding)
 	} else if strings.HasPrefix(strings.ToLower(contentType), "text/") {
 		buf.WriteString("Content-Transfer-Encoding: 7bit\r\n")
 	}
 
 	// Write Content-ID if present (critical for inline images in Apple Mail)
 	if contentID, ok := part["content_id"].(string); ok && contentID != "" {
-		buf.WriteString(fmt.Sprintf("Content-ID: %s\r\n", contentID))
+		fmt.Fprintf(buf, "Content-ID: %s\r\n", contentID)
 	}
 
 	// Write Content-Disposition. Default to inline for text/* when absent to help Apple Mail render body
 	if disposition, ok := part["content_disposition"].(string); ok && strings.TrimSpace(disposition) != "" {
-		buf.WriteString(fmt.Sprintf("Content-Disposition: %s", disposition))
+		fmt.Fprintf(buf, "Content-Disposition: %s", disposition)
 		if filename, ok := part["filename"].(string); ok && filename != "" {
-			buf.WriteString(fmt.Sprintf("; filename=\"%s\"", filename))
+			fmt.Fprintf(buf, "; filename=\"%s\"", filename)
 		}
 		buf.WriteString("\r\n")
 	} else if strings.HasPrefix(strings.ToLower(contentType), "text/") {
 		// Explicit inline for text parts
 		buf.WriteString("Content-Disposition: inline")
 		if filename, ok := part["filename"].(string); ok && filename != "" {
-			buf.WriteString(fmt.Sprintf("; filename=\"%s\"", filename))
+			fmt.Fprintf(buf, "; filename=\"%s\"", filename)
 		}
 		buf.WriteString("\r\n")
 	}
@@ -1046,7 +1047,6 @@ func extractAllHeaders(rawMessage string) []MessageHeader {
 					Value:    currentHeaderValue.String(),
 					Sequence: sequence,
 				})
-				sequence++
 			}
 			break
 		}

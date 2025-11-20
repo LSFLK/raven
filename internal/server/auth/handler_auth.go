@@ -136,7 +136,7 @@ func HandleAuthenticate(deps ServerDeps, conn net.Conn, tag string, parts []stri
 
 		// Read the authentication data
 		buf := make([]byte, 8192)
-		conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 		n, err := conn.Read(buf)
 		if err != nil {
 			deps.SendResponse(conn, fmt.Sprintf("%s NO Authentication failed", tag))
@@ -299,7 +299,7 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 		deps.SendResponse(conn, fmt.Sprintf("%s NO [UNAVAILABLE] Authentication service unavailable", tag))
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == 200 {
 		log.Printf("Accepting login for user: %s", username)
@@ -366,7 +366,7 @@ func HandleSSLConnection(clientHandler ClientHandler, conn net.Conn) {
 	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {
 		log.Printf("Failed to load TLS cert/key: %v", err)
-		conn.Close()
+		_ = conn.Close()
 		return
 	}
 

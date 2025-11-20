@@ -1,7 +1,7 @@
 package conf
 
 import (
-	"io/ioutil"
+	"os"
 	"gopkg.in/yaml.v2"
 )
 
@@ -24,7 +24,7 @@ func LoadConfig() (*Config, error) {
 	var data []byte
 	var err error
 	for _, path := range configPaths {
-		data, err = ioutil.ReadFile(path)
+		data, err = os.ReadFile(path)
 		if err == nil {
 			break
 		}

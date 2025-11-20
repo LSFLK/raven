@@ -42,7 +42,7 @@ func (s *Session) Handle() error {
 	// Set connection timeout
 	if s.config.LMTP.Timeout > 0 {
 		timeout := time.Duration(s.config.LMTP.Timeout) * time.Second
-		s.conn.SetDeadline(time.Now().Add(timeout))
+		_ = s.conn.SetDeadline(time.Now().Add(timeout))
 	}
 
 	// Send greeting
@@ -88,7 +88,7 @@ func (s *Session) Handle() error {
 		// Reset timeout after each command
 		if s.config.LMTP.Timeout > 0 {
 			timeout := time.Duration(s.config.LMTP.Timeout) * time.Second
-			s.conn.SetDeadline(time.Now().Add(timeout))
+			_ = s.conn.SetDeadline(time.Now().Add(timeout))
 		}
 	}
 }
@@ -275,10 +275,10 @@ func (s *Session) handleDATA() error {
 	for _, recipient := range s.recipients {
 		if err := results[recipient]; err != nil {
 			log.Printf("Delivery failed for %s: %v", recipient, err)
-			s.sendResponse(550, "5.3.0 Delivery failed for <%s>: %v", recipient, err)
+			_ = s.sendResponse(550, "5.3.0 Delivery failed for <%s>: %v", recipient, err)
 		} else {
 			log.Printf("Message delivered successfully to %s", recipient)
-			s.sendResponse(250, "2.0.0 Message accepted for delivery to <%s>", recipient)
+			_ = s.sendResponse(250, "2.0.0 Message accepted for delivery to <%s>", recipient)
 		}
 	}
 
@@ -303,7 +303,7 @@ func (s *Session) handleNOOP() error {
 
 // handleQUIT handles the QUIT command
 func (s *Session) handleQUIT() error {
-	s.sendResponse(221, "Bye")
+	_ = s.sendResponse(221, "Bye")
 	return fmt.Errorf("QUIT")
 }
 
@@ -324,7 +324,7 @@ func (s *Session) parseMailFrom(args string) (string, error) {
 	args = strings.TrimSpace(args)
 
 	if !strings.HasPrefix(strings.ToUpper(args), "FROM:") {
-		return "", fmt.Errorf("expected FROM:")
+		return "", fmt.Errorf("expected FROM")
 	}
 
 	args = strings.TrimPrefix(args, "FROM:")
@@ -350,7 +350,7 @@ func (s *Session) parseRcptTo(args string) (string, error) {
 	args = strings.TrimSpace(args)
 
 	if !strings.HasPrefix(strings.ToUpper(args), "TO:") {
-		return "", fmt.Errorf("expected TO:")
+		return "", fmt.Errorf("expected TO")
 	}
 
 	args = strings.TrimPrefix(args, "TO:")

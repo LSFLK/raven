@@ -151,10 +151,10 @@ func ParseUIDSequenceSetWithDB(sequenceSet string, mailboxID int64, userDB *sql.
 
 			for rows.Next() {
 				var uid int
-				rows.Scan(&uid)
+				_ = rows.Scan(&uid)
 				uids = append(uids, uid)
 			}
-			rows.Close()
+			_ = rows.Close()
 		} else {
 			// Single UID
 			uid, err := strconv.Atoi(part)
@@ -164,7 +164,7 @@ func ParseUIDSequenceSetWithDB(sequenceSet string, mailboxID int64, userDB *sql.
 
 			// Check if UID exists
 			var count int
-			userDB.QueryRow(`
+			_ = userDB.QueryRow(`
 				SELECT COUNT(*)
 				FROM message_mailbox
 				WHERE mailbox_id = ? AND uid = ?

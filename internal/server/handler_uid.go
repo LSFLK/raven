@@ -122,7 +122,7 @@ func (s *IMAPServer) handleUIDSearch(conn net.Conn, tag string, parts []string, 
 		s.sendResponse(conn, fmt.Sprintf("%s NO UID SEARCH failed: %v", tag, err))
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	// Build message info structures
 	type uidMessageInfo struct {
@@ -323,7 +323,7 @@ func (s *IMAPServer) handleUIDCopy(conn net.Conn, tag string, parts []string, st
 		s.sendResponse(conn, fmt.Sprintf("%s NO UID COPY failed: %v", tag, err))
 		return
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Get next UID for destination mailbox
 	var nextUID int64
@@ -388,19 +388,3 @@ func (s *IMAPServer) handleUIDCopy(conn net.Conn, tag string, parts []string, st
 	s.sendResponse(conn, fmt.Sprintf("%s OK UID COPY completed", tag))
 }
 
-// ===== UID Sequence Set Parsing (Wrapper Helper) =====
-
-// parseUIDSequenceSet parses a UID sequence set and returns list of UIDs
-// Handles: single (443), ranges (100:200), star (*), ranges with star (559:*)
-// This is a wrapper that gets the user database and delegates to utils.ParseUIDSequenceSetWithDB
-func (s *IMAPServer) parseUIDSequenceSet(sequenceSet string, mailboxID int64, userID int64) []int {
-	var uids []int
-
-	// Get user database
-	userDB, err := s.GetUserDB(userID)
-	if err != nil {
-		return uids
-	}
-
-	return utils.ParseUIDSequenceSetWithDB(sequenceSet, mailboxID, userDB)
-}
