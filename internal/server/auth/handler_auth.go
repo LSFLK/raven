@@ -289,7 +289,7 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 
 	// TLS config for system CA bundle (default)
 	tlsConfig := &tls.Config{
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: true, // #nosec G402 -- Required for internal auth server communication
 	}
 	transport := &http.Transport{TLSClientConfig: tlsConfig}
 	client := &http.Client{Transport: transport}

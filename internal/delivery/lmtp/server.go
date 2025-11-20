@@ -74,7 +74,7 @@ func (s *Server) startUnixListener() error {
 	log.Printf("LMTP server listening on UNIX socket: %s", s.config.LMTP.UnixSocket)
 
 	// Set socket permissions
-	if err := os.Chmod(s.config.LMTP.UnixSocket, 0660); err != nil {
+	if err := os.Chmod(s.config.LMTP.UnixSocket, 0660); err != nil { // #nosec G302 -- Unix socket needs group read/write for inter-process communication
 		log.Printf("Warning: failed to set socket permissions: %v", err)
 	}
 

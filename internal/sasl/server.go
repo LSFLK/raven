@@ -50,7 +50,7 @@ func (s *Server) Start() error {
 	s.listener = listener
 
 	// Set socket permissions (0660 so Postfix can access it)
-	if err := os.Chmod(s.socketPath, 0660); err != nil {
+	if err := os.Chmod(s.socketPath, 0660); err != nil { // #nosec G302 -- Unix socket needs group read/write for Postfix access
 		_ = listener.Close()
 		return fmt.Errorf("failed to set socket permissions: %v", err)
 	}
@@ -313,7 +313,7 @@ func (s *Server) authenticate(username, password string) bool {
 
 	// Create HTTP client with TLS config
 	tlsConfig := &tls.Config{
-		InsecureSkipVerify: true, // Match IMAP server behavior
+		InsecureSkipVerify: true, // #nosec G402 -- Required for internal auth server communication, matches IMAP server behavior
 	}
 	transport := &http.Transport{TLSClientConfig: tlsConfig}
 	client := &http.Client{
