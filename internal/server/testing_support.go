@@ -125,7 +125,7 @@ func SetupTestServer(t *testing.T) (*TestInterface, func()) {
 
 	cleanup := func() {
 		certCleanup()
-		dbManager.Close()
+		_ = dbManager.Close()
 		// Temp dir cleanup is handled by t.TempDir()
 	}
 	return testInterface, cleanup
@@ -419,10 +419,10 @@ func (t *TestConn) Close() error {
 	}
 
 	t.closed = true
-	t.reader.Close()
-	t.writer.Close()
-	t.localReader.Close()
-	t.localWriter.Close()
+	_ = t.reader.Close()
+	_ = t.writer.Close()
+	_ = t.localReader.Close()
+	_ = t.localWriter.Close()
 	return nil
 }
 
@@ -450,7 +450,7 @@ func ReadLine(conn *TestConn) string {
 
 // WriteLine writes a line to the server (from client perspective)
 func WriteLine(conn *TestConn, line string) {
-	conn.localWriter.Write([]byte(line + "\r\n"))
+	_, _ = conn.localWriter.Write([]byte(line + "\r\n"))
 }
 
 // ReadMultiLine reads multiple lines until a tagged response
@@ -519,10 +519,10 @@ func GenerateTestCertificates(t *testing.T) (certPath, keyPath string, cleanup f
 		t.Fatalf("Failed to create cert file: %v", err)
 	}
 	if err := pem.Encode(certFile, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); err != nil {
-		certFile.Close()
+		_ = certFile.Close()
 		t.Fatalf("Failed to encode certificate: %v", err)
 	}
-	certFile.Close()
+	_ = certFile.Close()
 
 	// Write private key to file
 	keyFile, err := os.Create(keyPath)
@@ -531,10 +531,10 @@ func GenerateTestCertificates(t *testing.T) (certPath, keyPath string, cleanup f
 	}
 	privBytes := x509.MarshalPKCS1PrivateKey(privateKey)
 	if err := pem.Encode(keyFile, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: privBytes}); err != nil {
-		keyFile.Close()
+		_ = keyFile.Close()
 		t.Fatalf("Failed to encode private key: %v", err)
 	}
-	keyFile.Close()
+	_ = keyFile.Close()
 
 	cleanup = func() {
 		// Cleanup is handled by t.TempDir()

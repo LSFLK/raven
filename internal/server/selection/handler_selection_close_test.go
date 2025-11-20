@@ -1,5 +1,4 @@
 //go:build test
-// +build test
 
 package selection
 
@@ -8,7 +7,6 @@ import (
 	"testing"
 
 	"raven/internal/models"
-
 )
 
 // TestCloseCommand_Unauthenticated tests CLOSE before authentication
@@ -121,7 +119,6 @@ func TestCloseCommand_NoExpungeResponses(t *testing.T) {
 	state.SelectedFolder = "INBOX"
 	userDB := GetUserDBByID(t, database, state.UserID)
 
-
 	// Insert a test message with \Deleted flag
 	InsertTestMail(t, database, "testuser", "Test Subject", "sender@example.com", "testuser@localhost", "INBOX")
 
@@ -158,7 +155,6 @@ func TestCloseCommand_DeletesMessagesWithDeletedFlag(t *testing.T) {
 	state.SelectedMailboxID = mailboxID
 	state.SelectedFolder = "INBOX"
 	userDB := GetUserDBByID(t, database, state.UserID)
-
 
 	// Insert test messages
 	msg1ID := InsertTestMail(t, database, "testuser", "Message 1", "sender@example.com", "testuser@localhost", "INBOX")
@@ -317,7 +313,7 @@ func TestCloseCommand_TagHandling(t *testing.T) {
 			}
 			state.SelectedMailboxID = mailboxID
 			state.SelectedFolder = "INBOX"
-	_ = GetUserDBByID(t, database, state.UserID)
+			_ = GetUserDBByID(t, database, state.UserID)
 
 			srv.HandleClose(conn, tc.tag, state)
 

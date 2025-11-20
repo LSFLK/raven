@@ -163,7 +163,7 @@ func GetUserMailboxesPerUser(db *sql.DB, userID int64) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var mailboxes []string
 	for rows.Next() {
@@ -222,7 +222,7 @@ func DeleteMailboxPerUser(db *sql.DB, userID int64, mailboxName string) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Delete message_mailbox entries
 	_, err = tx.Exec("DELETE FROM message_mailbox WHERE mailbox_id = ?", mailboxID)
@@ -288,7 +288,7 @@ func RenameMailboxPerUser(db *sql.DB, userID int64, oldName, newName string) err
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Rename the mailbox
 	_, err = tx.Exec("UPDATE mailboxes SET name = ? WHERE id = ?", newName, mailboxID)
@@ -302,7 +302,7 @@ func RenameMailboxPerUser(db *sql.DB, userID int64, oldName, newName string) err
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	type mailboxUpdate struct {
 		id      int64
@@ -319,7 +319,7 @@ func RenameMailboxPerUser(db *sql.DB, userID int64, oldName, newName string) err
 		newChildName := newName + childName[len(oldName):]
 		updates = append(updates, mailboxUpdate{id: id, newName: newChildName})
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	// Apply all updates
 	for _, update := range updates {
@@ -389,7 +389,7 @@ func GetMessagesByMailboxPerUser(db *sql.DB, mailboxID int64) ([]int64, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var messageIDs []int64
 	for rows.Next() {
@@ -479,7 +479,7 @@ func GetUserSubscriptionsPerUser(db *sql.DB, userID int64) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var subscriptions []string
 	for rows.Next() {
@@ -533,7 +533,7 @@ func GetPendingOutboundMessagesPerUser(db *sql.DB, limit int) ([]map[string]inte
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var messages []map[string]interface{}
 	for rows.Next() {

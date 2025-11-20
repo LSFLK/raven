@@ -33,7 +33,7 @@ func (s *IMAPServer) SetTLSCertificates(certPath, keyPath string) {
 }
 
 func (s *IMAPServer) HandleConnection(conn net.Conn) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	state := &models.ClientState{
 		Authenticated: false,

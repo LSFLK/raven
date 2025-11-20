@@ -93,7 +93,7 @@ func HandleSearch(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Search failed: %v", tag, err))
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	// Build list of messages with metadata
 	var messages []messageInfo
@@ -960,7 +960,7 @@ func HandleCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, stat
 		deps.SendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
 		return
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Get the next UID for destination mailbox
 	var nextUID int64
@@ -1089,7 +1089,7 @@ func HandleAppendWithReader(deps ServerDeps, reader io.Reader, conn net.Conn, ta
 	}
 
 	var messageSize int
-	fmt.Sscanf(sizeStr, "%d", &messageSize)
+	_, _ = fmt.Sscanf(sizeStr, "%d", &messageSize)
 
 	if messageSize <= 0 || messageSize > 50*1024*1024 { // Max 50MB
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Message size invalid or too large", tag))
@@ -1105,7 +1105,7 @@ func HandleAppendWithReader(deps ServerDeps, reader io.Reader, conn net.Conn, ta
 	// Read the message data using io.ReadFull from the buffered reader
 	messageData := make([]byte, messageSize)
 
-	conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
 	log.Printf("APPEND expecting %d bytes literal", messageSize)
 
 	n, err := io.ReadFull(reader, messageData)
@@ -1121,12 +1121,12 @@ func HandleAppendWithReader(deps ServerDeps, reader io.Reader, conn net.Conn, ta
 	// RFC 3501: The client sends CRLF after the literal data
 	// Use a short timeout to avoid delays
 	crlfBuf := make([]byte, 2)
-	conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	_ = conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 	n, err = reader.Read(crlfBuf)
 	if err != nil && err != io.EOF {
 		log.Printf("Warning: Failed to read trailing CRLF after literal data: %v", err)
 		// Continue anyway - some clients might not send it
-	} else if n > 0 && !(crlfBuf[0] == '\r' || crlfBuf[0] == '\n') {
+	} else if n > 0 && (crlfBuf[0] != '\r' && crlfBuf[0] != '\n') {
 		log.Printf("Warning: Expected CRLF after literal data, got: %v", crlfBuf[:n])
 		// Continue anyway - be lenient with protocol violations
 	}
@@ -1243,7 +1243,7 @@ func HandleAppend(deps ServerDeps, conn net.Conn, tag string, parts []string, fu
 	}
 
 	var messageSize int
-	fmt.Sscanf(sizeStr, "%d", &messageSize)
+	_, _ = fmt.Sscanf(sizeStr, "%d", &messageSize)
 
 	if messageSize <= 0 || messageSize > 50*1024*1024 { // Max 50MB
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Message size invalid or too large", tag))
@@ -1259,7 +1259,7 @@ func HandleAppend(deps ServerDeps, conn net.Conn, tag string, parts []string, fu
 	// Read the message data using io.ReadFull to ensure we read exactly messageSize bytes
 	messageData := make([]byte, messageSize)
 
-	conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
 	log.Printf("APPEND expecting %d bytes literal", messageSize)
 
 	n, err := io.ReadFull(conn, messageData)
@@ -1275,12 +1275,12 @@ func HandleAppend(deps ServerDeps, conn net.Conn, tag string, parts []string, fu
 	// RFC 3501: The client sends CRLF after the literal data
 	// Use a short timeout to avoid delays
 	crlfBuf := make([]byte, 2)
-	conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	_ = conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 	n, err = conn.Read(crlfBuf)
 	if err != nil {
 		log.Printf("Warning: Failed to read trailing CRLF after literal data: %v", err)
 		// Continue anyway - some clients might not send it
-	} else if n > 0 && !(crlfBuf[0] == '\r' || crlfBuf[0] == '\n') {
+	} else if n > 0 && (crlfBuf[0] != '\r' && crlfBuf[0] != '\n') {
 		log.Printf("Warning: Expected CRLF after literal data, got: %v", crlfBuf[:n])
 		// Continue anyway - be lenient with protocol violations
 	}
@@ -1382,7 +1382,7 @@ func HandleExpunge(deps ServerDeps, conn net.Conn, tag string, state *models.Cli
 		deps.SendResponse(conn, fmt.Sprintf("%s NO EXPUNGE failed: %v", tag, err))
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	// Collect messages to delete with their UIDs
 	type messageToDelete struct {
@@ -1396,7 +1396,7 @@ func HandleExpunge(deps ServerDeps, conn net.Conn, tag string, state *models.Cli
 			messagesToDelete = append(messagesToDelete, msg)
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	// If no messages to delete, just return OK
 	if len(messagesToDelete) == 0 {
@@ -1415,7 +1415,7 @@ func HandleExpunge(deps ServerDeps, conn net.Conn, tag string, state *models.Cli
 		deps.SendResponse(conn, fmt.Sprintf("%s NO EXPUNGE failed: %v", tag, err))
 		return
 	}
-	defer allRows.Close()
+	defer func() { _ = allRows.Close() }()
 
 	// Build a map of message IDs to sequence numbers
 	sequenceMap := make(map[int64]int)
@@ -1427,7 +1427,7 @@ func HandleExpunge(deps ServerDeps, conn net.Conn, tag string, state *models.Cli
 			seqNum++
 		}
 	}
-	allRows.Close()
+	_ = allRows.Close()
 
 	// Delete messages and send EXPUNGE responses
 	// Important: As we delete messages, sequence numbers change for subsequent messages
@@ -1445,7 +1445,7 @@ func HandleExpunge(deps ServerDeps, conn net.Conn, tag string, state *models.Cli
 		deps.SendResponse(conn, fmt.Sprintf("* %d EXPUNGE", adjustedSeqNum))
 
 		// Delete the message from the mailbox
-		userDB.Exec(`DELETE FROM message_mailbox WHERE id = ?`, msg.id)
+		_, _ = userDB.Exec(`DELETE FROM message_mailbox WHERE id = ?`, msg.id)
 
 		deletedCount++
 	}

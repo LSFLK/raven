@@ -1,5 +1,4 @@
 //go:build test
-// +build test
 
 package message
 
@@ -10,7 +9,6 @@ import (
 	"time"
 
 	"raven/internal/models"
-	
 )
 
 // TestSearchCommand_Unauthenticated tests SEARCH without authentication

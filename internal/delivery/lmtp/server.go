@@ -63,7 +63,7 @@ func (s *Server) Start() error {
 // startUnixListener starts listening on a UNIX socket
 func (s *Server) startUnixListener() error {
 	// Remove existing socket file if it exists
-	os.Remove(s.config.LMTP.UnixSocket)
+	_ = os.Remove(s.config.LMTP.UnixSocket)
 
 	listener, err := net.Listen("unix", s.config.LMTP.UnixSocket)
 	if err != nil {
@@ -139,7 +139,7 @@ func (s *Server) acceptConnections(listener net.Listener, listenerType string) {
 // handleConnection handles a single LMTP connection
 func (s *Server) handleConnection(conn net.Conn) {
 	defer s.wg.Done()
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Configure TCP options for better connection stability
 	if tcpConn, ok := conn.(*net.TCPConn); ok {
@@ -188,7 +188,7 @@ func (s *Server) Shutdown() error {
 		}
 		// Clean up socket file
 		if s.config.LMTP.UnixSocket != "" {
-			os.Remove(s.config.LMTP.UnixSocket)
+			_ = os.Remove(s.config.LMTP.UnixSocket)
 		}
 	}
 

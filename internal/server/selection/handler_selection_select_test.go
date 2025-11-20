@@ -1,5 +1,4 @@
 //go:build test
-// +build test
 
 package selection
 
@@ -9,7 +8,6 @@ import (
 	"testing"
 
 	"raven/internal/models"
-
 )
 
 // TestSelectCommand_BasicFlow tests the basic SELECT command with an existing mailbox
@@ -26,7 +24,7 @@ func TestSelectCommand_BasicFlow(t *testing.T) {
 	CreateTestUserTable(t, database, "testuser")
 	InsertTestMail(t, database, "testuser", "Test Subject 1", "sender1@example.com", "recipient@example.com", "INBOX")
 	InsertTestMail(t, database, "testuser", "Test Subject 2", "sender2@example.com", "recipient@example.com", "INBOX")
-	
+
 	s = TestServerWithDB(database)
 
 	// Execute SELECT command
@@ -77,7 +75,7 @@ func TestSelectCommand_WithUnseenMessages(t *testing.T) {
 	messageID1 := InsertTestMail(t, database, "testuser", "Seen Message", "sender@example.com", "recipient@example.com", "INBOX")
 	InsertTestMail(t, database, "testuser", "First Unseen", "sender@example.com", "recipient@example.com", "INBOX")
 	InsertTestMail(t, database, "testuser", "Second Unseen", "sender@example.com", "recipient@example.com", "INBOX")
-	
+
 	// Set first message as seen using helper
 	UpdateMessageFlags(t, database, "testuser", messageID1, "\\Seen")
 
@@ -262,7 +260,7 @@ func TestSelectCommand_StateTracking(t *testing.T) {
 	messageID1 := InsertTestMail(t, database, "testuser", "Seen Msg", "sender@example.com", "recipient@example.com", "INBOX")
 	InsertTestMail(t, database, "testuser", "Unseen Msg 1", "sender@example.com", "recipient@example.com", "INBOX")
 	InsertTestMail(t, database, "testuser", "Unseen Msg 2", "sender@example.com", "recipient@example.com", "INBOX")
-	
+
 	// Set first message as seen using helper
 	UpdateMessageFlags(t, database, "testuser", messageID1, "\\Seen")
 
@@ -398,7 +396,7 @@ func TestSelectCommand_AllMessagesSeen(t *testing.T) {
 	// Insert only seen messages
 	messageID1 := InsertTestMail(t, database, "testuser", "Seen 1", "sender@example.com", "recipient@example.com", "INBOX")
 	messageID2 := InsertTestMail(t, database, "testuser", "Seen 2", "sender@example.com", "recipient@example.com", "INBOX")
-	
+
 	// Set both messages as seen using helper
 	UpdateMessageFlags(t, database, "testuser", messageID1, "\\Seen")
 	UpdateMessageFlags(t, database, "testuser", messageID2, "\\Seen")

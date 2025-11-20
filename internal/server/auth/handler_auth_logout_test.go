@@ -1,5 +1,4 @@
 //go:build test
-// +build test
 
 package auth_test
 
@@ -150,8 +149,8 @@ func TestLogoutCommand_MultipleSequentialLogouts(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 
 	testCases := []struct {
-		tag          string
-		expectedOK   string
+		tag        string
+		expectedOK string
 	}{
 		{"L001", "L001 OK LOGOUT completed"},
 		{"L002", "L002 OK LOGOUT completed"},
