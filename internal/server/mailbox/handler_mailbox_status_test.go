@@ -1,5 +1,4 @@
 //go:build test
-// +build test
 
 package mailbox_test
 
@@ -99,10 +98,10 @@ func TestStatusCommand_MessagesItem(t *testing.T) {
 	database := CreateTestDB(t)
 	defer database.Close()
 	CreateTestUser(t, database, "testuser")
-	
+
 	// Create server with the database
 	srv := TestServerWithDB(database)
-	
+
 	conn := NewMockConn()
 	state := SetupAuthenticatedState(t, srv, "testuser")
 

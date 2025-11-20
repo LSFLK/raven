@@ -151,7 +151,7 @@ func HandleIdle(deps ServerDeps, conn net.Conn, tag string, state *models.Client
 		prevUnseen = unseen
 
 		// Check if client sent DONE (non-blocking read)
-		conn.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
+		_ = conn.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
 		n, err := conn.Read(buf)
 		if err == nil && strings.TrimSpace(strings.ToUpper(string(buf[:n]))) == "DONE" {
 			deps.SendResponse(conn, fmt.Sprintf("%s OK IDLE terminated", tag))

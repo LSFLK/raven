@@ -151,7 +151,7 @@ func HandleFetch(deps ServerDeps, conn net.Conn, tag string, parts []string, sta
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	seqNum := 1
 	if useRange {
@@ -472,7 +472,7 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 			endIdx := strings.Index(itemsUpper, ">")
 			if startIdx != -1 && endIdx > startIdx {
 				partialSpec := itemsUpper[startIdx+1:endIdx]
-				fmt.Sscanf(partialSpec, "%d.%d", &partialStart, &partialLength)
+				_, _ = fmt.Sscanf(partialSpec, "%d.%d", &partialStart, &partialLength)
 				if partialStart < len(body) {
 					endPos := partialStart + partialLength
 					if endPos > len(body) {
@@ -569,12 +569,9 @@ func buildMIMEHeadersForPart(part map[string]interface{}) string {
 	} else {
 		b.WriteString(fmt.Sprintf("Content-Type: %s\r\n", contentType))
 	}
-	if filename, ok := part["filename"].(string); ok && strings.TrimSpace(filename) != "" {
-		// Include name parameter consistent with reconstruction
-		// Append to last Content-Type header line (simpler: add separate header accepted by clients)
-		// Many clients accept name= on Content-Type or only in Content-Disposition; include both when present
-		// Here we include in Content-Disposition below; name on Content-Type already done during full reconstruction
-	}
+	// Note: filename handling is done in Content-Disposition below
+	// Many clients accept name= on Content-Type or only in Content-Disposition
+	_ = part["filename"] // checked but handled elsewhere
 	if encoding, ok := part["content_transfer_encoding"].(string); ok && strings.TrimSpace(encoding) != "" {
 		b.WriteString(fmt.Sprintf("Content-Transfer-Encoding: %s\r\n", encoding))
 	}

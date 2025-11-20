@@ -189,7 +189,7 @@ func HandleLsub(deps ServerDeps, conn net.Conn, tag string, parts []string, stat
 	if len(subscriptions) == 0 {
 		defaultMailboxes := []string{"INBOX", "Sent", "Drafts", "Trash"}
 		for _, mailbox := range defaultMailboxes {
-			db.SubscribeToMailboxPerUser(userDB, state.UserID, mailbox)
+			_ = db.SubscribeToMailboxPerUser(userDB, state.UserID, mailbox)
 		}
 		subscriptions = defaultMailboxes
 	}
@@ -326,9 +326,7 @@ func HandleCreate(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 
 	// Remove trailing hierarchy separator if present
 	// According to RFC 3501, the name created is without the trailing hierarchy delimiter
-	if strings.HasSuffix(mailboxName, "/") {
-		mailboxName = strings.TrimSuffix(mailboxName, "/")
-	}
+	mailboxName = strings.TrimSuffix(mailboxName, "/")
 
 	// Validate mailbox name
 	if mailboxName == "" {
@@ -383,7 +381,7 @@ func HandleCreate(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 			intermediateExists, checkErr := db.MailboxExistsPerUser(userDB, state.UserID, currentPath)
 			if checkErr == nil && !intermediateExists {
 				// Create intermediate mailbox - ignore errors as per RFC 3501
-				db.CreateMailboxPerUser(userDB, state.UserID, currentPath, "")
+				_, _ = db.CreateMailboxPerUser(userDB, state.UserID, currentPath, "")
 			}
 		}
 	}

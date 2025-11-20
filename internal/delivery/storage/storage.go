@@ -124,13 +124,6 @@ func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder s
 	return nil
 }
 
-// ensureDefaultMailboxes creates default mailboxes if they don't exist
-// Note: This is now handled automatically when creating a new user database
-func (s *Storage) ensureDefaultMailboxes(userID int64) {
-	// Default mailboxes are created automatically by DBManager.GetUserDB()
-	// when initializing a new user database, so this is now a no-op
-}
-
 // DeliverToMultipleRecipients delivers a message to multiple recipients
 func (s *Storage) DeliverToMultipleRecipients(recipients []string, msg *parser.Message, folder string) map[string]error {
 	results := make(map[string]error)

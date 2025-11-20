@@ -1,5 +1,4 @@
 //go:build test
-// +build test
 
 package message
 
@@ -9,7 +8,6 @@ import (
 	"testing"
 
 	"raven/internal/models"
-	
 )
 
 // TestCopyCommand_Unauthenticated tests COPY command without authentication

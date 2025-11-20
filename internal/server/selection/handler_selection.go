@@ -224,7 +224,7 @@ func HandleClose(deps ServerDeps, conn net.Conn, tag string, state *models.Clien
 	`, state.SelectedMailboxID)
 
 	if err == nil {
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 
 		// Collect all message_mailbox IDs to delete
 		var idsToDelete []int64
@@ -238,7 +238,7 @@ func HandleClose(deps ServerDeps, conn net.Conn, tag string, state *models.Clien
 		// Delete the messages from message_mailbox table
 		// This removes them from the mailbox but keeps the message data
 		for _, id := range idsToDelete {
-			userDB.Exec(`DELETE FROM message_mailbox WHERE id = ?`, id)
+			_, _ = userDB.Exec(`DELETE FROM message_mailbox WHERE id = ?`, id)
 		}
 	}
 

@@ -133,7 +133,7 @@ func handleUIDSearch(deps ServerDeps, conn net.Conn, tag string, parts []string,
 		deps.SendResponse(conn, fmt.Sprintf("%s NO UID SEARCH failed: %v", tag, err))
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	// Build message info structures
 	type uidMessageInfo struct {
@@ -334,7 +334,7 @@ func handleUIDCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, s
 		deps.SendResponse(conn, fmt.Sprintf("%s NO UID COPY failed: %v", tag, err))
 		return
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Get next UID for destination mailbox
 	var nextUID int64

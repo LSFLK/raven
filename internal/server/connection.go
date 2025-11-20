@@ -27,7 +27,7 @@ func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 	reader := bufio.NewReader(conn)
 
 	for {
-		conn.SetReadDeadline(time.Now().Add(30 * time.Minute))
+		_ = conn.SetReadDeadline(time.Now().Add(30 * time.Minute))
 
 		// Read one line at a time (until CRLF or LF)
 		line, err := reader.ReadString('\n')
@@ -131,7 +131,7 @@ func (s *IMAPServer) sendResponse(conn net.Conn, response string) {
 	// Sanitize response for logging to avoid printing large message bodies
 	logResponse := s.sanitizeResponseForLogging(response)
 	fmt.Printf("Server: %s\n", logResponse)
-	conn.Write([]byte(response + "\r\n"))
+	_, _ = conn.Write([]byte(response + "\r\n"))
 }
 
 // sanitizeResponseForLogging removes or masks large message bodies from responses

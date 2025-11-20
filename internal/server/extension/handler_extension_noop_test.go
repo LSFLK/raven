@@ -1,5 +1,4 @@
 //go:build test
-// +build test
 
 package extension
 
@@ -8,7 +7,6 @@ import (
 	"testing"
 
 	"raven/internal/models"
-
 )
 
 // TestNoopCommand_Unauthenticated tests NOOP before authentication
@@ -138,7 +136,7 @@ func TestNoopCommand_AlwaysSucceeds(t *testing.T) {
 			srv.HandleNoop(conn, tc.tag, tc.state)
 
 			response := conn.GetWrittenData()
-			
+
 			// Should always end with OK
 			if !strings.Contains(response, " OK NOOP completed") {
 				t.Errorf("NOOP should always succeed, got: %s", response)
@@ -162,14 +160,14 @@ func TestNoopCommand_ResponseFormat(t *testing.T) {
 	srv.HandleNoop(conn, "FORMAT", state)
 
 	response := conn.GetWrittenData()
-	
+
 	// Check that response ends with CRLF
 	if !strings.HasSuffix(response, "\r\n") {
 		t.Errorf("Response should end with CRLF")
 	}
 
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
-	
+
 	// Last line should be tagged completion
 	lastLine := lines[len(lines)-1]
 	if !strings.HasPrefix(lastLine, "FORMAT OK NOOP completed") {
@@ -189,7 +187,7 @@ func TestNoopCommand_MultipleInvocations(t *testing.T) {
 	srv.HandleNoop(conn, "M003", state)
 
 	response := conn.GetWrittenData()
-	
+
 	// Should have all three completions
 	if !strings.Contains(response, "M001 OK NOOP completed") {
 		t.Error("Missing M001 completion")
@@ -206,11 +204,11 @@ func TestNoopCommand_MultipleInvocations(t *testing.T) {
 func TestNoopCommand_StateTracking(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
-	
+
 	// Start with initial state
 	initialCount := 5
 	initialRecent := 2
-	
+
 	state := &models.ClientState{
 		Authenticated:    true,
 		Username:         "testuser",
@@ -224,7 +222,7 @@ func TestNoopCommand_StateTracking(t *testing.T) {
 	// After NOOP, state should be updated with current mailbox state
 	// In this test, we expect state to be updated even if values haven't changed
 	// (The actual values depend on database state)
-	
+
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "TRACK OK NOOP completed") {
 		t.Errorf("Expected NOOP completion, got: %s", response)
@@ -255,7 +253,7 @@ func TestNoopCommand_TagHandling(t *testing.T) {
 
 			response := conn.GetWrittenData()
 			expectedOK := tc.expectedTag + " OK NOOP completed"
-			
+
 			if !strings.Contains(response, expectedOK) {
 				t.Errorf("Expected '%s' in response, got: %s", expectedOK, response)
 			}
@@ -266,7 +264,7 @@ func TestNoopCommand_TagHandling(t *testing.T) {
 // TestNoopCommand_ConcurrentAccess tests concurrent NOOP requests
 func TestNoopCommand_ConcurrentAccess(t *testing.T) {
 	srv := SetupTestServerSimple(t)
-	
+
 	const numRequests = 20
 	done := make(chan bool, numRequests)
 
@@ -279,7 +277,7 @@ func TestNoopCommand_ConcurrentAccess(t *testing.T) {
 				Username:      "user",
 			}
 			srv.HandleNoop(conn, "CONCURRENT", state)
-			
+
 			response := conn.GetWrittenData()
 			if !strings.Contains(response, "CONCURRENT OK NOOP completed") {
 				t.Errorf("Request %d failed: %s", index, response)

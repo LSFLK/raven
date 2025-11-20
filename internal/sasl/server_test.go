@@ -22,7 +22,7 @@ func getSocketPath(t *testing.T) string {
 	// Use /tmp/ with a short random suffix to stay well under the 104 character limit
 	socketPath := fmt.Sprintf("/tmp/sasl-%d.sock", rand.Int63())
 	t.Cleanup(func() {
-		os.Remove(socketPath)
+		_ = os.Remove(socketPath)
 	})
 	return socketPath
 }
@@ -97,7 +97,7 @@ func TestServerShutdownIdempotent(t *testing.T) {
 	server := sasl.NewServer(socketPath, "https://example.com/auth", "example.com")
 
 	// Start server in goroutine
-	go server.Start()
+	go func() { _ = server.Start() }()
 	time.Sleep(100 * time.Millisecond)
 
 	// Call shutdown multiple times
@@ -128,8 +128,8 @@ func TestVersionHandshake(t *testing.T) {
 	server := sasl.NewServer(socketPath, authServer.URL, "example.com")
 
 	// Start server
-	go server.Start()
-	defer server.Shutdown()
+	go func() { _ = server.Start() }()
+	defer func() { _ = server.Shutdown() }()
 	time.Sleep(100 * time.Millisecond)
 
 	// Connect to the socket
@@ -137,10 +137,10 @@ func TestVersionHandshake(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to socket: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Send VERSION command
-	fmt.Fprintf(conn, "VERSION\t1\t2\n")
+	_, _ = fmt.Fprintf(conn, "VERSION\t1\t2\n")
 
 	// Read response
 	reader := bufio.NewReader(conn)
@@ -168,8 +168,8 @@ func TestCPIDCommand(t *testing.T) {
 	server := sasl.NewServer(socketPath, authServer.URL, "example.com")
 
 	// Start server
-	go server.Start()
-	defer server.Shutdown()
+	go func() { _ = server.Start() }()
+	defer func() { _ = server.Shutdown() }()
 	time.Sleep(100 * time.Millisecond)
 
 	// Connect to the socket
@@ -177,10 +177,10 @@ func TestCPIDCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to socket: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Send CPID command
-	fmt.Fprintf(conn, "CPID\t12345\n")
+	_, _ = fmt.Fprintf(conn, "CPID\t12345\n")
 
 	// Read all responses - server sends MECH lines followed by DONE
 	reader := bufio.NewReader(conn)
@@ -235,7 +235,7 @@ func TestPlainAuthenticationSuccess(t *testing.T) {
 	go func() {
 		errChan <- server.Start()
 	}()
-	defer server.Shutdown()
+	defer func() { _ = server.Shutdown() }()
 
 	// Wait for socket to be created
 	for i := 0; i < 20; i++ {
@@ -250,14 +250,14 @@ func TestPlainAuthenticationSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to socket: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Create credentials: \x00username\x00password
 	credentials := "\x00testuser\x00testpass"
 	encodedCreds := base64.StdEncoding.EncodeToString([]byte(credentials))
 
 	// Send AUTH command with PLAIN mechanism
-	fmt.Fprintf(conn, "AUTH\t1\tPLAIN\tservice=smtp\tresp=%s\n", encodedCreds)
+	_, _ = fmt.Fprintf(conn, "AUTH\t1\tPLAIN\tservice=smtp\tresp=%s\n", encodedCreds)
 
 	// Read response
 	reader := bufio.NewReader(conn)
@@ -300,8 +300,8 @@ func TestPlainAuthenticationWithDomain(t *testing.T) {
 	server := sasl.NewServer(socketPath, authServer.URL, "example.com")
 
 	// Start server
-	go server.Start()
-	defer server.Shutdown()
+	go func() { _ = server.Start() }()
+	defer func() { _ = server.Shutdown() }()
 	time.Sleep(100 * time.Millisecond)
 
 	// Connect to the socket
@@ -309,14 +309,14 @@ func TestPlainAuthenticationWithDomain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to socket: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Create credentials with username (no domain)
 	credentials := "\x00testuser\x00testpass"
 	encodedCreds := base64.StdEncoding.EncodeToString([]byte(credentials))
 
 	// Send AUTH command
-	fmt.Fprintf(conn, "AUTH\t1\tPLAIN\tservice=smtp\tresp=%s\n", encodedCreds)
+	_, _ = fmt.Fprintf(conn, "AUTH\t1\tPLAIN\tservice=smtp\tresp=%s\n", encodedCreds)
 
 	// Read response
 	reader := bufio.NewReader(conn)
@@ -347,8 +347,8 @@ func TestPlainAuthenticationFailure(t *testing.T) {
 	server := sasl.NewServer(socketPath, authServer.URL, "example.com")
 
 	// Start server
-	go server.Start()
-	defer server.Shutdown()
+	go func() { _ = server.Start() }()
+	defer func() { _ = server.Shutdown() }()
 	time.Sleep(100 * time.Millisecond)
 
 	// Connect to the socket
@@ -356,14 +356,14 @@ func TestPlainAuthenticationFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to socket: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Create credentials
 	credentials := "\x00wronguser\x00wrongpass"
 	encodedCreds := base64.StdEncoding.EncodeToString([]byte(credentials))
 
 	// Send AUTH command
-	fmt.Fprintf(conn, "AUTH\t1\tPLAIN\tservice=smtp\tresp=%s\n", encodedCreds)
+	_, _ = fmt.Fprintf(conn, "AUTH\t1\tPLAIN\tservice=smtp\tresp=%s\n", encodedCreds)
 
 	// Read response
 	reader := bufio.NewReader(conn)
@@ -394,8 +394,8 @@ func TestPlainAuthenticationWithAuthzid(t *testing.T) {
 	server := sasl.NewServer(socketPath, authServer.URL, "example.com")
 
 	// Start server
-	go server.Start()
-	defer server.Shutdown()
+	go func() { _ = server.Start() }()
+	defer func() { _ = server.Shutdown() }()
 	time.Sleep(100 * time.Millisecond)
 
 	// Connect to the socket
@@ -403,14 +403,14 @@ func TestPlainAuthenticationWithAuthzid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to socket: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Create credentials with authzid: authzid\x00authcid\x00password
 	credentials := "admin\x00testuser\x00testpass"
 	encodedCreds := base64.StdEncoding.EncodeToString([]byte(credentials))
 
 	// Send AUTH command
-	fmt.Fprintf(conn, "AUTH\t1\tPLAIN\tservice=smtp\tresp=%s\n", encodedCreds)
+	_, _ = fmt.Fprintf(conn, "AUTH\t1\tPLAIN\tservice=smtp\tresp=%s\n", encodedCreds)
 
 	// Read response
 	reader := bufio.NewReader(conn)
@@ -441,8 +441,8 @@ func TestPlainAuthenticationInvalidBase64(t *testing.T) {
 	server := sasl.NewServer(socketPath, authServer.URL, "example.com")
 
 	// Start server
-	go server.Start()
-	defer server.Shutdown()
+	go func() { _ = server.Start() }()
+	defer func() { _ = server.Shutdown() }()
 	time.Sleep(100 * time.Millisecond)
 
 	// Connect to the socket
@@ -450,10 +450,10 @@ func TestPlainAuthenticationInvalidBase64(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to socket: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Send AUTH command with invalid base64
-	fmt.Fprintf(conn, "AUTH\t1\tPLAIN\tservice=smtp\tresp=!!!invalid-base64!!!\n")
+	_, _ = fmt.Fprintf(conn, "AUTH\t1\tPLAIN\tservice=smtp\tresp=!!!invalid-base64!!!\n")
 
 	// Read response
 	reader := bufio.NewReader(conn)
@@ -484,8 +484,8 @@ func TestPlainAuthenticationMalformedCredentials(t *testing.T) {
 	server := sasl.NewServer(socketPath, authServer.URL, "example.com")
 
 	// Start server
-	go server.Start()
-	defer server.Shutdown()
+	go func() { _ = server.Start() }()
+	defer func() { _ = server.Shutdown() }()
 	time.Sleep(100 * time.Millisecond)
 
 	testCases := []struct {
@@ -517,13 +517,13 @@ func TestPlainAuthenticationMalformedCredentials(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to connect to socket: %v", err)
 			}
-			defer conn.Close()
+			defer func() { _ = conn.Close() }()
 
 			// Encode malformed credentials
 			encodedCreds := base64.StdEncoding.EncodeToString([]byte(tc.credentials))
 
 			// Send AUTH command
-			fmt.Fprintf(conn, "AUTH\t1\tPLAIN\tservice=smtp\tresp=%s\n", encodedCreds)
+			_, _ = fmt.Fprintf(conn, "AUTH\t1\tPLAIN\tservice=smtp\tresp=%s\n", encodedCreds)
 
 			// Read response
 			reader := bufio.NewReader(conn)
@@ -552,8 +552,8 @@ func TestPlainAuthenticationContinuationRequest(t *testing.T) {
 	server := sasl.NewServer(socketPath, authServer.URL, "example.com")
 
 	// Start server
-	go server.Start()
-	defer server.Shutdown()
+	go func() { _ = server.Start() }()
+	defer func() { _ = server.Shutdown() }()
 	time.Sleep(100 * time.Millisecond)
 
 	// Connect to the socket
@@ -561,10 +561,10 @@ func TestPlainAuthenticationContinuationRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to socket: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Send AUTH command without response
-	fmt.Fprintf(conn, "AUTH\t1\tPLAIN\tservice=smtp\n")
+	_, _ = fmt.Fprintf(conn, "AUTH\t1\tPLAIN\tservice=smtp\n")
 
 	// Read response
 	reader := bufio.NewReader(conn)
@@ -592,8 +592,8 @@ func TestLoginMechanism(t *testing.T) {
 	server := sasl.NewServer(socketPath, authServer.URL, "example.com")
 
 	// Start server
-	go server.Start()
-	defer server.Shutdown()
+	go func() { _ = server.Start() }()
+	defer func() { _ = server.Shutdown() }()
 	time.Sleep(100 * time.Millisecond)
 
 	// Connect to the socket
@@ -601,10 +601,10 @@ func TestLoginMechanism(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to socket: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Send AUTH command with LOGIN mechanism
-	fmt.Fprintf(conn, "AUTH\t1\tLOGIN\tservice=smtp\n")
+	_, _ = fmt.Fprintf(conn, "AUTH\t1\tLOGIN\tservice=smtp\n")
 
 	// Read response
 	reader := bufio.NewReader(conn)
@@ -632,8 +632,8 @@ func TestUnsupportedMechanism(t *testing.T) {
 	server := sasl.NewServer(socketPath, authServer.URL, "example.com")
 
 	// Start server
-	go server.Start()
-	defer server.Shutdown()
+	go func() { _ = server.Start() }()
+	defer func() { _ = server.Shutdown() }()
 	time.Sleep(100 * time.Millisecond)
 
 	mechanisms := []string{"CRAM-MD5", "DIGEST-MD5", "GSSAPI", "NTLM"}
@@ -645,10 +645,10 @@ func TestUnsupportedMechanism(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to connect to socket: %v", err)
 			}
-			defer conn.Close()
+			defer func() { _ = conn.Close() }()
 
 			// Send AUTH command with unsupported mechanism
-			fmt.Fprintf(conn, "AUTH\t1\t%s\tservice=smtp\n", mechanism)
+			_, _ = fmt.Fprintf(conn,"AUTH\t1\t%s\tservice=smtp\n", mechanism)
 
 			// Read response
 			reader := bufio.NewReader(conn)
@@ -681,8 +681,8 @@ func TestAuthMechanismCaseInsensitive(t *testing.T) {
 	server := sasl.NewServer(socketPath, authServer.URL, "example.com")
 
 	// Start server
-	go server.Start()
-	defer server.Shutdown()
+	go func() { _ = server.Start() }()
+	defer func() { _ = server.Shutdown() }()
 	time.Sleep(100 * time.Millisecond)
 
 	mechanisms := []string{"PLAIN", "Plain", "plain", "pLaIn"}
@@ -694,10 +694,10 @@ func TestAuthMechanismCaseInsensitive(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to connect to socket: %v", err)
 			}
-			defer conn.Close()
+			defer func() { _ = conn.Close() }()
 
 			// Send AUTH command
-			fmt.Fprintf(conn, "AUTH\t1\t%s\tservice=smtp\n", mechanism)
+			_, _ = fmt.Fprintf(conn,"AUTH\t1\t%s\tservice=smtp\n", mechanism)
 
 			// Read response
 			reader := bufio.NewReader(conn)
@@ -726,8 +726,8 @@ func TestInvalidAuthCommand(t *testing.T) {
 	server := sasl.NewServer(socketPath, authServer.URL, "example.com")
 
 	// Start server
-	go server.Start()
-	defer server.Shutdown()
+	go func() { _ = server.Start() }()
+	defer func() { _ = server.Shutdown() }()
 	time.Sleep(100 * time.Millisecond)
 
 	// Connect to the socket
@@ -735,10 +735,10 @@ func TestInvalidAuthCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to socket: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Send AUTH command with missing mechanism
-	fmt.Fprintf(conn, "AUTH\t1\n")
+	_, _ = fmt.Fprintf(conn, "AUTH\t1\n")
 
 	// Read response - server should handle gracefully (might not respond or log error)
 	// The current implementation doesn't send a response for invalid formats
@@ -765,8 +765,8 @@ func TestConcurrentConnections(t *testing.T) {
 	server := sasl.NewServer(socketPath, authServer.URL, "example.com")
 
 	// Start server
-	go server.Start()
-	defer server.Shutdown()
+	go func() { _ = server.Start() }()
+	defer func() { _ = server.Shutdown() }()
 	time.Sleep(100 * time.Millisecond)
 
 	// Number of concurrent connections
@@ -784,12 +784,12 @@ func TestConcurrentConnections(t *testing.T) {
 				t.Errorf("Connection %d failed: %v", id, err)
 				return
 			}
-			defer conn.Close()
+			defer func() { _ = conn.Close() }()
 
 			// Send authentication request
 			credentials := fmt.Sprintf("\x00user%d\x00pass%d", id, id)
 			encodedCreds := base64.StdEncoding.EncodeToString([]byte(credentials))
-			fmt.Fprintf(conn, "AUTH\t%d\tPLAIN\tservice=smtp\tresp=%s\n", id, encodedCreds)
+			_, _ = fmt.Fprintf(conn,"AUTH\t%d\tPLAIN\tservice=smtp\tresp=%s\n", id, encodedCreds)
 
 			// Read response
 			reader := bufio.NewReader(conn)
@@ -829,8 +829,8 @@ func TestConnectionTimeout(t *testing.T) {
 	server := sasl.NewServer(socketPath, authServer.URL, "example.com")
 
 	// Start server
-	go server.Start()
-	defer server.Shutdown()
+	go func() { _ = server.Start() }()
+	defer func() { _ = server.Shutdown() }()
 	time.Sleep(100 * time.Millisecond)
 
 	// Connect to the socket
@@ -838,7 +838,7 @@ func TestConnectionTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to socket: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Don't send anything and wait for timeout (30 seconds in the implementation)
 	// For testing purposes, we just verify the connection is established
@@ -848,7 +848,7 @@ func TestConnectionTimeout(t *testing.T) {
 	reader := bufio.NewReader(conn)
 
 	// Set a short deadline for testing
-	conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	_ = conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 
 	_, err = reader.ReadString('\n')
 
@@ -884,8 +884,8 @@ func TestAuthenticationAPIError(t *testing.T) {
 			server := sasl.NewServer(socketPath, authServer.URL, "example.com")
 
 			// Start server
-			go server.Start()
-			defer server.Shutdown()
+			go func() { _ = server.Start() }()
+			defer func() { _ = server.Shutdown() }()
 			time.Sleep(100 * time.Millisecond)
 
 			// Connect to the socket
@@ -893,12 +893,12 @@ func TestAuthenticationAPIError(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to connect to socket: %v", err)
 			}
-			defer conn.Close()
+			defer func() { _ = conn.Close() }()
 
 			// Send authentication request
 			credentials := "\x00testuser\x00testpass"
 			encodedCreds := base64.StdEncoding.EncodeToString([]byte(credentials))
-			fmt.Fprintf(conn, "AUTH\t1\tPLAIN\tservice=smtp\tresp=%s\n", encodedCreds)
+			_, _ = fmt.Fprintf(conn,"AUTH\t1\tPLAIN\tservice=smtp\tresp=%s\n", encodedCreds)
 
 			// Read response
 			reader := bufio.NewReader(conn)
@@ -933,8 +933,8 @@ func TestMultipleCommandsInSession(t *testing.T) {
 	server := sasl.NewServer(socketPath, authServer.URL, "example.com")
 
 	// Start server
-	go server.Start()
-	defer server.Shutdown()
+	go func() { _ = server.Start() }()
+	defer func() { _ = server.Shutdown() }()
 	time.Sleep(100 * time.Millisecond)
 
 	// Connect to the socket
@@ -942,19 +942,19 @@ func TestMultipleCommandsInSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to socket: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	reader := bufio.NewReader(conn)
 
 	// Send VERSION
-	fmt.Fprintf(conn, "VERSION\t1\t2\n")
+	_, _ = fmt.Fprintf(conn,"VERSION\t1\t2\n")
 	response, _ := reader.ReadString('\n')
 	if !strings.HasPrefix(response, "VERSION") {
 		t.Errorf("Expected VERSION response, got: %s", response)
 	}
 
 	// Send CPID
-	fmt.Fprintf(conn, "CPID\t12345\n")
+	_, _ = fmt.Fprintf(conn,"CPID\t12345\n")
 	// Read all MECH responses
 	response, _ = reader.ReadString('\n') // First MECH
 	if !strings.HasPrefix(response, "MECH") {
@@ -972,14 +972,14 @@ func TestMultipleCommandsInSession(t *testing.T) {
 	// Send AUTH
 	credentials := "\x00testuser\x00testpass"
 	encodedCreds := base64.StdEncoding.EncodeToString([]byte(credentials))
-	fmt.Fprintf(conn, "AUTH\t1\tPLAIN\tservice=smtp\tresp=%s\n", encodedCreds)
+	_, _ = fmt.Fprintf(conn,"AUTH\t1\tPLAIN\tservice=smtp\tresp=%s\n", encodedCreds)
 	response, _ = reader.ReadString('\n')
 	if !strings.HasPrefix(response, "OK\t1\t") {
 		t.Errorf("Expected OK response, got: %s", response)
 	}
 
 	// Send another AUTH
-	fmt.Fprintf(conn, "AUTH\t2\tPLAIN\tservice=smtp\tresp=%s\n", encodedCreds)
+	_, _ = fmt.Fprintf(conn,"AUTH\t2\tPLAIN\tservice=smtp\tresp=%s\n", encodedCreds)
 	response, _ = reader.ReadString('\n')
 	if !strings.HasPrefix(response, "OK\t2\t") {
 		t.Errorf("Expected OK response with id 2, got: %s", response)
@@ -999,8 +999,8 @@ func BenchmarkPlainAuthentication(b *testing.B) {
 	server := sasl.NewServer(socketPath, authServer.URL, "example.com")
 
 	// Start server
-	go server.Start()
-	defer server.Shutdown()
+	go func() { _ = server.Start() }()
+	defer func() { _ = server.Shutdown() }()
 	time.Sleep(100 * time.Millisecond)
 
 	// Prepare credentials
@@ -1015,12 +1015,12 @@ func BenchmarkPlainAuthentication(b *testing.B) {
 			b.Fatalf("Failed to connect: %v", err)
 		}
 
-		fmt.Fprintf(conn, "AUTH\t%d\tPLAIN\tservice=smtp\tresp=%s\n", i, encodedCreds)
+		_, _ = fmt.Fprintf(conn,"AUTH\t%d\tPLAIN\tservice=smtp\tresp=%s\n", i, encodedCreds)
 
 		reader := bufio.NewReader(conn)
 		_, _ = reader.ReadString('\n')
 
-		conn.Close()
+		_ = conn.Close()
 	}
 }
 

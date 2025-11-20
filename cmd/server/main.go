@@ -24,7 +24,11 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to initialize database manager:", err)
 	}
-	defer dbManager.Close()
+	defer func() {
+		if err := dbManager.Close(); err != nil {
+			log.Printf("Error closing database manager: %v", err)
+		}
+	}()
 
 	log.Printf("Database manager initialized: %s", *dbPath)
 
@@ -36,7 +40,11 @@ func main() {
 		if err != nil {
 			log.Fatal("Failed to start TCP listener:", err)
 		}
-		defer ln.Close()
+		defer func() {
+			if err := ln.Close(); err != nil {
+				log.Printf("Error closing listener: %v", err)
+			}
+		}()
 
 		log.Printf("SQLite IMAP server running on %s", SERVER_IP)
 		log.Println("Configure your email client with:")
@@ -63,7 +71,11 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to start SSL TCP listener:", err)
 	}
-	defer lnSSL.Close()
+	defer func() {
+		if err := lnSSL.Close(); err != nil {
+			log.Printf("Error closing SSL listener: %v", err)
+		}
+	}()
 
 	log.Printf("SQLite IMAPS server running on %s", SERVER_IP_SSL)
 	log.Println("Configure your email client with:")

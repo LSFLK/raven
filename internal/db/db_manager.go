@@ -80,14 +80,14 @@ func (m *DBManager) GetUserDB(userID int64) (*sql.DB, error) {
 
 	// Enable foreign key constraints
 	if _, err = db.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("failed to enable foreign keys: %v", err)
 	}
 
 	// Initialize schema if this is a new database
 	if !exists {
 		if err := m.initUserDB(db, userID); err != nil {
-			db.Close()
+			_ = db.Close()
 			return nil, fmt.Errorf("failed to initialize user database: %v", err)
 		}
 	}
@@ -133,14 +133,14 @@ func (m *DBManager) GetRoleMailboxDB(roleMailboxID int64) (*sql.DB, error) {
 
 	// Enable foreign key constraints
 	if _, err = db.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("failed to enable foreign keys: %v", err)
 	}
 
 	// Initialize schema if this is a new database (use userID 0 for role mailbox)
 	if !exists {
 		if err := m.initUserDB(db, 0); err != nil {
-			db.Close()
+			_ = db.Close()
 			return nil, fmt.Errorf("failed to initialize role mailbox database: %v", err)
 		}
 	}
@@ -162,34 +162,34 @@ func (m *DBManager) initSharedDB() error {
 
 	// Enable foreign key constraints
 	if _, err = db.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		db.Close()
+		_ = db.Close()
 		return err
 	}
 
 	// Create shared tables
 	if err := createDomainsTable(db); err != nil {
-		db.Close()
+		_ = db.Close()
 		return fmt.Errorf("failed to create domains table: %v", err)
 	}
 
 	if err := createUsersTable(db); err != nil {
-		db.Close()
+		_ = db.Close()
 		return fmt.Errorf("failed to create users table: %v", err)
 	}
 
 	if err := createRoleMailboxesTable(db); err != nil {
-		db.Close()
+		_ = db.Close()
 		return fmt.Errorf("failed to create role_mailboxes table: %v", err)
 	}
 
 	if err := createUserRoleAssignmentsTable(db); err != nil {
-		db.Close()
+		_ = db.Close()
 		return fmt.Errorf("failed to create user_role_assignments table: %v", err)
 	}
 
 	// Create indexes for shared tables
 	if err := createSharedIndexes(db); err != nil {
-		db.Close()
+		_ = db.Close()
 		return fmt.Errorf("failed to create shared indexes: %v", err)
 	}
 

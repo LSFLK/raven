@@ -1,5 +1,4 @@
 //go:build test
-// +build test
 
 package message
 
@@ -8,7 +7,6 @@ import (
 	"testing"
 
 	"raven/internal/models"
-	
 )
 
 // TestFetchCommand_Unauthenticated tests FETCH without authentication

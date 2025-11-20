@@ -1,5 +1,4 @@
 //go:build test
-// +build test
 
 package message
 
@@ -8,7 +7,6 @@ import (
 	"testing"
 
 	"raven/internal/models"
-	
 )
 
 // TestCheckCommand_Unauthenticated tests CHECK before authentication
@@ -41,9 +39,9 @@ func TestCheckCommand_AuthenticatedNoMailbox(t *testing.T) {
 	srv := SetupTestServerSimple(t)
 	conn := NewMockConn()
 	state := &models.ClientState{
-		Authenticated:      true,
-		Username:           "testuser",
-		SelectedMailboxID:  0, // No mailbox selected
+		Authenticated:     true,
+		Username:          "testuser",
+		SelectedMailboxID: 0, // No mailbox selected
 	}
 
 	srv.HandleCheck(conn, "C002", state)
@@ -287,12 +285,12 @@ func TestCheckCommand_TagHandling(t *testing.T) {
 
 			state := SetupAuthenticatedState(t, srv, "testuser")
 			database := GetDatabaseFromServer(srv)
-	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
-	if err != nil {
-		t.Fatalf("Failed to get INBOX mailbox: %v", err)
-	}
-	state.SelectedMailboxID = mailboxID
-	state.SelectedFolder = "INBOX"
+			mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
+			if err != nil {
+				t.Fatalf("Failed to get INBOX mailbox: %v", err)
+			}
+			state.SelectedMailboxID = mailboxID
+			state.SelectedFolder = "INBOX"
 
 			srv.HandleCheck(conn, tc.tag, state)
 
@@ -319,12 +317,12 @@ func TestCheckCommand_ConcurrentAccess(t *testing.T) {
 			conn := NewMockConn()
 			state := SetupAuthenticatedState(t, srv, "user")
 			database := GetDatabaseFromServer(srv)
-	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
-	if err != nil {
-		t.Fatalf("Failed to get INBOX mailbox: %v", err)
-	}
-	state.SelectedMailboxID = mailboxID
-	state.SelectedFolder = "INBOX"
+			mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
+			if err != nil {
+				t.Fatalf("Failed to get INBOX mailbox: %v", err)
+			}
+			state.SelectedMailboxID = mailboxID
+			state.SelectedFolder = "INBOX"
 
 			srv.HandleCheck(conn, "CONCURRENT", state)
 
@@ -350,8 +348,8 @@ func TestCheckCommand_RFC3501Compliance(t *testing.T) {
 
 		// Authenticated but no mailbox selected
 		state := &models.ClientState{
-			Authenticated: true,
-			Username:      "testuser",
+			Authenticated:     true,
+			Username:          "testuser",
 			SelectedMailboxID: 0,
 		}
 
@@ -369,12 +367,12 @@ func TestCheckCommand_RFC3501Compliance(t *testing.T) {
 
 		state := SetupAuthenticatedState(t, srv, "testuser")
 		database := GetDatabaseFromServer(srv)
-	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
-	if err != nil {
-		t.Fatalf("Failed to get INBOX mailbox: %v", err)
-	}
-	state.SelectedMailboxID = mailboxID
-	state.SelectedFolder = "INBOX"
+		mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
+		if err != nil {
+			t.Fatalf("Failed to get INBOX mailbox: %v", err)
+		}
+		state.SelectedMailboxID = mailboxID
+		state.SelectedFolder = "INBOX"
 
 		srv.HandleCheck(conn, "RFC2", state)
 
@@ -390,12 +388,12 @@ func TestCheckCommand_RFC3501Compliance(t *testing.T) {
 
 		state := SetupAuthenticatedState(t, srv, "testuser")
 		database := GetDatabaseFromServer(srv)
-	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
-	if err != nil {
-		t.Fatalf("Failed to get INBOX mailbox: %v", err)
-	}
-	state.SelectedMailboxID = mailboxID
-	state.SelectedFolder = "INBOX"
+		mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
+		if err != nil {
+			t.Fatalf("Failed to get INBOX mailbox: %v", err)
+		}
+		state.SelectedMailboxID = mailboxID
+		state.SelectedFolder = "INBOX"
 
 		// Multiple CHECK calls should not generate EXISTS responses
 		for i := 0; i < 3; i++ {
@@ -423,12 +421,12 @@ func TestCheckCommand_RFC3501Compliance(t *testing.T) {
 
 		state := SetupAuthenticatedState(t, srv, "testuser")
 		database := GetDatabaseFromServer(srv)
-	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
-	if err != nil {
-		t.Fatalf("Failed to get INBOX mailbox: %v", err)
-	}
-	state.SelectedMailboxID = mailboxID
-	state.SelectedFolder = "INBOX"
+		mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
+		if err != nil {
+			t.Fatalf("Failed to get INBOX mailbox: %v", err)
+		}
+		state.SelectedMailboxID = mailboxID
+		state.SelectedFolder = "INBOX"
 
 		// Manually set state to inconsistent values
 		state.LastMessageCount = 999
@@ -490,12 +488,12 @@ func TestCheckCommand_VsNoop(t *testing.T) {
 
 		state := SetupAuthenticatedState(t, srv, "testuser")
 		database := GetDatabaseFromServer(srv)
-	mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
-	if err != nil {
-		t.Fatalf("Failed to get INBOX mailbox: %v", err)
-	}
-	state.SelectedMailboxID = mailboxID
-	state.SelectedFolder = "INBOX"
+		mailboxID, err := GetMailboxID(t, database, state.UserID, "INBOX")
+		if err != nil {
+			t.Fatalf("Failed to get INBOX mailbox: %v", err)
+		}
+		state.SelectedMailboxID = mailboxID
+		state.SelectedFolder = "INBOX"
 
 		// CHECK should not send untagged responses
 		connCheck := NewMockConn()

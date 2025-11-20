@@ -51,7 +51,7 @@ func (s *Server) Start() error {
 
 	// Set socket permissions (0666 so Postfix can access it)
 	if err := os.Chmod(s.socketPath, 0666); err != nil {
-		listener.Close()
+		_ = listener.Close()
 		return fmt.Errorf("failed to set socket permissions: %v", err)
 	}
 
@@ -92,7 +92,7 @@ func (s *Server) Shutdown() error {
 			err = s.listener.Close()
 		}
 		s.wg.Wait()
-		os.Remove(s.socketPath)
+		_ = os.Remove(s.socketPath)
 	})
 	return err
 }
@@ -100,12 +100,12 @@ func (s *Server) Shutdown() error {
 // handleConnection handles a single SASL authentication connection
 func (s *Server) handleConnection(conn net.Conn) {
 	defer s.wg.Done()
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	scanner := bufio.NewScanner(conn)
 
 	// Set read deadline to prevent hanging connections
-	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -125,7 +125,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 		case "VERSION":
 			// Respond to version handshake
 			response := "VERSION\t1\t2\n"
-			conn.Write([]byte(response))
+			_, _ = conn.Write([]byte(response))
 			log.Printf("SASL sent: %s", strings.TrimSpace(response))
 
 		case "CPID":
@@ -133,15 +133,15 @@ func (s *Server) handleConnection(conn net.Conn) {
 			// After CPID, announce available authentication mechanisms
 			// Format: MECH\t<mechanism>\t[options]
 			mechPlain := "MECH\tPLAIN\tplaintext\n"
-			conn.Write([]byte(mechPlain))
+			_, _ = conn.Write([]byte(mechPlain))
 			log.Printf("SASL sent: %s", strings.TrimSpace(mechPlain))
 
 			mechLogin := "MECH\tLOGIN\tplaintext\n"
-			conn.Write([]byte(mechLogin))
+			_, _ = conn.Write([]byte(mechLogin))
 			log.Printf("SASL sent: %s", strings.TrimSpace(mechLogin))
 
 			response := "DONE\n"
-			conn.Write([]byte(response))
+			_, _ = conn.Write([]byte(response))
 			log.Printf("SASL sent: %s", strings.TrimSpace(response))
 
 		case "AUTH":
@@ -152,7 +152,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 		}
 
 		// Reset read deadline for next command
-		conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -197,7 +197,7 @@ func (s *Server) handleAuth(conn net.Conn, parts []string) {
 	default:
 		// Unsupported mechanism
 		response := fmt.Sprintf("FAIL\t%s\treason=Unsupported mechanism\n", id)
-		conn.Write([]byte(response))
+		_, _ = conn.Write([]byte(response))
 		log.Printf("SASL sent: %s", strings.TrimSpace(response))
 	}
 }
@@ -207,7 +207,7 @@ func (s *Server) handlePlain(conn net.Conn, id, resp string, respProvided bool) 
 	// If no response provided, request it
 	if !respProvided {
 		response := fmt.Sprintf("CONT\t%s\t\n", id)
-		conn.Write([]byte(response))
+		_, _ = conn.Write([]byte(response))
 		log.Printf("SASL sent: %s", strings.TrimSpace(response))
 		return
 	}
@@ -215,7 +215,7 @@ func (s *Server) handlePlain(conn net.Conn, id, resp string, respProvided bool) 
 	// If response was provided but is empty, treat as malformed
 	if resp == "" {
 		response := fmt.Sprintf("FAIL\t%s\treason=Invalid credentials format\n", id)
-		conn.Write([]byte(response))
+		_, _ = conn.Write([]byte(response))
 		log.Printf("SASL sent: %s", strings.TrimSpace(response))
 		return
 	}
@@ -225,7 +225,7 @@ func (s *Server) handlePlain(conn net.Conn, id, resp string, respProvided bool) 
 	if err != nil {
 		log.Printf("Failed to decode base64 response: %v", err)
 		response := fmt.Sprintf("FAIL\t%s\treason=Invalid encoding\n", id)
-		conn.Write([]byte(response))
+		_, _ = conn.Write([]byte(response))
 		log.Printf("SASL sent: %s", strings.TrimSpace(response))
 		return
 	}
@@ -245,7 +245,7 @@ func (s *Server) handlePlain(conn net.Conn, id, resp string, respProvided bool) 
 	} else {
 		log.Printf("Invalid PLAIN format, parts: %d", len(parts))
 		response := fmt.Sprintf("FAIL\t%s\treason=Invalid credentials format\n", id)
-		conn.Write([]byte(response))
+		_, _ = conn.Write([]byte(response))
 		log.Printf("SASL sent: %s", strings.TrimSpace(response))
 		return
 	}
@@ -256,13 +256,13 @@ func (s *Server) handlePlain(conn net.Conn, id, resp string, respProvided bool) 
 	if s.authenticate(username, password) {
 		// Success
 		response := fmt.Sprintf("OK\t%s\tuser=%s\n", id, username)
-		conn.Write([]byte(response))
+		_, _ = conn.Write([]byte(response))
 		log.Printf("SASL sent: %s", strings.TrimSpace(response))
 		log.Printf("Authentication successful for user: %s", username)
 	} else {
 		// Failure
 		response := fmt.Sprintf("FAIL\t%s\tuser=%s\treason=Invalid credentials\n", id, username)
-		conn.Write([]byte(response))
+		_, _ = conn.Write([]byte(response))
 		log.Printf("SASL sent: %s", strings.TrimSpace(response))
 		log.Printf("Authentication failed for user: %s", username)
 	}
@@ -280,7 +280,7 @@ func (s *Server) handleLogin(conn net.Conn, id, resp string) {
 	if resp == "" {
 		// Request username
 		response := fmt.Sprintf("CONT\t%s\tUsername:\n", id)
-		conn.Write([]byte(response))
+		_, _ = conn.Write([]byte(response))
 		log.Printf("SASL sent: %s", strings.TrimSpace(response))
 		return
 	}
@@ -288,7 +288,7 @@ func (s *Server) handleLogin(conn net.Conn, id, resp string) {
 	// This is a simplified implementation
 	// A full LOGIN implementation would require state management
 	response := fmt.Sprintf("FAIL\t%s\treason=LOGIN not fully implemented, use PLAIN\n", id)
-	conn.Write([]byte(response))
+	_, _ = conn.Write([]byte(response))
 	log.Printf("SASL sent: %s", strings.TrimSpace(response))
 }
 
@@ -327,7 +327,7 @@ func (s *Server) authenticate(username, password string) bool {
 		log.Printf("Authentication API request failed: %v", err)
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Check response status
 	if resp.StatusCode == 200 {

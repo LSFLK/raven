@@ -555,7 +555,7 @@ func GetUserMailboxes(db *sql.DB, userID int64) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var mailboxes []string
 	for rows.Next() {
@@ -614,7 +614,7 @@ func DeleteMailbox(db *sql.DB, userID int64, mailboxName string) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Delete message_mailbox entries
 	_, err = tx.Exec("DELETE FROM message_mailbox WHERE mailbox_id = ?", mailboxID)
@@ -682,7 +682,7 @@ func RenameMailbox(db *sql.DB, userID int64, oldName, newName string) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Rename the mailbox
 	_, err = tx.Exec("UPDATE mailboxes SET name = ? WHERE id = ?", newName, mailboxID)
@@ -697,7 +697,7 @@ func RenameMailbox(db *sql.DB, userID int64, oldName, newName string) error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	type mailboxUpdate struct {
 		id      int64
@@ -715,7 +715,7 @@ func RenameMailbox(db *sql.DB, userID int64, oldName, newName string) error {
 		newChildName := newName + childName[len(oldName):]
 		updates = append(updates, mailboxUpdate{id: id, newName: newChildName})
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	// Apply all updates
 	for _, update := range updates {
@@ -851,7 +851,7 @@ func GetMessagesByMailbox(db *sql.DB, mailboxID int64) ([]int64, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var messageIDs []int64
 	for rows.Next() {
@@ -919,7 +919,7 @@ func GetMessageAddresses(db *sql.DB, messageID int64, addressType string) ([]str
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var addresses []string
 	for rows.Next() {
@@ -963,7 +963,7 @@ func GetMessageParts(db *sql.DB, messageID int64) ([]map[string]interface{}, err
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var parts []map[string]interface{}
 	for rows.Next() {
@@ -1055,7 +1055,7 @@ func GetUserSubscriptions(db *sql.DB, userID int64) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var subscriptions []string
 	for rows.Next() {
@@ -1109,7 +1109,7 @@ func GetPendingOutboundMessages(db *sql.DB, limit int) ([]map[string]interface{}
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var messages []map[string]interface{}
 	for rows.Next() {
@@ -1170,7 +1170,7 @@ func GetMessageHeaders(db *sql.DB, messageID int64) ([]map[string]string, error)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var headers []map[string]string
 	for rows.Next() {
@@ -1252,7 +1252,7 @@ func AssignUserToRoleMailbox(db *sql.DB, userID, roleMailboxID, assignedBy int64
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Deactivate any existing active assignments for this role mailbox
 	_, err = tx.Exec(`
@@ -1296,7 +1296,7 @@ func GetUserRoleAssignments(db *sql.DB, userID int64) ([]int64, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var roleMailboxIDs []int64
 	for rows.Next() {

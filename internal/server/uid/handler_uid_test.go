@@ -1,5 +1,4 @@
 //go:build test
-// +build test
 
 package uid
 
@@ -9,7 +8,6 @@ import (
 	"testing"
 
 	"raven/internal/models"
-	
 )
 
 // TestUIDCommand_Unauthenticated tests UID command without authentication
