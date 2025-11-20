@@ -36,7 +36,7 @@ func main() {
 
 	// Start plain IMAP (143)
 	go func() {
-		ln, err := net.Listen("tcp", SERVER_IP)
+		ln, err := net.Listen("tcp", SERVER_IP) // #nosec G102 -- Intentionally binding to all interfaces for IMAP server
 		if err != nil {
 			log.Fatal("Failed to start TCP listener:", err)
 		}
@@ -67,7 +67,7 @@ func main() {
 	}()
 
 	// Start IMAPS (993)
-	lnSSL, err := net.Listen("tcp", SERVER_IP_SSL)
+	lnSSL, err := net.Listen("tcp", SERVER_IP_SSL) // #nosec G102 -- Intentionally binding to all interfaces for IMAPS server
 	if err != nil {
 		log.Fatal("Failed to start SSL TCP listener:", err)
 	}

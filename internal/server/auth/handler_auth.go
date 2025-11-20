@@ -230,6 +230,7 @@ func HandleStartTLS(deps ServerDeps, clientHandler ClientHandler, conn net.Conn,
 
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
 	}
 
 	// RFC 3501: Send OK response before starting TLS negotiation
@@ -372,6 +373,7 @@ func HandleSSLConnection(clientHandler ClientHandler, conn net.Conn) {
 
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
 	}
 
 	tlsConn := tls.Server(conn, tlsConfig)

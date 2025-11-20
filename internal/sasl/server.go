@@ -49,8 +49,8 @@ func (s *Server) Start() error {
 	}
 	s.listener = listener
 
-	// Set socket permissions (0666 so Postfix can access it)
-	if err := os.Chmod(s.socketPath, 0666); err != nil {
+	// Set socket permissions (0660 so Postfix can access it)
+	if err := os.Chmod(s.socketPath, 0660); err != nil {
 		_ = listener.Close()
 		return fmt.Errorf("failed to set socket permissions: %v", err)
 	}
