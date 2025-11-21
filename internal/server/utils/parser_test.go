@@ -166,7 +166,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 
 func TestParseSequenceSetWithDB_Single(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	mailboxID := int64(1)
 
@@ -199,7 +199,7 @@ func TestParseSequenceSetWithDB_Single(t *testing.T) {
 
 func TestParseSequenceSetWithDB_Range(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	mailboxID := int64(1)
 
@@ -234,7 +234,7 @@ func TestParseSequenceSetWithDB_Range(t *testing.T) {
 
 func TestParseSequenceSetWithDB_Star(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	mailboxID := int64(1)
 
@@ -266,7 +266,7 @@ func TestParseSequenceSetWithDB_Star(t *testing.T) {
 
 func TestParseSequenceSetWithDB_Multiple(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	mailboxID := int64(1)
 
@@ -301,7 +301,7 @@ func TestParseSequenceSetWithDB_Multiple(t *testing.T) {
 
 func TestParseSequenceSetWithDB_EmptyMailbox(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	mailboxID := int64(1)
 	_, err := db.Exec("INSERT INTO mailboxes (id, name) VALUES (1, 'INBOX')")
@@ -318,7 +318,7 @@ func TestParseSequenceSetWithDB_EmptyMailbox(t *testing.T) {
 
 func TestParseSequenceSetWithDB_ReverseRange(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	mailboxID := int64(1)
 
@@ -348,7 +348,7 @@ func TestParseSequenceSetWithDB_ReverseRange(t *testing.T) {
 
 func TestParseUIDSequenceSetWithDB_Single(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	mailboxID := int64(1)
 
@@ -381,7 +381,7 @@ func TestParseUIDSequenceSetWithDB_Single(t *testing.T) {
 
 func TestParseUIDSequenceSetWithDB_Range(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	mailboxID := int64(1)
 
@@ -411,7 +411,7 @@ func TestParseUIDSequenceSetWithDB_Range(t *testing.T) {
 
 func TestParseUIDSequenceSetWithDB_Star(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	mailboxID := int64(1)
 
@@ -444,7 +444,7 @@ func TestParseUIDSequenceSetWithDB_Star(t *testing.T) {
 
 func TestParseUIDSequenceSetWithDB_RangeWithStar(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	mailboxID := int64(1)
 
@@ -474,7 +474,7 @@ func TestParseUIDSequenceSetWithDB_RangeWithStar(t *testing.T) {
 
 func TestParseUIDSequenceSetWithDB_EmptyMailbox(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	mailboxID := int64(1)
 	_, err := db.Exec("INSERT INTO mailboxes (id, name) VALUES (1, 'INBOX')")
@@ -491,7 +491,7 @@ func TestParseUIDSequenceSetWithDB_EmptyMailbox(t *testing.T) {
 
 func TestParseUIDSequenceSetWithDB_NonExistentUID(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	mailboxID := int64(1)
 
@@ -518,7 +518,7 @@ func TestParseUIDSequenceSetWithDB_NonExistentUID(t *testing.T) {
 
 func TestParseUIDSequenceSetWithDB_MultipleSequences(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	mailboxID := int64(1)
 
