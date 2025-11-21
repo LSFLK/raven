@@ -13,8 +13,64 @@ on:
       - .github/workflows/**
 
 jobs:
-  test-commands:
-    name: Run Specific Tests
+  # ============================================================================
+  # Database Layer Tests
+  # ============================================================================
+  test-database:
+    name: Database Layer Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: Test Database Initialization
+        run: go test -v ./internal/db -run "TestInitDB|TestNewDBManager"
+
+      - name: Test Domain Management
+        run: go test -v ./internal/db -run "TestCreateDomain|TestGetDomainByName|TestGetOrCreateDomain"
+
+      - name: Test User Management
+        run: go test -v ./internal/db -run "TestCreateUser|TestGetUser|TestUserExists"
+
+      - name: Test Mailbox Operations
+        run: go test -v ./internal/db -run "TestCreateMailbox|TestGetMailbox|TestDeleteMailbox|TestRenameMailbox|TestMailboxExists"
+
+      - name: Test Message Management
+        run: go test -v ./internal/db -run "TestCreateMessage|TestAddMessageToMailbox|TestGetMessages|TestMessageFlags"
+
+      - name: Test Blob Storage
+        run: go test -v ./internal/db -run "TestStoreBlob|TestGetBlob|TestDecrementBlobReference"
+
+      - name: Test Role Mailboxes
+        run: go test -v ./internal/db -run "TestRoleMailbox|TestAssignUser|TestGetRoleMailboxAssigned"
+
+      - name: Test Subscriptions
+        run: go test -v ./internal/db -run "TestSubscribe|TestUnsubscribe|TestIsMailboxSubscribed"
+
+      - name: Test Delivery & Outbound Queue
+        run: go test -v ./internal/db -run "TestRecordDelivery|TestQueueOutbound|TestGetPendingOutbound|TestUpdateOutboundStatus|TestRetryOutbound"
+
+      - name: Test DB Manager
+        run: go test -v ./internal/db -run "TestGetSharedDB|TestGetUserDB|TestGetRoleMailboxDB|TestClose|TestCaching"
+
+      - name: Run All Database Tests with Coverage
+        run: go test -v -cover ./internal/db/...
+
+  # ============================================================================
+  # IMAP Command Tests - Authentication & Session
+  # ============================================================================
+  test-imap-auth:
+    name: IMAP Authentication & Session
     runs-on: ubuntu-latest
 
     steps:
@@ -33,6 +89,120 @@ jobs:
       - name: Test CAPABILITY command
         run: go test -tags=test -v ./internal/server -run "TestCapabilityCommand"
 
+      - name: Test AUTHENTICATE command
+        run: go test -tags=test -v ./internal/server -run "TestAuthenticate"
+
+      - name: Test LOGIN command
+        run: go test -tags=test -v ./internal/server -run "TestLoginCommand"
+
+      - name: Test STARTTLS command
+        run: go test -tags=test -v ./internal/server -run "TestStartTLS"
+
+      - name: Test LOGOUT command
+        run: go test -tags=test -v ./internal/server -run "TestLogoutCommand"
+
+  # ============================================================================
+  # IMAP Command Tests - Mailbox Management
+  # ============================================================================
+  test-imap-mailbox:
+    name: IMAP Mailbox Management
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: Test SELECT command
+        run: go test -tags=test -v ./internal/server -run "TestSelectCommand"
+
+      - name: Test EXAMINE command
+        run: go test -tags=test -v ./internal/server -run "TestExamineCommand"
+
+      - name: Test CREATE command
+        run: go test -tags=test -v ./internal/server -run "TestCreateCommand"
+
+      - name: Test DELETE command
+        run: go test -tags=test -v ./internal/server -run "TestDeleteCommand"
+
+      - name: Test RENAME command
+        run: go test -tags=test -v ./internal/server -run "TestRenameCommand"
+
+      - name: Test LIST command
+        run: go test -tags=test -v ./internal/server -run "TestListCommand"
+
+      - name: Test LIST extended
+        run: go test -tags=test -v ./internal/server -run "TestListCommand.*RFC3501|TestListCommand.*Wildcard|TestListCommand.*Hierarchy|TestListCommand.*Reference|TestListCommand.*Error|TestListCommand.*Special"
+
+      - name: Test STATUS command
+        run: go test -tags=test -v ./internal/server -run "TestStatusCommand"
+
+  # ============================================================================
+  # IMAP Command Tests - Message Operations
+  # ============================================================================
+  test-imap-messages:
+    name: IMAP Message Operations
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: Test FETCH command
+        run: go test -tags=test -v ./internal/server -run "TestFetchCommand"
+
+      - name: Test STORE command
+        run: go test -tags=test -v ./internal/server -run "TestStoreCommand"
+
+      - name: Test SEARCH command
+        run: go test -tags=test -v ./internal/server -run "TestSearchCommand"
+
+      - name: Test COPY command
+        run: go test -tags=test -v ./internal/server -run "TestCopyCommand"
+
+      - name: Test APPEND command
+        run: go test -tags=test -v ./internal/server -run "TestAppendCommand"
+
+      - name: Test UID commands
+        run: go test -tags=test -v ./internal/server -run "TestUID"
+
+  # ============================================================================
+  # IMAP Command Tests - Mailbox State
+  # ============================================================================
+  test-imap-state:
+    name: IMAP Mailbox State
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+
+      - name: Install dependencies
+        run: make deps
+
       - name: Test NOOP command
         run: go test -tags=test -v ./internal/server -run "TestNoopCommand"
 
@@ -45,42 +215,6 @@ jobs:
       - name: Test EXPUNGE command
         run: go test -tags=test -v ./internal/server -run "TestExpungeCommand"
 
-      - name: Test LOGOUT command
-        run: go test -tags=test -v ./internal/server -run "TestLogoutCommand"
-
-      - name: Test APPEND command
-        run: go test -tags=test -v ./internal/server -run "TestAppendCommand"
-
-      - name: Test AUTHENTICATE command
-        run: go test -tags=test -v ./internal/server -run "TestAuthenticate"
-
-      - name: Test LOGIN command
-        run: go test -tags=test -v ./internal/server -run "TestLoginCommand"
-
-      - name: Test STARTTLS command
-        run: go test -tags=test -v ./internal/server -run "TestStartTLS"
-
-      - name: Test SELECT command
-        run: go test -tags=test -v ./internal/server -run "TestSelectCommand"
-
-      - name: Test EXAMINE command
-        run: go test -tags=test -v ./internal/server -run "TestExamineCommand"
-
-      - name: Test CREATE command
-        run: go test -tags=test -v ./internal/server -run "TestCreateCommand"
-
-      - name: Test LIST command
-        run: go test -tags=test -v ./internal/server -run "TestListCommand"
-
-      - name: Test LIST extended command
-        run: go test -tags=test -v ./internal/server -run "TestListCommand.*RFC3501|TestListCommand.*Wildcard|TestListCommand.*Hierarchy|TestListCommand.*Reference|TestListCommand.*Error|TestListCommand.*Special"
-
-      - name: Test DELETE command
-        run: go test -tags=test -v ./internal/server -run "TestDeleteCommand"
-
-      - name: Test RENAME command
-        run: go test -tags=test -v ./internal/server -run "TestRenameCommand"
-
       - name: Test SUBSCRIBE command
         run: go test -tags=test -v ./internal/server -run "TestSubscribeCommand"
 
@@ -90,26 +224,11 @@ jobs:
       - name: Test LSUB command
         run: go test -tags=test -v ./internal/server -run "TestLsubCommand"
 
-      - name: Test STATUS command
-        run: go test -tags=test -v ./internal/server -run "TestStatusCommand"
-
-      - name: Test SEARCH command
-        run: go test -tags=test -v ./internal/server -run "TestSearchCommand"
-
-      - name: Test FETCH command
-        run: go test -tags=test -v ./internal/server -run "TestFetchCommand"
-
-      - name: Test STORE command
-        run: go test -tags=test -v ./internal/server -run "TestStoreCommand"
-
-      - name: Test COPY command
-        run: go test -tags=test -v ./internal/server -run "TestCopyCommand"
-
-      - name: Test UID commands
-        run: go test -tags=test -v ./internal/server -run "TestUID"
-
+  # ============================================================================
+  # Delivery Service Tests
+  # ============================================================================
   test-delivery:
-    name: Test Delivery Service
+    name: Delivery Service
     runs-on: ubuntu-latest
 
     steps:
@@ -137,8 +256,11 @@ jobs:
       - name: Run All Delivery Tests
         run: go test -tags=test -v ./internal/delivery/...
 
+  # ============================================================================
+  # SASL Authentication Service Tests
+  # ============================================================================
   test-sasl:
-    name: Test SASL Authentication Service
+    name: SASL Authentication Service
     runs-on: ubuntu-latest
 
     steps:
@@ -157,7 +279,7 @@ jobs:
       - name: Test SASL Server Creation
         run: go test -tags=test -v ./internal/sasl -run "TestNewServer"
 
-      - name: Test SASL Server Startup and Shutdown
+      - name: Test SASL Server Lifecycle
         run: go test -tags=test -v ./internal/sasl -run "TestServerStartShutdown|TestServerShutdownIdempotent"
 
       - name: Test SASL Protocol Handshake
