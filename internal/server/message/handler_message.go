@@ -1126,7 +1126,7 @@ func HandleAppendWithReader(deps ServerDeps, reader io.Reader, conn net.Conn, ta
 	if err != nil && err != io.EOF {
 		log.Printf("Warning: Failed to read trailing CRLF after literal data: %v", err)
 		// Continue anyway - some clients might not send it
-	} else if n > 0 && (crlfBuf[0] != '\r' && crlfBuf[0] != '\n') {
+	} else if n > 0 && len(crlfBuf) > 0 && (crlfBuf[0] != '\r' && crlfBuf[0] != '\n') {
 		log.Printf("Warning: Expected CRLF after literal data, got: %v", crlfBuf[:n])
 		// Continue anyway - be lenient with protocol violations
 	}
@@ -1280,7 +1280,7 @@ func HandleAppend(deps ServerDeps, conn net.Conn, tag string, parts []string, fu
 	if err != nil {
 		log.Printf("Warning: Failed to read trailing CRLF after literal data: %v", err)
 		// Continue anyway - some clients might not send it
-	} else if n > 0 && (crlfBuf[0] != '\r' && crlfBuf[0] != '\n') {
+	} else if n > 0 && len(crlfBuf) > 0 && (crlfBuf[0] != '\r' && crlfBuf[0] != '\n') {
 		log.Printf("Warning: Expected CRLF after literal data, got: %v", crlfBuf[:n])
 		// Continue anyway - be lenient with protocol violations
 	}

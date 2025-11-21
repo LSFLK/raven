@@ -514,7 +514,7 @@ func GenerateTestCertificates(t *testing.T) (certPath, keyPath string, cleanup f
 	}
 
 	// Write certificate to file
-	certFile, err := os.Create(certPath)
+	certFile, err := os.Create(filepath.Clean(certPath))
 	if err != nil {
 		t.Fatalf("Failed to create cert file: %v", err)
 	}
@@ -525,7 +525,7 @@ func GenerateTestCertificates(t *testing.T) (certPath, keyPath string, cleanup f
 	_ = certFile.Close()
 
 	// Write private key to file
-	keyFile, err := os.Create(keyPath)
+	keyFile, err := os.Create(filepath.Clean(keyPath))
 	if err != nil {
 		t.Fatalf("Failed to create key file: %v", err)
 	}

@@ -22,7 +22,7 @@ type DBManager struct {
 // NewDBManager creates a new database manager
 func NewDBManager(basePath string) (*DBManager, error) {
 	// Create base directory if it doesn't exist
-	if err := os.MkdirAll(basePath, 0755); err != nil {
+	if err := os.MkdirAll(basePath, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create database directory: %v", err)
 	}
 

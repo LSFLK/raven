@@ -230,6 +230,7 @@ func HandleStartTLS(deps ServerDeps, clientHandler ClientHandler, conn net.Conn,
 
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
 	}
 
 	// RFC 3501: Send OK response before starting TLS negotiation
@@ -288,7 +289,7 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 
 	// TLS config for system CA bundle (default)
 	tlsConfig := &tls.Config{
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: true, // #nosec G402 -- Required for internal auth server communication
 	}
 	transport := &http.Transport{TLSClientConfig: tlsConfig}
 	client := &http.Client{Transport: transport}
@@ -372,6 +373,7 @@ func HandleSSLConnection(clientHandler ClientHandler, conn net.Conn) {
 
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
 	}
 
 	tlsConn := tls.Server(conn, tlsConfig)

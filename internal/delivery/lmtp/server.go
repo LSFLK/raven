@@ -74,6 +74,7 @@ func (s *Server) startUnixListener() error {
 	log.Printf("LMTP server listening on UNIX socket: %s", s.config.LMTP.UnixSocket)
 
 	// Set socket permissions
+	// #nosec G302 -- Unix socket needs world read/write for Postfix inter-process communication
 	if err := os.Chmod(s.config.LMTP.UnixSocket, 0666); err != nil {
 		log.Printf("Warning: failed to set socket permissions: %v", err)
 	}
