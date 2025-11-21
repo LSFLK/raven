@@ -9,7 +9,6 @@ func TestBuildBodyStructure_TextPlain(t *testing.T) {
     msg := raw("Content-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 7bit", "Hello world\nLine2")
     bs := BuildBodyStructure(msg)
     if !containsAll(bs, []string{"TEXT", "PLAIN", "utf-8"}) { t.Errorf("missing basics: %s", bs) }
-    if !containsAll(bs, []string{"Hello"}) { /* size check implicit */ }
 }
 
 func TestBuildBodyStructure_Defaults(t *testing.T) {
