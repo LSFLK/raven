@@ -2,6 +2,15 @@
 #
 # Quick Reference:
 #   make test              - Run all tests
+#   make test-db           - Run all database tests
+#   make test-db-init      - Run database initialization tests
+#   make test-db-domain    - Run domain management tests
+#   make test-db-user      - Run user management tests
+#   make test-db-mailbox   - Run mailbox operations tests
+#   make test-db-message   - Run message management tests
+#   make test-db-blob      - Run blob storage tests
+#   make test-db-role      - Run role mailbox tests
+#   make test-db-manager   - Run DB manager tests
 #   make test-noop         - Run NOOP command tests
 #   make test-check        - Run CHECK command tests
 #   make test-close        - Run CLOSE command tests
@@ -30,7 +39,7 @@
 #   make test-commands     - Run all command tests
 #   make help              - Show all available targets
 
-.PHONY: test test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-uid test-commands test-delivery test-sasl test-verbose test-coverage test-race clean
+.PHONY: test test-db test-db-init test-db-domain test-db-user test-db-mailbox test-db-message test-db-blob test-db-role test-db-manager test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-uid test-commands test-delivery test-sasl test-verbose test-coverage test-race clean
 
 # Build delivery service
 build-delivery:
@@ -47,6 +56,84 @@ test-delivery:
 # Test SASL authentication service
 test-sasl:
 	go test -tags=test -v ./internal/sasl
+
+# ============================================================================
+# Database Tests
+# ============================================================================
+
+# Run all database tests
+test-db:
+	go test -v ./internal/db/...
+
+# Run database tests with coverage
+test-db-coverage:
+	go test -v -cover ./internal/db/...
+
+# Run database initialization tests
+test-db-init:
+	go test -v ./internal/db -run "TestInitDB|TestNewDBManager"
+
+# Run domain management tests
+test-db-domain:
+	go test -v ./internal/db -run "TestCreateDomain|TestGetDomainByName|TestGetOrCreateDomain"
+
+# Run user management tests
+test-db-user:
+	go test -v ./internal/db -run "TestCreateUser|TestGetUser|TestUserExists"
+
+# Run mailbox operations tests
+test-db-mailbox:
+	go test -v ./internal/db -run "TestCreateMailbox|TestGetMailbox|TestDeleteMailbox|TestRenameMailbox|TestMailboxExists"
+
+# Run message management tests
+test-db-message:
+	go test -v ./internal/db -run "TestCreateMessage|TestAddMessageToMailbox|TestGetMessages|TestMessageFlags"
+
+# Run blob storage tests
+test-db-blob:
+	go test -v ./internal/db -run "TestStoreBlob|TestGetBlob|TestDecrementBlobReference"
+
+# Run role mailbox tests
+test-db-role:
+	go test -v ./internal/db -run "TestRoleMailbox|TestAssignUser|TestGetRoleMailboxAssigned"
+
+# Run subscription tests
+test-db-subscription:
+	go test -v ./internal/db -run "TestSubscribe|TestUnsubscribe|TestIsMailboxSubscribed"
+
+# Run delivery and outbound queue tests
+test-db-delivery:
+	go test -v ./internal/db -run "TestRecordDelivery|TestQueueOutbound|TestGetPendingOutbound|TestUpdateOutboundStatus|TestRetryOutbound"
+
+# Run DB manager tests
+test-db-manager:
+	go test -v ./internal/db -run "TestGetSharedDB|TestGetUserDB|TestGetRoleMailboxDB|TestClose|TestCaching"
+
+# Run all database tests with verbose output and coverage
+test-db-all:
+	@echo "Running all database tests with coverage..."
+	@echo "\n=== Database Initialization Tests ==="
+	@go test -v ./internal/db -run "TestInitDB|TestNewDBManager"
+	@echo "\n=== Domain Management Tests ==="
+	@go test -v ./internal/db -run "TestCreateDomain|TestGetDomainByName|TestGetOrCreateDomain"
+	@echo "\n=== User Management Tests ==="
+	@go test -v ./internal/db -run "TestCreateUser|TestGetUser|TestUserExists"
+	@echo "\n=== Mailbox Operations Tests ==="
+	@go test -v ./internal/db -run "TestCreateMailbox|TestGetMailbox|TestDeleteMailbox|TestRenameMailbox|TestMailboxExists"
+	@echo "\n=== Message Management Tests ==="
+	@go test -v ./internal/db -run "TestCreateMessage|TestAddMessageToMailbox|TestGetMessages|TestMessageFlags"
+	@echo "\n=== Blob Storage Tests ==="
+	@go test -v ./internal/db -run "TestStoreBlob|TestGetBlob|TestDecrementBlobReference"
+	@echo "\n=== Role Mailbox Tests ==="
+	@go test -v ./internal/db -run "TestRoleMailbox|TestAssignUser|TestGetRoleMailboxAssigned"
+	@echo "\n=== Subscription Tests ==="
+	@go test -v ./internal/db -run "TestSubscribe|TestUnsubscribe|TestIsMailboxSubscribed"
+	@echo "\n=== Delivery & Outbound Queue Tests ==="
+	@go test -v ./internal/db -run "TestRecordDelivery|TestQueueOutbound|TestGetPendingOutbound|TestUpdateOutboundStatus|TestRetryOutbound"
+	@echo "\n=== DB Manager Tests ==="
+	@go test -v ./internal/db -run "TestGetSharedDB|TestGetUserDB|TestGetRoleMailboxDB|TestClose|TestCaching"
+	@echo "\n=== Full Database Test Suite with Coverage ==="
+	@go test -v -cover ./internal/db/...
 
 # Build SASL authentication service
 build-sasl:
@@ -294,6 +381,19 @@ help:
 	@echo ""
 	@echo "Testing:"
 	@echo "  test                   - Run all tests"
+	@echo "  test-db                - Run all database tests"
+	@echo "  test-db-coverage       - Run database tests with coverage"
+	@echo "  test-db-init           - Run database initialization tests"
+	@echo "  test-db-domain         - Run domain management tests"
+	@echo "  test-db-user           - Run user management tests"
+	@echo "  test-db-mailbox        - Run mailbox operations tests"
+	@echo "  test-db-message        - Run message management tests"
+	@echo "  test-db-blob           - Run blob storage tests"
+	@echo "  test-db-role           - Run role mailbox tests"
+	@echo "  test-db-subscription   - Run subscription tests"
+	@echo "  test-db-delivery       - Run delivery & outbound queue tests"
+	@echo "  test-db-manager        - Run DB manager tests"
+	@echo "  test-db-all            - Run all database tests with detailed output"
 	@echo "  test-delivery          - Run delivery service tests"
 	@echo "  test-sasl              - Run SASL authentication service tests"
 	@echo "  test-capability        - Run CAPABILITY command tests only"
