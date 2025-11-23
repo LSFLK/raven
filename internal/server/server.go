@@ -142,6 +142,9 @@ func (s *IMAPServer) ExtractUsername(email string) string {
 // HandleSSLConnection handles SSL/TLS connections (delegates to auth package)
 func (s *IMAPServer) HandleSSLConnection(conn net.Conn) {
 	clientHandler := func(conn net.Conn, state *models.ClientState) {
+		// Send greeting for SSL/TLS connections
+		// TLS is active, so AUTH=PLAIN and LOGIN are allowed (no STARTTLS needed)
+		s.sendResponse(conn, "* OK [CAPABILITY IMAP4rev1 AUTH=PLAIN LOGIN UIDPLUS IDLE LITERAL+] SQLite IMAP server ready")
 		handleClient(s, conn, state)
 	}
 	auth.HandleSSLConnection(clientHandler, conn)
