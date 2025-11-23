@@ -11,6 +11,10 @@
 #   make test-db-blob      - Run blob storage tests
 #   make test-db-role      - Run role mailbox tests
 #   make test-db-manager   - Run DB manager tests
+#   make test-conf         - Run configuration tests
+#   make test-utils        - Run server utilities tests
+#   make test-response     - Run server response tests
+#   make test-storage      - Run delivery storage tests
 #   make test-noop         - Run NOOP command tests
 #   make test-check        - Run CHECK command tests
 #   make test-close        - Run CLOSE command tests
@@ -39,7 +43,7 @@
 #   make test-commands     - Run all command tests
 #   make help              - Show all available targets
 
-.PHONY: test test-db test-db-init test-db-domain test-db-user test-db-mailbox test-db-message test-db-blob test-db-role test-db-manager test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-uid test-commands test-delivery test-sasl test-verbose test-coverage test-race clean
+.PHONY: test test-db test-db-init test-db-domain test-db-user test-db-mailbox test-db-message test-db-blob test-db-role test-db-manager test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-uid test-commands test-delivery test-sasl test-conf test-utils test-response test-storage test-verbose test-coverage test-race clean
 
 # Build delivery service
 build-delivery:
@@ -56,6 +60,22 @@ test-delivery:
 # Test SASL authentication service
 test-sasl:
 	go test -tags=test -v ./internal/sasl
+
+# Test configuration
+test-conf:
+	go test -v ./internal/conf/...
+
+# Test server utilities
+test-utils:
+	go test -v ./internal/server/utils/...
+
+# Test server response formatting
+test-response:
+	go test -v ./internal/server/response/...
+
+# Test delivery storage
+test-storage:
+	go test -v ./internal/delivery/storage/...
 
 # ============================================================================
 # Database Tests
@@ -396,6 +416,10 @@ help:
 	@echo "  test-db-all            - Run all database tests with detailed output"
 	@echo "  test-delivery          - Run delivery service tests"
 	@echo "  test-sasl              - Run SASL authentication service tests"
+	@echo "  test-conf              - Run configuration tests"
+	@echo "  test-utils             - Run server utilities tests"
+	@echo "  test-response          - Run server response tests"
+	@echo "  test-storage           - Run delivery storage tests"
 	@echo "  test-capability        - Run CAPABILITY command tests only"
 	@echo "  test-noop              - Run NOOP command tests only"
 	@echo "  test-check             - Run CHECK command tests only"
