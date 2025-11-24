@@ -651,7 +651,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 
 func TestStoreMessage(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	rawMessage := `From: sender@example.com
 To: recipient1@example.com, recipient2@example.com
@@ -719,7 +719,7 @@ This is the message body.`
 
 func TestStoreMessage_Multipart(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	rawMessage := `From: sender@example.com
 To: recipient@example.com
@@ -760,7 +760,7 @@ Content-Type: text/html; charset=utf-8
 
 func TestStoreMessage_LargeContent(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	largeBody := strings.Repeat("This is a large message body. ", 100)
 	rawMessage := "From: sender@example.com\nTo: recipient@example.com\nSubject: Large Message\n\n" + largeBody
@@ -788,7 +788,7 @@ func TestStoreMessage_LargeContent(t *testing.T) {
 
 func TestStoreMessagePerUser(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	rawMessage := `From: sender@example.com
 To: user@example.com
@@ -824,7 +824,7 @@ Message body for user.`
 
 func TestReconstructMessage_SinglePart(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	rawMessage := `From: sender@example.com
 To: recipient@example.com
@@ -864,7 +864,7 @@ Simple message body.`
 
 func TestReconstructMessage_Multipart(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	rawMessage := `From: sender@example.com
 To: recipient@example.com
@@ -912,7 +912,7 @@ Content-Type: text/html; charset=utf-8
 
 func TestReconstructMessage_WithAttachment(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	rawMessage := `From: sender@example.com
 To: recipient@example.com
@@ -961,7 +961,7 @@ Binary content
 
 func TestReconstructMessage_NoPartsError(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	_, err := parser.ReconstructMessage(database, 99999)
 	if err == nil {
@@ -971,7 +971,7 @@ func TestReconstructMessage_NoPartsError(t *testing.T) {
 
 func TestStoreMessage_WithBlobStorage(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	attachmentContent := strings.Repeat("A", 2000)
 	rawMessage := `From: sender@example.com
@@ -1014,7 +1014,7 @@ Content-Disposition: attachment; filename="large.bin"
 
 func TestStoreAndReconstruct_ComplexMessage(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	originalMessage := `From: John Doe <john@example.com>
 To: jane@example.com, bob@example.com
@@ -1078,9 +1078,9 @@ Content-Type: text/html; charset=utf-8
 
 func TestStoreMessage_ErrorHandling(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
-	database.Close()
+	_ = database.Close()
 
 	parsed := &parser.ParsedMessage{
 		Subject: "Test",
