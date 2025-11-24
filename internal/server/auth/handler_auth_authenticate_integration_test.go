@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -25,22 +24,21 @@ func TestAuthenticatePlain_SuccessfulAuthWithServer(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	// Create temporary config
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config.yaml")
-	configContent := fmt.Sprintf(`
-domain: example.com
+	// Create config directory and file
+	err := os.MkdirAll("config", 0755)
+	if err != nil {
+		t.Fatalf("Failed to create config directory: %v", err)
+	}
+
+	configPath := "config/raven.yaml"
+	configContent := fmt.Sprintf(`domain: example.com
 auth_server_url: %s
 `, authServer.URL)
-	err := os.WriteFile(configPath, []byte(configContent), 0644)
+	err = os.WriteFile(configPath, []byte(configContent), 0644)
 	if err != nil {
 		t.Fatalf("Failed to create config file: %v", err)
 	}
-
-	// Set config path environment variable
-	oldConfigPath := os.Getenv("RAVEN_CONFIG_PATH")
-	os.Setenv("RAVEN_CONFIG_PATH", configPath)
-	defer os.Setenv("RAVEN_CONFIG_PATH", oldConfigPath)
+	defer os.Remove(configPath)
 
 	// Reload config
 	_, err = conf.LoadConfig()
@@ -82,22 +80,21 @@ auth_server_url: %s
 
 // TestAuthenticatePlain_AuthServerUnavailable tests handling of auth server errors
 func TestAuthenticatePlain_AuthServerUnavailable(t *testing.T) {
-	// Create temporary config with invalid auth server URL
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config.yaml")
-	configContent := `
-domain: example.com
+	// Create config directory and file with invalid auth server URL
+	err := os.MkdirAll("config", 0755)
+	if err != nil {
+		t.Fatalf("Failed to create config directory: %v", err)
+	}
+
+	configPath := "config/raven.yaml"
+	configContent := `domain: example.com
 auth_server_url: https://invalid-auth-server-that-does-not-exist.example.com:9999
 `
-	err := os.WriteFile(configPath, []byte(configContent), 0644)
+	err = os.WriteFile(configPath, []byte(configContent), 0644)
 	if err != nil {
 		t.Fatalf("Failed to create config file: %v", err)
 	}
-
-	// Set config path
-	oldConfigPath := os.Getenv("RAVEN_CONFIG_PATH")
-	os.Setenv("RAVEN_CONFIG_PATH", configPath)
-	defer os.Setenv("RAVEN_CONFIG_PATH", oldConfigPath)
+	defer os.Remove(configPath)
 
 	// Reload config
 	_, err = conf.LoadConfig()
@@ -206,20 +203,21 @@ func TestAuthenticatePlain_UsernameWithDomain(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config.yaml")
-	configContent := fmt.Sprintf(`
-domain: example.com
+	// Create config directory and file
+	err := os.MkdirAll("config", 0755)
+	if err != nil {
+		t.Fatalf("Failed to create config directory: %v", err)
+	}
+
+	configPath := "config/raven.yaml"
+	configContent := fmt.Sprintf(`domain: example.com
 auth_server_url: %s
 `, authServer.URL)
-	err := os.WriteFile(configPath, []byte(configContent), 0644)
+	err = os.WriteFile(configPath, []byte(configContent), 0644)
 	if err != nil {
 		t.Fatalf("Failed to create config: %v", err)
 	}
-
-	oldConfigPath := os.Getenv("RAVEN_CONFIG_PATH")
-	os.Setenv("RAVEN_CONFIG_PATH", configPath)
-	defer os.Setenv("RAVEN_CONFIG_PATH", oldConfigPath)
+	defer os.Remove(configPath)
 
 	_, err = conf.LoadConfig()
 	if err != nil {
@@ -260,20 +258,21 @@ func TestAuthenticatePlain_UsernameWithoutDomain(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config.yaml")
-	configContent := fmt.Sprintf(`
-domain: testdomain.com
+	// Create config directory and file
+	err := os.MkdirAll("config", 0755)
+	if err != nil {
+		t.Fatalf("Failed to create config directory: %v", err)
+	}
+
+	configPath := "config/raven.yaml"
+	configContent := fmt.Sprintf(`domain: testdomain.com
 auth_server_url: %s
 `, authServer.URL)
-	err := os.WriteFile(configPath, []byte(configContent), 0644)
+	err = os.WriteFile(configPath, []byte(configContent), 0644)
 	if err != nil {
 		t.Fatalf("Failed to create config: %v", err)
 	}
-
-	oldConfigPath := os.Getenv("RAVEN_CONFIG_PATH")
-	os.Setenv("RAVEN_CONFIG_PATH", configPath)
-	defer os.Setenv("RAVEN_CONFIG_PATH", oldConfigPath)
+	defer os.Remove(configPath)
 
 	_, err = conf.LoadConfig()
 	if err != nil {
@@ -314,20 +313,21 @@ func TestAuthenticatePlain_AuthenticationFailure(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config.yaml")
-	configContent := fmt.Sprintf(`
-domain: example.com
+	// Create config directory and file
+	err := os.MkdirAll("config", 0755)
+	if err != nil {
+		t.Fatalf("Failed to create config directory: %v", err)
+	}
+
+	configPath := "config/raven.yaml"
+	configContent := fmt.Sprintf(`domain: example.com
 auth_server_url: %s
 `, authServer.URL)
-	err := os.WriteFile(configPath, []byte(configContent), 0644)
+	err = os.WriteFile(configPath, []byte(configContent), 0644)
 	if err != nil {
 		t.Fatalf("Failed to create config: %v", err)
 	}
-
-	oldConfigPath := os.Getenv("RAVEN_CONFIG_PATH")
-	os.Setenv("RAVEN_CONFIG_PATH", configPath)
-	defer os.Setenv("RAVEN_CONFIG_PATH", oldConfigPath)
+	defer os.Remove(configPath)
 
 	_, err = conf.LoadConfig()
 	if err != nil {
@@ -368,20 +368,20 @@ auth_server_url: %s
 // TestAuthenticatePlain_ConfigurationError tests handling of config errors
 func TestAuthenticatePlain_ConfigurationError(t *testing.T) {
 	// Test with missing domain in config
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config.yaml")
-	configContent := `
-# domain is missing
+	err := os.MkdirAll("config", 0755)
+	if err != nil {
+		t.Fatalf("Failed to create config directory: %v", err)
+	}
+
+	configPath := "config/raven.yaml"
+	configContent := `# domain is missing
 auth_server_url: https://auth.example.com
 `
-	err := os.WriteFile(configPath, []byte(configContent), 0644)
+	err = os.WriteFile(configPath, []byte(configContent), 0644)
 	if err != nil {
 		t.Fatalf("Failed to create config: %v", err)
 	}
-
-	oldConfigPath := os.Getenv("RAVEN_CONFIG_PATH")
-	os.Setenv("RAVEN_CONFIG_PATH", configPath)
-	defer os.Setenv("RAVEN_CONFIG_PATH", oldConfigPath)
+	defer os.Remove(configPath)
 
 	_, err = conf.LoadConfig()
 	if err != nil {
