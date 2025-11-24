@@ -238,6 +238,13 @@ func HandleStartTLS(deps ServerDeps, clientHandler ClientHandler, conn net.Conn,
 
 	tlsConn := tls.Server(conn, tlsConfig)
 
+	// Explicitly perform TLS handshake
+	if err := tlsConn.Handshake(); err != nil {
+		log.Printf("TLS handshake failed during STARTTLS: %v", err)
+		_ = conn.Close()
+		return
+	}
+
 	// RFC 3501: Client MUST discard cached server capabilities after STARTTLS
 	// Restart handler with upgraded TLS connection and fresh state
 	clientHandler(tlsConn, &models.ClientState{})
@@ -377,6 +384,14 @@ func HandleSSLConnection(clientHandler ClientHandler, conn net.Conn) {
 	}
 
 	tlsConn := tls.Server(conn, tlsConfig)
+
+	// Explicitly perform TLS handshake before starting IMAP session
+	// This ensures the handshake completes before we send the IMAP greeting
+	if err := tlsConn.Handshake(); err != nil {
+		log.Printf("TLS handshake failed: %v", err)
+		_ = conn.Close()
+		return
+	}
 
 	// Start IMAP session over TLS
 	clientHandler(tlsConn, &models.ClientState{})
