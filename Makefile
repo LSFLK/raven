@@ -43,7 +43,7 @@
 #   make test-commands     - Run all command tests
 #   make help              - Show all available targets
 
-.PHONY: test test-db test-db-init test-db-domain test-db-user test-db-mailbox test-db-message test-db-blob test-db-role test-db-manager test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-uid test-commands test-delivery test-sasl test-conf test-utils test-response test-storage test-verbose test-coverage test-race clean
+.PHONY: test test-db test-db-init test-db-domain test-db-user test-db-mailbox test-db-message test-db-blob test-db-role test-db-manager test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-uid test-commands test-delivery test-parser test-parser-coverage test-sasl test-conf test-utils test-response test-storage test-verbose test-coverage test-race clean
 
 # Build delivery service
 build-delivery:
@@ -56,6 +56,14 @@ run-delivery:
 # Test delivery service
 test-delivery:
 	go test -tags=test -v ./internal/delivery/...
+
+# Test parser
+test-parser:
+	go test -v ./internal/delivery/parser/...
+
+# Test parser with coverage
+test-parser-coverage:
+	go test -v -coverprofile=coverage.out ./internal/delivery/parser/... && go tool cover -func=coverage.out | grep "internal/delivery/parser"
 
 # Test SASL authentication service
 test-sasl:
@@ -415,6 +423,8 @@ help:
 	@echo "  test-db-manager        - Run DB manager tests"
 	@echo "  test-db-all            - Run all database tests with detailed output"
 	@echo "  test-delivery          - Run delivery service tests"
+	@echo "  test-parser            - Run email parser tests"
+	@echo "  test-parser-coverage   - Run email parser tests with coverage"
 	@echo "  test-sasl              - Run SASL authentication service tests"
 	@echo "  test-conf              - Run configuration tests"
 	@echo "  test-utils             - Run server utilities tests"

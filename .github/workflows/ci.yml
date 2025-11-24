@@ -247,11 +247,17 @@ jobs:
       - name: Test Delivery Configuration
         run: go test -tags=test -v ./internal/delivery/... -run "TestDefaultConfig|TestLoadConfig|TestConfigValidation"
 
-      - name: Test Email Parser
+      - name: Test Email Parser - Basic Functions
         run: go test -tags=test -v ./internal/delivery/... -run "TestParseMessage|TestValidateMessage|TestExtractEnvelopeRecipient|TestReadDataCommand"
 
-      - name: Test Email Address Extraction
-        run: go test -tags=test -v ./internal/delivery/... -run "TestExtractLocalPart|TestExtractDomain"
+      - name: Test Email Parser - MIME Parsing
+        run: go test -tags=test -v ./internal/delivery/... -run "TestParseMIMEMessage"
+
+      - name: Test Email Parser - Database Storage
+        run: go test -tags=test -v ./internal/delivery/... -run "TestStoreMessage|TestStoreMessagePerUser|TestReconstructMessage"
+
+      - name: Test Email Parser - Utilities
+        run: go test -tags=test -v ./internal/delivery/... -run "TestExtractLocalPart|TestExtractDomain|TestExtractAllHeaders|TestIsValidEmail|TestParseAddressList"
 
       - name: Run All Delivery Tests
         run: go test -tags=test -v ./internal/delivery/...
