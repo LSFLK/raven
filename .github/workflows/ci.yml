@@ -206,6 +206,12 @@ jobs:
       - name: Test NOOP command
         run: go test -tags=test -v ./internal/server -run "TestNoopCommand"
 
+      - name: Test IDLE command
+        run: go test -v ./internal/server/extension -run "TestIdleCommand"
+
+      - name: Test NAMESPACE command
+        run: go test -v ./internal/server/extension -run "TestNamespaceCommand"
+
       - name: Test CHECK command
         run: go test -tags=test -v ./internal/server -run "TestCheckCommand"
 

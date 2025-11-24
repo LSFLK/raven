@@ -16,6 +16,8 @@
 #   make test-response     - Run server response tests
 #   make test-storage      - Run delivery storage tests
 #   make test-noop         - Run NOOP command tests
+#   make test-idle         - Run IDLE command tests
+#   make test-namespace    - Run NAMESPACE command tests
 #   make test-check        - Run CHECK command tests
 #   make test-close        - Run CLOSE command tests
 #   make test-expunge      - Run EXPUNGE command tests
@@ -43,7 +45,7 @@
 #   make test-commands     - Run all command tests
 #   make help              - Show all available targets
 
-.PHONY: test test-db test-db-init test-db-domain test-db-user test-db-mailbox test-db-message test-db-blob test-db-role test-db-manager test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-uid test-commands test-delivery test-sasl test-conf test-utils test-response test-storage test-verbose test-coverage test-race clean
+.PHONY: test test-db test-db-init test-db-domain test-db-user test-db-mailbox test-db-message test-db-blob test-db-role test-db-manager test-capability test-noop test-idle test-namespace test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-uid test-commands test-delivery test-sasl test-conf test-utils test-response test-storage test-verbose test-coverage test-race clean
 
 # Build delivery service
 build-delivery:
@@ -177,6 +179,14 @@ test-capability:
 # Run only NOOP-related tests
 test-noop:
 	go test -tags=test -v ./internal/server -run "TestNoopCommand"
+
+# Run only IDLE-related tests
+test-idle:
+	go test -v ./internal/server/extension -run "TestIdleCommand"
+
+# Run only NAMESPACE-related tests
+test-namespace:
+	go test -v ./internal/server/extension -run "TestNamespaceCommand"
 
 # Run only CHECK-related tests
 test-check:
