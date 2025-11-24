@@ -299,3 +299,72 @@ jobs:
 
       - name: Run All SASL Tests
         run: go test -tags=test -v ./internal/sasl
+
+  # ============================================================================
+  # Configuration Tests
+  # ============================================================================
+  test-conf:
+    name: Configuration Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: Run Configuration Tests
+        run: go test -v ./internal/conf/...
+
+  # ============================================================================
+  # Server Utils Tests
+  # ============================================================================
+  test-utils:
+    name: Server Utilities Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: Run Server Utilities Tests
+        run: go test -v ./internal/server/utils/...
+
+  # ============================================================================
+  # Server Response Tests
+  # ============================================================================
+  test-response:
+    name: Server Response Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: Run Server Response Tests
+        run: go test -v ./internal/server/response/...
