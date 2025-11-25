@@ -1,6 +1,6 @@
 //go:build test
 
-package uid
+package uid_test
 
 import (
 	"fmt"
@@ -8,12 +8,13 @@ import (
 	"testing"
 
 	"raven/internal/models"
+	"raven/internal/server"
 )
 
 // TestUIDCommand_Unauthenticated tests UID command without authentication
 func TestUIDCommand_Unauthenticated(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
 
 	state := &models.ClientState{
 		Authenticated: false,
@@ -29,11 +30,11 @@ func TestUIDCommand_Unauthenticated(t *testing.T) {
 
 // TestUIDCommand_NoMailboxSelected tests UID command without mailbox selection
 func TestUIDCommand_NoMailboxSelected(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "uiduser")
+	userID := server.CreateTestUser(t, database, "uiduser")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -51,25 +52,25 @@ func TestUIDCommand_NoMailboxSelected(t *testing.T) {
 
 // TestUIDFetch_RFC3501Example tests RFC 3501 example: UID FETCH 4827313:4828442 FLAGS
 func TestUIDFetch_RFC3501Example(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "uiduser")
+	userID := server.CreateTestUser(t, database, "uiduser")
 
 	// Insert messages with specific UIDs
-	msgID1 := InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
-	msgID2 := InsertTestMail(t, database, "uiduser", "Message 2", "sender@test.com", "uiduser@localhost", "INBOX")
-	msgID3 := InsertTestMail(t, database, "uiduser", "Message 3", "sender@test.com", "uiduser@localhost", "INBOX")
+	msgID1 := server.InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
+	msgID2 := server.InsertTestMail(t, database, "uiduser", "Message 2", "sender@test.com", "uiduser@localhost", "INBOX")
+	msgID3 := server.InsertTestMail(t, database, "uiduser", "Message 3", "sender@test.com", "uiduser@localhost", "INBOX")
 
-	inboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
 		SelectedMailboxID: inboxID,
 	}
-	userDB := GetUserDBByID(t, database, state.UserID)
+	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Set specific UIDs (simulating real UIDs)
 	userDB.Exec("UPDATE message_mailbox SET uid = 4827313, flags = '\\Seen' WHERE message_id = ?", msgID1)
@@ -107,14 +108,14 @@ func TestUIDFetch_RFC3501Example(t *testing.T) {
 
 // TestUIDFetch_AlwaysIncludesUID tests that UID is always included in response
 func TestUIDFetch_AlwaysIncludesUID(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "uiduser")
-	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
+	userID := server.CreateTestUser(t, database, "uiduser")
+	server.InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
 
-	inboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -138,14 +139,14 @@ func TestUIDFetch_AlwaysIncludesUID(t *testing.T) {
 
 // TestUIDFetch_NonExistentUID tests that non-existent UIDs are silently ignored
 func TestUIDFetch_NonExistentUID(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "uiduser")
-	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
+	userID := server.CreateTestUser(t, database, "uiduser")
+	server.InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
 
-	inboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -170,16 +171,16 @@ func TestUIDFetch_NonExistentUID(t *testing.T) {
 
 // TestUIDFetch_StarRange tests UID FETCH with * (highest UID)
 func TestUIDFetch_StarRange(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "uiduser")
-	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
-	InsertTestMail(t, database, "uiduser", "Message 2", "sender@test.com", "uiduser@localhost", "INBOX")
-	InsertTestMail(t, database, "uiduser", "Message 3", "sender@test.com", "uiduser@localhost", "INBOX")
+	userID := server.CreateTestUser(t, database, "uiduser")
+	server.InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "uiduser", "Message 2", "sender@test.com", "uiduser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "uiduser", "Message 3", "sender@test.com", "uiduser@localhost", "INBOX")
 
-	inboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -203,16 +204,16 @@ func TestUIDFetch_StarRange(t *testing.T) {
 
 // TestUIDSearch_ALL tests UID SEARCH ALL
 func TestUIDSearch_ALL(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "uiduser")
-	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
-	InsertTestMail(t, database, "uiduser", "Message 2", "sender@test.com", "uiduser@localhost", "INBOX")
-	InsertTestMail(t, database, "uiduser", "Message 3", "sender@test.com", "uiduser@localhost", "INBOX")
+	userID := server.CreateTestUser(t, database, "uiduser")
+	server.InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "uiduser", "Message 2", "sender@test.com", "uiduser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "uiduser", "Message 3", "sender@test.com", "uiduser@localhost", "INBOX")
 
-	inboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -236,25 +237,25 @@ func TestUIDSearch_ALL(t *testing.T) {
 
 // TestUIDSearch_UIDRange tests UID SEARCH with UID range
 func TestUIDSearch_UIDRange(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "uiduser")
+	userID := server.CreateTestUser(t, database, "uiduser")
 
 	// Insert messages with specific UIDs
-	msgID1 := InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
-	msgID2 := InsertTestMail(t, database, "uiduser", "Message 2", "sender@test.com", "uiduser@localhost", "INBOX")
-	msgID3 := InsertTestMail(t, database, "uiduser", "Message 3", "sender@test.com", "uiduser@localhost", "INBOX")
+	msgID1 := server.InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
+	msgID2 := server.InsertTestMail(t, database, "uiduser", "Message 2", "sender@test.com", "uiduser@localhost", "INBOX")
+	msgID3 := server.InsertTestMail(t, database, "uiduser", "Message 3", "sender@test.com", "uiduser@localhost", "INBOX")
 
-	inboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
 		SelectedMailboxID: inboxID,
 	}
-	userDB := GetUserDBByID(t, database, state.UserID)
+	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Set specific UIDs
 	userDB.Exec("UPDATE message_mailbox SET uid = 443 WHERE message_id = ?", msgID1)
@@ -274,14 +275,14 @@ func TestUIDSearch_UIDRange(t *testing.T) {
 
 // TestUIDStore_FLAGS tests UID STORE FLAGS operation
 func TestUIDStore_FLAGS(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "uiduser")
-	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
+	userID := server.CreateTestUser(t, database, "uiduser")
+	server.InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
 
-	inboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -311,14 +312,14 @@ func TestUIDStore_FLAGS(t *testing.T) {
 
 // TestUIDStore_SILENT tests UID STORE with .SILENT suffix
 func TestUIDStore_SILENT(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "uiduser")
-	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
+	userID := server.CreateTestUser(t, database, "uiduser")
+	server.InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
 
-	inboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -342,14 +343,14 @@ func TestUIDStore_SILENT(t *testing.T) {
 
 // TestUIDStore_NonExistentUID tests UID STORE with non-existent UID
 func TestUIDStore_NonExistentUID(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "uiduser")
-	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
+	userID := server.CreateTestUser(t, database, "uiduser")
+	server.InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
 
-	inboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -370,23 +371,23 @@ func TestUIDStore_NonExistentUID(t *testing.T) {
 
 // TestUIDCopy_SingleMessage tests UID COPY with single UID
 func TestUIDCopy_SingleMessage(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "uiduser")
-	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
-	CreateMailbox(t, database, "uiduser", "Sent")
+	userID := server.CreateTestUser(t, database, "uiduser")
+	server.InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
+	server.CreateMailbox(t, database, "uiduser", "Sent")
 
-	inboxID, _ := GetMailboxID(t, database, userID, "INBOX")
-	sentID, _ := GetMailboxID(t, database, userID, "Sent")
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
+	sentID, _ := server.GetMailboxID(t, database, userID, "Sent")
 
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
 		SelectedMailboxID: inboxID,
 	}
-	userDB := GetUserDBByID(t, database, state.UserID)
+	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// UID COPY 1 Sent
 	srv.HandleUID(conn, "U011", []string{"UID", "UID", "COPY", "1", "Sent"}, state)
@@ -407,25 +408,25 @@ func TestUIDCopy_SingleMessage(t *testing.T) {
 
 // TestUIDCopy_UIDRange tests UID COPY with UID range
 func TestUIDCopy_UIDRange(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "uiduser")
-	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
-	InsertTestMail(t, database, "uiduser", "Message 2", "sender@test.com", "uiduser@localhost", "INBOX")
-	InsertTestMail(t, database, "uiduser", "Message 3", "sender@test.com", "uiduser@localhost", "INBOX")
-	CreateMailbox(t, database, "uiduser", "Archive")
+	userID := server.CreateTestUser(t, database, "uiduser")
+	server.InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "uiduser", "Message 2", "sender@test.com", "uiduser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "uiduser", "Message 3", "sender@test.com", "uiduser@localhost", "INBOX")
+	server.CreateMailbox(t, database, "uiduser", "Archive")
 
-	inboxID, _ := GetMailboxID(t, database, userID, "INBOX")
-	archiveID, _ := GetMailboxID(t, database, userID, "Archive")
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
+	archiveID, _ := server.GetMailboxID(t, database, userID, "Archive")
 
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
 		SelectedMailboxID: inboxID,
 	}
-	userDB := GetUserDBByID(t, database, state.UserID)
+	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// UID COPY 1:2 Archive
 	srv.HandleUID(conn, "U012", []string{"UID", "UID", "COPY", "1:2", "Archive"}, state)
@@ -446,14 +447,14 @@ func TestUIDCopy_UIDRange(t *testing.T) {
 
 // TestUIDCopy_NonExistentDestination tests UID COPY to non-existent mailbox
 func TestUIDCopy_NonExistentDestination(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "uiduser")
-	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
+	userID := server.CreateTestUser(t, database, "uiduser")
+	server.InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
 
-	inboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -473,15 +474,15 @@ func TestUIDCopy_NonExistentDestination(t *testing.T) {
 
 // TestUIDCopy_NonExistentUID tests UID COPY with non-existent UID
 func TestUIDCopy_NonExistentUID(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "uiduser")
-	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
-	CreateMailbox(t, database, "uiduser", "Sent")
+	userID := server.CreateTestUser(t, database, "uiduser")
+	server.InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
+	server.CreateMailbox(t, database, "uiduser", "Sent")
 
-	inboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -502,12 +503,12 @@ func TestUIDCopy_NonExistentUID(t *testing.T) {
 
 // TestUIDCommand_BadSubCommand tests UID with unknown sub-command
 func TestUIDCommand_BadSubCommand(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "uiduser")
-	inboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	userID := server.CreateTestUser(t, database, "uiduser")
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -527,14 +528,14 @@ func TestUIDCommand_BadSubCommand(t *testing.T) {
 
 // TestUIDCommand_TagHandling tests various tag formats
 func TestUIDCommand_TagHandling(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "uiduser")
-	InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
+	userID := server.CreateTestUser(t, database, "uiduser")
+	server.InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
 
-	inboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -561,5 +562,331 @@ func TestUIDCommand_TagHandling(t *testing.T) {
 				t.Errorf("Expected tag %s in response, got: %s", tc.expectedTag, response)
 			}
 		})
+	}
+}
+
+// ============================================================================
+// Additional Coverage Tests
+// ============================================================================
+
+// TestUIDCommand_MissingSubCommand tests UID without sub-command
+func TestUIDCommand_MissingSubCommand(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
+
+	userID := server.CreateTestUser(t, database, "uiduser")
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
+
+	state := &models.ClientState{
+		Authenticated:     true,
+		UserID:            userID,
+		SelectedMailboxID: inboxID,
+	}
+
+	// UID without sub-command
+	srv.HandleUID(conn, "U016", []string{"UID", "UID"}, state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "U016 BAD UID requires sub-command") {
+		t.Errorf("Expected BAD response for missing sub-command, got: %s", response)
+	}
+}
+
+// TestUIDFetch_MissingArguments tests UID FETCH without required arguments
+func TestUIDFetch_MissingArguments(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
+
+	userID := server.CreateTestUser(t, database, "uiduser")
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
+
+	state := &models.ClientState{
+		Authenticated:     true,
+		UserID:            userID,
+		SelectedMailboxID: inboxID,
+	}
+
+	// UID FETCH without UID sequence
+	srv.HandleUID(conn, "U017", []string{"UID", "UID", "FETCH"}, state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "U017 BAD UID FETCH requires UID sequence and items") {
+		t.Errorf("Expected BAD response, got: %s", response)
+	}
+}
+
+// TestUIDSearch_MissingCriteria tests UID SEARCH without criteria
+func TestUIDSearch_MissingCriteria(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
+
+	userID := server.CreateTestUser(t, database, "uiduser")
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
+
+	state := &models.ClientState{
+		Authenticated:     true,
+		UserID:            userID,
+		SelectedMailboxID: inboxID,
+	}
+
+	// UID SEARCH without criteria
+	srv.HandleUID(conn, "U018", []string{"UID", "UID", "SEARCH"}, state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "U018 BAD UID SEARCH requires search criteria") {
+		t.Errorf("Expected BAD response, got: %s", response)
+	}
+}
+
+// TestUIDStore_MissingArguments tests UID STORE without required arguments
+func TestUIDStore_MissingArguments(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
+
+	userID := server.CreateTestUser(t, database, "uiduser")
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
+
+	state := &models.ClientState{
+		Authenticated:     true,
+		UserID:            userID,
+		SelectedMailboxID: inboxID,
+	}
+
+	// UID STORE without flags
+	srv.HandleUID(conn, "U019", []string{"UID", "UID", "STORE", "1"}, state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "U019 BAD UID STORE requires UID sequence, operation, and flags") {
+		t.Errorf("Expected BAD response, got: %s", response)
+	}
+}
+
+// TestUIDStore_InvalidDataItem tests UID STORE with invalid data item
+func TestUIDStore_InvalidDataItem(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
+
+	userID := server.CreateTestUser(t, database, "uiduser")
+	server.InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
+
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
+
+	state := &models.ClientState{
+		Authenticated:     true,
+		UserID:            userID,
+		SelectedMailboxID: inboxID,
+	}
+
+	// UID STORE with invalid data item
+	srv.HandleUID(conn, "U020", []string{"UID", "UID", "STORE", "1", "INVALID", "(\\Deleted)"}, state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "U020 BAD Invalid data item: INVALID") {
+		t.Errorf("Expected BAD response for invalid data item, got: %s", response)
+	}
+}
+
+// TestUIDStore_AddFlags tests UID STORE +FLAGS operation
+func TestUIDStore_AddFlags(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
+
+	userID := server.CreateTestUser(t, database, "uiduser")
+	server.InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
+
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
+	userDB := server.GetUserDBByID(t, database, userID)
+
+	// Set initial flag
+	userDB.Exec("UPDATE message_mailbox SET flags = '\\Seen' WHERE mailbox_id = ?", inboxID)
+
+	state := &models.ClientState{
+		Authenticated:     true,
+		UserID:            userID,
+		SelectedMailboxID: inboxID,
+	}
+
+	// UID STORE 1 +FLAGS (\Deleted)
+	srv.HandleUID(conn, "U021", []string{"UID", "UID", "STORE", "1", "+FLAGS", "(\\Deleted)"}, state)
+
+	response := conn.GetWrittenData()
+
+	// Should have both \Seen and \Deleted
+	if !strings.Contains(response, "\\Seen") || !strings.Contains(response, "\\Deleted") {
+		t.Errorf("Expected both \\Seen and \\Deleted flags, got: %s", response)
+	}
+	if !strings.Contains(response, "U021 OK UID STORE completed") {
+		t.Errorf("Expected OK response, got: %s", response)
+	}
+}
+
+// TestUIDStore_RemoveFlags tests UID STORE -FLAGS operation
+func TestUIDStore_RemoveFlags(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
+
+	userID := server.CreateTestUser(t, database, "uiduser")
+	server.InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
+
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
+	userDB := server.GetUserDBByID(t, database, userID)
+
+	// Set multiple flags
+	userDB.Exec("UPDATE message_mailbox SET flags = '\\Seen \\Deleted' WHERE mailbox_id = ?", inboxID)
+
+	state := &models.ClientState{
+		Authenticated:     true,
+		UserID:            userID,
+		SelectedMailboxID: inboxID,
+	}
+
+	// UID STORE 1 -FLAGS (\Deleted)
+	srv.HandleUID(conn, "U022", []string{"UID", "UID", "STORE", "1", "-FLAGS", "(\\Deleted)"}, state)
+
+	response := conn.GetWrittenData()
+
+	// Should have \Seen but not \Deleted
+	if !strings.Contains(response, "\\Seen") {
+		t.Errorf("Expected \\Seen flag to remain, got: %s", response)
+	}
+	if strings.Contains(response, "\\Deleted") {
+		t.Errorf("Expected \\Deleted flag to be removed, got: %s", response)
+	}
+	if !strings.Contains(response, "U022 OK UID STORE completed") {
+		t.Errorf("Expected OK response, got: %s", response)
+	}
+}
+
+// TestUIDCopy_MissingDestination tests UID COPY without destination
+func TestUIDCopy_MissingDestination(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
+
+	userID := server.CreateTestUser(t, database, "uiduser")
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
+
+	state := &models.ClientState{
+		Authenticated:     true,
+		UserID:            userID,
+		SelectedMailboxID: inboxID,
+	}
+
+	// UID COPY without destination
+	srv.HandleUID(conn, "U023", []string{"UID", "UID", "COPY"}, state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "U023 BAD UID COPY requires UID sequence and destination mailbox") {
+		t.Errorf("Expected BAD response, got: %s", response)
+	}
+}
+
+// TestUIDCopy_QuotedDestination tests UID COPY with quoted mailbox name
+func TestUIDCopy_QuotedDestination(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
+
+	userID := server.CreateTestUser(t, database, "uiduser")
+	server.InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
+	server.CreateMailbox(t, database, "uiduser", "Sent Items")
+
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
+
+	state := &models.ClientState{
+		Authenticated:     true,
+		UserID:            userID,
+		SelectedMailboxID: inboxID,
+	}
+
+	// UID COPY 1 "Sent Items"
+	srv.HandleUID(conn, "U024", []string{"UID", "UID", "COPY", "1", "\"Sent Items\""}, state)
+
+	response := conn.GetWrittenData()
+
+	if !strings.Contains(response, "U024 OK UID COPY completed") {
+		t.Errorf("Expected OK response for quoted mailbox name, got: %s", response)
+	}
+}
+
+// TestUIDCopy_PreservesFlags tests that UID COPY preserves flags
+func TestUIDCopy_PreservesFlags(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
+
+	userID := server.CreateTestUser(t, database, "uiduser")
+	server.InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
+	server.CreateMailbox(t, database, "uiduser", "Archive")
+
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
+	archiveID, _ := server.GetMailboxID(t, database, userID, "Archive")
+	userDB := server.GetUserDBByID(t, database, userID)
+
+	// Set flags on the message
+	userDB.Exec("UPDATE message_mailbox SET flags = '\\Seen \\Flagged' WHERE mailbox_id = ?", inboxID)
+
+	state := &models.ClientState{
+		Authenticated:     true,
+		UserID:            userID,
+		SelectedMailboxID: inboxID,
+	}
+
+	// UID COPY 1 Archive
+	srv.HandleUID(conn, "U025", []string{"UID", "UID", "COPY", "1", "Archive"}, state)
+
+	response := conn.GetWrittenData()
+
+	if !strings.Contains(response, "U025 OK UID COPY completed") {
+		t.Errorf("Expected OK response, got: %s", response)
+	}
+
+	// Check that flags are preserved and \Recent is added
+	var flags string
+	userDB.QueryRow("SELECT flags FROM message_mailbox WHERE mailbox_id = ?", archiveID).Scan(&flags)
+	if !strings.Contains(flags, "\\Seen") || !strings.Contains(flags, "\\Flagged") {
+		t.Errorf("Expected flags to be preserved, got: %s", flags)
+	}
+	if !strings.Contains(flags, "\\Recent") {
+		t.Errorf("Expected \\Recent flag to be added, got: %s", flags)
+	}
+}
+
+// TestUIDSearch_DefaultBehavior tests UID SEARCH with unrecognized criteria
+func TestUIDSearch_DefaultBehavior(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
+
+	userID := server.CreateTestUser(t, database, "uiduser")
+	server.InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "uiduser", "Message 2", "sender@test.com", "uiduser@localhost", "INBOX")
+
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
+
+	state := &models.ClientState{
+		Authenticated:     true,
+		UserID:            userID,
+		SelectedMailboxID: inboxID,
+	}
+
+	// UID SEARCH UNRECOGNIZED (should default to returning all UIDs)
+	srv.HandleUID(conn, "U026", []string{"UID", "UID", "SEARCH", "UNRECOGNIZED"}, state)
+
+	response := conn.GetWrittenData()
+
+	// Should return all UIDs (default behavior)
+	if !strings.Contains(response, "* SEARCH") {
+		t.Errorf("Expected SEARCH response, got: %s", response)
+	}
+	if !strings.Contains(response, "U026 OK UID SEARCH completed") {
+		t.Errorf("Expected OK response, got: %s", response)
 	}
 }
