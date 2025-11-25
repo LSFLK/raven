@@ -658,7 +658,10 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 			// Classify as attachment or text part
 			isAttachment := false
 			dispLower := strings.ToLower(strings.TrimSpace(disposition))
-			if strings.HasPrefix(dispLower, "attachment") {
+			// Never treat multipart containers as attachments
+			if strings.HasPrefix(strings.ToLower(contentType), "multipart/") {
+				isAttachment = false
+			} else if strings.HasPrefix(dispLower, "attachment") {
 				isAttachment = true
 			} else if !strings.HasPrefix(strings.ToLower(contentType), "text/") && !strings.HasPrefix(dispLower, "inline") {
 				// Non-text types are attachments unless explicitly inline
@@ -845,15 +848,51 @@ func writePartHeaders(buf *bytes.Buffer, part map[string]interface{}) {
 // writePartContent writes the content of a message part
 func writePartContent(buf *bytes.Buffer, database *sql.DB, part map[string]interface{}) {
 	// Get content from blob or text_content
+	var content string
 	if blobID, ok := part["blob_id"].(int64); ok {
-		content, err := db.GetBlob(database, blobID)
-		if err == nil {
-			buf.WriteString(content)
+		if c, err := db.GetBlob(database, blobID); err == nil {
+			content = c
 		}
 	} else if textContent, ok := part["text_content"].(string); ok {
-		buf.WriteString(textContent)
+		content = textContent
 	}
-	buf.WriteString("\r\n")
+
+	// If base64 encoding, ensure proper 76 char wrapping per RFC 2045
+	if enc, ok := part["content_transfer_encoding"].(string); ok && strings.EqualFold(strings.TrimSpace(enc), "base64") {
+		// Detect if already wrapped (any line length <= 78 and multiple lines)
+		lines := strings.Split(content, "\r\n")
+		alreadyWrapped := true
+		if len(lines) <= 1 {
+			alreadyWrapped = false
+		} else {
+			for _, l := range lines {
+				if len(l) > 0 && len(l) > 78 { // some lines too long
+					alreadyWrapped = false
+					break
+				}
+			}
+		}
+		if !alreadyWrapped {
+			// Remove any existing whitespace/newlines and re-wrap
+			raw := strings.ReplaceAll(content, "\r", "")
+			raw = strings.ReplaceAll(raw, "\n", "")
+			var wrapped strings.Builder
+			for i := 0; i < len(raw); i += 76 {
+				end := i + 76
+				if end > len(raw) {
+					end = len(raw)
+				}
+				wrapped.WriteString(raw[i:end])
+				wrapped.WriteString("\r\n")
+			}
+			content = wrapped.String()
+		}
+	}
+
+	buf.WriteString(content)
+	if !strings.HasSuffix(content, "\r\n") {
+		buf.WriteString("\r\n")
+	}
 }
 
 // extractRecipients extracts all recipient addresses from To, Cc, and Bcc headers

@@ -186,18 +186,23 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 		return
 	}
 
-	// Reconstruct message from new schema
-	rawMsg, err := parser.ReconstructMessage(targetDB, messageID)
-	if err != nil {
-		// If reconstruction fails, skip this message
-		return
+	// Lazy-load the full reconstructed message only when needed
+	var rawMsg string
+	var rawMsgErr error
+	loadRawMsg := func() string {
+		if rawMsg == "" && rawMsgErr == nil {
+			rawMsg, rawMsgErr = parser.ReconstructMessage(targetDB, messageID)
+			if rawMsgErr != nil {
+				return ""
+			}
+			if !strings.Contains(rawMsg, "\r\n") {
+				rawMsg = strings.ReplaceAll(rawMsg, "\n", "\r\n")
+			}
+		}
+		return rawMsg
 	}
 
-		if !strings.Contains(rawMsg, "\r\n") {
-			rawMsg = strings.ReplaceAll(rawMsg, "\n", "\r\n")
-		}
-
-		itemsUpper := strings.ToUpper(items)
+	itemsUpper := strings.ToUpper(items)
 		responseParts := []string{}
 		var literalData string // Store literal data separately
 
@@ -228,25 +233,29 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 			responseParts = append(responseParts, fmt.Sprintf("INTERNALDATE \"%s\"", dateStr))
 		}
 		if strings.Contains(itemsUpper, "RFC822.SIZE") {
-			responseParts = append(responseParts, fmt.Sprintf("RFC822.SIZE %d", len(rawMsg)))
+			msg := loadRawMsg()
+			responseParts = append(responseParts, fmt.Sprintf("RFC822.SIZE %d", len(msg)))
 		}
 
 		// Handle ENVELOPE
 		if strings.Contains(itemsUpper, "ENVELOPE") {
-			envelope := response.BuildEnvelope(rawMsg)
+			msg := loadRawMsg()
+			envelope := response.BuildEnvelope(msg)
 			responseParts = append(responseParts, envelope)
 		}
 
 		// Handle BODYSTRUCTURE
 		if strings.Contains(itemsUpper, "BODYSTRUCTURE") {
-			bodyStructure := response.BuildBodyStructure(rawMsg)
+			msg := loadRawMsg()
+			bodyStructure := response.BuildBodyStructure(msg)
 			responseParts = append(responseParts, bodyStructure)
 		}
 
 		// Handle BODY (non-extensible BODYSTRUCTURE)
 		if strings.Contains(itemsUpper, "BODY") && !strings.Contains(itemsUpper, "BODY[") && !strings.Contains(itemsUpper, "BODY.PEEK") && !strings.Contains(itemsUpper, "BODYSTRUCTURE") {
 			// BODY is the non-extensible form of BODYSTRUCTURE
-			bodyStructure := response.BuildBodyStructure(rawMsg)
+			msg := loadRawMsg()
+			bodyStructure := response.BuildBodyStructure(msg)
 			// Replace BODYSTRUCTURE with BODY in the response
 			bodyStructure = strings.Replace(bodyStructure, "BODYSTRUCTURE", "BODY", 1)
 			responseParts = append(responseParts, bodyStructure)
@@ -307,26 +316,25 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 					pn, err := strconv.Atoi(partNumStr)
 					if err == nil && pn > 0 {
 						loadParts()
-						var target map[string]interface{}
-						for _, p := range parts {
-							if n, ok := p["part_number"].(int64); ok && int(n) == pn {
-								target = p
-								break
-							}
-							if n2, ok := p["part_number"].(int); ok && n2 == pn { // fallback type
-								target = p
-								break
-							}
-						}
+						// Map IMAP part number to database part
+						target := mapIMAPPartToDBPart(parts, pn)
 
 						payload := ""
 						if target != nil {
+							// Check if this is a multipart container (has no body)
+							contentType, _ := target["content_type"].(string)
+							isMultipart := strings.HasPrefix(contentType, "multipart/")
+
 							if wantMIME {
 								// Build MIME headers for the part
 								hdr := buildMIMEHeadersForPart(target)
 								payload = hdr
+							} else if isMultipart {
+								// For multipart containers, extract from the full reconstructed message
+								fullMsg := loadRawMsg()
+								payload = extractBodySection(fullMsg, pn)
 							} else {
-								// Part body only
+								// Part body only - for non-multipart parts
 								if blobID, ok := target["blob_id"].(int64); ok {
 									if content, err := db.GetBlob(targetDB, blobID); err == nil {
 										payload = content
@@ -338,6 +346,7 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 						}
 
 						// Check for partial spec immediately following the closing bracket
+						partialStartPos := -1
 						after := end + 1
 						if after < len(upper) && upper[after] == '<' {
 							close := strings.Index(upper[after:], ">")
@@ -345,6 +354,7 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 								rangeSpec := upper[after+1 : after+close]
 								var startPos, length int
 								if _, err := fmt.Sscanf(rangeSpec, "%d.%d", &startPos, &length); err == nil {
+									partialStartPos = startPos
 									if startPos < len(payload) {
 										endPos := startPos + length
 										if endPos > len(payload) {
@@ -367,7 +377,12 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 							if literalData != "" {
 								literalData += " "
 							}
-							responseParts = append(responseParts, fmt.Sprintf("BODY[%s]", sectionSpec))
+							// Include partial start position in response if this was a partial fetch
+							if partialStartPos >= 0 {
+								responseParts = append(responseParts, fmt.Sprintf("BODY[%s]<%d>", sectionSpec, partialStartPos))
+							} else {
+								responseParts = append(responseParts, fmt.Sprintf("BODY[%s]", sectionSpec))
+							}
 							literalData += fmt.Sprintf("{%d}\r\n%s", len(payload), payload)
 						}
 					}
@@ -410,8 +425,9 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 			}
 
 			// Extract only the requested headers from the message
+			msg := loadRawMsg()
 			headersMap := map[string]string{}
-			lines := strings.Split(rawMsg, "\r\n")
+			lines := strings.Split(msg, "\r\n")
 			currentHeader := ""
 			for _, line := range lines {
 				if line == "" {
@@ -458,10 +474,11 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 
 	// Handle BODY.PEEK[TEXT] or BODY[TEXT] - message body only (can be combined with other parts)
 	if strings.Contains(itemsUpper, "BODY.PEEK[TEXT]") || strings.Contains(itemsUpper, "BODY[TEXT]") {
-		headerEnd := strings.Index(rawMsg, "\r\n\r\n")
+		msg := loadRawMsg()
+		headerEnd := strings.Index(msg, "\r\n\r\n")
 		body := ""
 		if headerEnd != -1 {
-			body = rawMsg[headerEnd+4:] // skip the double CRLF
+			body = msg[headerEnd+4:] // skip the double CRLF
 		}
 
 		// Check for partial fetch like BODY.PEEK[TEXT]<0.2048>
@@ -495,10 +512,11 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 	// Handle BODY.PEEK[HEADER] or BODY[HEADER] - all headers (check it's not HEADER.FIELDS)
 	if (strings.Contains(itemsUpper, "BODY.PEEK[HEADER]") || strings.Contains(itemsUpper, "BODY[HEADER]")) &&
 	   !strings.Contains(itemsUpper, "HEADER.FIELDS") {
-		headerEnd := strings.Index(rawMsg, "\r\n\r\n")
-		headers := rawMsg
+		msg := loadRawMsg()
+		headerEnd := strings.Index(msg, "\r\n\r\n")
+		headers := msg
 		if headerEnd != -1 {
-			headers = rawMsg[:headerEnd+2] // include last CRLF
+			headers = msg[:headerEnd+2] // include last CRLF
 		}
 		if literalData != "" {
 			literalData += " "
@@ -509,10 +527,11 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 
 	// Handle RFC822.HEADER - return only the header portion
 	if strings.Contains(itemsUpper, "RFC822.HEADER") {
-		headerEnd := strings.Index(rawMsg, "\r\n\r\n")
-		headers := rawMsg
+		msg := loadRawMsg()
+		headerEnd := strings.Index(msg, "\r\n\r\n")
+		headers := msg
 		if headerEnd != -1 {
-			headers = rawMsg[:headerEnd+2] // include last CRLF
+			headers = msg[:headerEnd+2] // include last CRLF
 		}
 		if literalData != "" {
 			literalData += " "
@@ -523,10 +542,11 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 
 	// Handle RFC822.TEXT - body text only (excluding headers)
 	if strings.Contains(itemsUpper, "RFC822.TEXT") {
-		headerEnd := strings.Index(rawMsg, "\r\n\r\n")
+		msg := loadRawMsg()
+		headerEnd := strings.Index(msg, "\r\n\r\n")
 		body := ""
 		if headerEnd != -1 {
-			body = rawMsg[headerEnd+4:] // skip the double CRLF
+			body = msg[headerEnd+4:] // skip the double CRLF
 		}
 		if literalData != "" {
 			literalData += " "
@@ -540,11 +560,12 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 	   strings.Contains(itemsUpper, "RFC822.PEEK") ||
 	   (strings.Contains(itemsUpper, "RFC822") && !strings.Contains(itemsUpper, "RFC822.SIZE") &&
 	    !strings.Contains(itemsUpper, "RFC822.HEADER") && !strings.Contains(itemsUpper, "RFC822.TEXT") && !strings.Contains(itemsUpper, "RFC822.PEEK")) {
+		msg := loadRawMsg()
 		if literalData != "" {
 			literalData += " "
 		}
 		responseParts = append(responseParts, "BODY[]")
-		literalData += fmt.Sprintf("{%d}\r\n%s", len(rawMsg), rawMsg)
+		literalData += fmt.Sprintf("{%d}\r\n%s", len(msg), msg)
 	}
 
 	if len(responseParts) > 0 {
@@ -558,6 +579,148 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 	} else {
 		deps.SendResponse(conn, fmt.Sprintf("* %d FETCH (FLAGS ())", seqNum))
 	}
+}
+
+// extractBodySection extracts a specific MIME body section from a reconstructed message
+func extractBodySection(fullMessage string, partNum int) string {
+	// Parse the message to find the main content-type and boundary
+	lines := strings.Split(fullMessage, "\r\n")
+
+	// Find the main Content-Type header
+	var mainBoundary string
+	headerEnd := -1
+	for i, line := range lines {
+		if line == "" {
+			headerEnd = i
+			break
+		}
+		if strings.HasPrefix(strings.ToUpper(line), "CONTENT-TYPE:") {
+			// Extract boundary from Content-Type header
+			ctLine := line
+			// Handle multi-line headers
+			for j := i + 1; j < len(lines); j++ {
+				if len(lines[j]) > 0 && (lines[j][0] == ' ' || lines[j][0] == '\t') {
+					ctLine += lines[j]
+				} else {
+					break
+				}
+			}
+			// Parse boundary
+			if idx := strings.Index(strings.ToLower(ctLine), "boundary="); idx != -1 {
+				boundaryPart := ctLine[idx+9:]
+				if boundaryPart[0] == '"' {
+					// Quoted boundary
+					endQuote := strings.Index(boundaryPart[1:], "\"")
+					if endQuote != -1 {
+						mainBoundary = boundaryPart[1 : endQuote+1]
+					}
+				} else {
+					// Unquoted boundary (ends at semicolon or end of line)
+					endIdx := strings.IndexAny(boundaryPart, "; \r\n")
+					if endIdx != -1 {
+						mainBoundary = boundaryPart[:endIdx]
+					} else {
+						mainBoundary = strings.TrimSpace(boundaryPart)
+					}
+				}
+			}
+		}
+	}
+
+	if mainBoundary == "" || headerEnd == -1 {
+		return ""
+	}
+
+	// Find the Nth part (1-indexed)
+	body := strings.Join(lines[headerEnd+1:], "\r\n")
+	delimiter := "--" + mainBoundary
+	parts := strings.Split(body, delimiter)
+
+	// parts[0] is the preamble (before first boundary)
+	// parts[1..n] are the actual MIME parts
+	// parts[n+1] would be after the closing boundary
+
+	if partNum <= 0 || partNum >= len(parts) {
+		return ""
+	}
+
+	// Get the requested part (parts array is 0-indexed, but partNum is 1-indexed)
+	// parts[0] = preamble, parts[1] = part 1, parts[2] = part 2, etc.
+	partContent := parts[partNum]
+
+	// Remove the closing boundary marker if present (--boundary--)
+	if strings.HasPrefix(strings.TrimSpace(partContent), "--") {
+		return ""
+	}
+
+	// Trim leading CRLF that comes after the boundary marker
+	partContent = strings.TrimPrefix(partContent, "\r\n")
+	partContent = strings.TrimPrefix(partContent, "\n")
+
+	// The part content includes headers and body. We need to extract just the body.
+	partLines := strings.Split(partContent, "\r\n")
+	partHeaderEnd := -1
+	for i, line := range partLines {
+		if line == "" {
+			partHeaderEnd = i
+			break
+		}
+	}
+
+	if partHeaderEnd == -1 {
+		return ""
+	}
+
+	// Extract the body (everything after the blank line)
+	partBody := strings.Join(partLines[partHeaderEnd+1:], "\r\n")
+
+	// Trim any trailing content that belongs to the outer message
+	// Remove trailing newlines and any closing boundaries
+	partBody = strings.TrimRight(partBody, "\r\n")
+
+	// Check if there's a closing boundary from parent at the end and remove it
+	lastLines := strings.Split(partBody, "\r\n")
+	if len(lastLines) > 0 {
+		lastLine := lastLines[len(lastLines)-1]
+		// If last line is a boundary marker from a different part, remove it
+		if strings.HasPrefix(lastLine, "--") && !strings.Contains(partBody[:len(partBody)-len(lastLine)], lastLine[:min(len(lastLine), 20)]) {
+			partBody = strings.Join(lastLines[:len(lastLines)-1], "\r\n")
+		}
+	}
+
+	return partBody
+}
+
+// mapIMAPPartToDBPart maps an IMAP part number to the corresponding database part
+// IMAP numbering: top-level parts are 1, 2, 3..., nested parts are 1.1, 1.2, etc.
+// Database numbering: sequential (1, 2, 3, 4...) with parent_part_id relationships
+//
+// For a message like:
+//   multipart/mixed
+//     1: multipart/alternative (container)
+//        - text/plain
+//        - text/html
+//     2: image/png
+//
+// IMAP part 1 = the multipart/alternative container (should reconstruct the entire section)
+// IMAP part 2 = the image/png
+func mapIMAPPartToDBPart(parts []map[string]interface{}, imapPartNum int) map[string]interface{} {
+	// First, identify which parts are top-level (no parent)
+	topLevelParts := []map[string]interface{}{}
+	for _, p := range parts {
+		parentID, hasParent := p["parent_part_id"]
+		if !hasParent || parentID == nil {
+			topLevelParts = append(topLevelParts, p)
+		}
+	}
+
+	// In IMAP, top-level parts are numbered sequentially (including multipart containers)
+	// Part 1, Part 2, Part 3, etc.
+	if imapPartNum > 0 && imapPartNum <= len(topLevelParts) {
+		return topLevelParts[imapPartNum-1]
+	}
+
+	return nil
 }
 
 // buildMIMEHeadersForPart reconstructs MIME headers for a specific part
