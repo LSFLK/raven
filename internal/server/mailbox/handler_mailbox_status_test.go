@@ -13,8 +13,8 @@ import (
 
 // TestStatusCommand_Authentication tests STATUS command authentication requirements
 func TestStatusCommand_Authentication(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
 	state := &models.ClientState{
 		Authenticated: false,
 	}
@@ -30,9 +30,9 @@ func TestStatusCommand_Authentication(t *testing.T) {
 
 // TestStatusCommand_InvalidArguments tests STATUS command with invalid arguments
 func TestStatusCommand_InvalidArguments(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test STATUS command with insufficient arguments (no mailbox)
 	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS"}, state)
@@ -45,9 +45,9 @@ func TestStatusCommand_InvalidArguments(t *testing.T) {
 
 // TestStatusCommand_NoStatusItems tests STATUS command without status data items
 func TestStatusCommand_NoStatusItems(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test STATUS command without status items
 	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX"}, state)
@@ -60,9 +60,9 @@ func TestStatusCommand_NoStatusItems(t *testing.T) {
 
 // TestStatusCommand_EmptyMailboxName tests STATUS command with empty mailbox name
 func TestStatusCommand_EmptyMailboxName(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test STATUS command with empty mailbox name
 	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", `""`, "(MESSAGES)"}, state)
@@ -75,13 +75,13 @@ func TestStatusCommand_EmptyMailboxName(t *testing.T) {
 
 // TestStatusCommand_NonExistentMailbox tests STATUS command with non-existent mailbox
 func TestStatusCommand_NonExistentMailbox(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := GetDatabaseFromServer(srv)
-	CreateTestUser(t, database, "testuser")
+	database := server.GetDatabaseFromServer(srv)
+	server.CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with non-existent mailbox
 	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "NonExistent", "(MESSAGES)"}, state)
@@ -95,15 +95,15 @@ func TestStatusCommand_NonExistentMailbox(t *testing.T) {
 // TestStatusCommand_MessagesItem tests STATUS command with MESSAGES item
 func TestStatusCommand_MessagesItem(t *testing.T) {
 	// Create test database and user
-	database := CreateTestDB(t)
+	database := server.CreateTestDB(t)
 	defer database.Close()
-	CreateTestUser(t, database, "testuser")
+	server.CreateTestUser(t, database, "testuser")
 
 	// Create server with the database
-	srv := TestServerWithDB(database)
+	srv := server.TestServerWithDBManager(database)
 
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test STATUS command with MESSAGES item on INBOX
 	srv.HandleStatus(conn, "A042", []string{"A042", "STATUS", "INBOX", "(MESSAGES)"}, state)
@@ -135,13 +135,13 @@ func TestStatusCommand_MessagesItem(t *testing.T) {
 
 // TestStatusCommand_MultipleItems tests STATUS command with multiple status items
 func TestStatusCommand_MultipleItems(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := GetDatabaseFromServer(srv)
-	CreateTestUser(t, database, "testuser")
+	database := server.GetDatabaseFromServer(srv)
+	server.CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with multiple items (as per RFC 3501 example)
 	srv.HandleStatus(conn, "A042", []string{"A042", "STATUS", "INBOX", "(UIDNEXT", "MESSAGES)"}, state)
@@ -176,13 +176,13 @@ func TestStatusCommand_MultipleItems(t *testing.T) {
 
 // TestStatusCommand_AllItems tests STATUS command with all defined status items
 func TestStatusCommand_AllItems(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := GetDatabaseFromServer(srv)
-	CreateTestUser(t, database, "testuser")
+	database := server.GetDatabaseFromServer(srv)
+	server.CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with all status items
 	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(MESSAGES", "RECENT", "UIDNEXT", "UIDVALIDITY", "UNSEEN)"}, state)
@@ -217,13 +217,13 @@ func TestStatusCommand_AllItems(t *testing.T) {
 
 // TestStatusCommand_RecentItem tests STATUS command with RECENT item
 func TestStatusCommand_RecentItem(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := GetDatabaseFromServer(srv)
-	CreateTestUser(t, database, "testuser")
+	database := server.GetDatabaseFromServer(srv)
+	server.CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with RECENT item
 	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(RECENT)"}, state)
@@ -250,13 +250,13 @@ func TestStatusCommand_RecentItem(t *testing.T) {
 
 // TestStatusCommand_UidnextItem tests STATUS command with UIDNEXT item
 func TestStatusCommand_UidnextItem(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := GetDatabaseFromServer(srv)
-	CreateTestUser(t, database, "testuser")
+	database := server.GetDatabaseFromServer(srv)
+	server.CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with UIDNEXT item
 	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(UIDNEXT)"}, state)
@@ -288,13 +288,13 @@ func TestStatusCommand_UidnextItem(t *testing.T) {
 
 // TestStatusCommand_UidvalidityItem tests STATUS command with UIDVALIDITY item
 func TestStatusCommand_UidvalidityItem(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := GetDatabaseFromServer(srv)
-	CreateTestUser(t, database, "testuser")
+	database := server.GetDatabaseFromServer(srv)
+	server.CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with UIDVALIDITY item
 	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(UIDVALIDITY)"}, state)
@@ -321,13 +321,13 @@ func TestStatusCommand_UidvalidityItem(t *testing.T) {
 
 // TestStatusCommand_UnseenItem tests STATUS command with UNSEEN item
 func TestStatusCommand_UnseenItem(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := GetDatabaseFromServer(srv)
-	CreateTestUser(t, database, "testuser")
+	database := server.GetDatabaseFromServer(srv)
+	server.CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with UNSEEN item
 	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(UNSEEN)"}, state)
@@ -354,14 +354,14 @@ func TestStatusCommand_UnseenItem(t *testing.T) {
 
 // TestStatusCommand_QuotedMailboxName tests STATUS command with quoted mailbox name
 func TestStatusCommand_QuotedMailboxName(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists and create a mailbox
-	database := GetDatabaseFromServer(srv)
-	CreateTestUser(t, database, "testuser")
-	CreateMailbox(t, database, "testuser", "Test Folder")
+	database := server.GetDatabaseFromServer(srv)
+	server.CreateTestUser(t, database, "testuser")
+	server.CreateMailbox(t, database, "testuser", "Test Folder")
 
 	// Test STATUS command with quoted mailbox name
 	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", `"Test Folder"`, "(MESSAGES)"}, state)
@@ -388,14 +388,14 @@ func TestStatusCommand_QuotedMailboxName(t *testing.T) {
 
 // TestStatusCommand_CustomMailbox tests STATUS command on a custom mailbox
 func TestStatusCommand_CustomMailbox(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists and create a mailbox
-	database := GetDatabaseFromServer(srv)
-	CreateTestUser(t, database, "testuser")
-	CreateMailbox(t, database, "testuser", "Projects")
+	database := server.GetDatabaseFromServer(srv)
+	server.CreateTestUser(t, database, "testuser")
+	server.CreateMailbox(t, database, "testuser", "Projects")
 
 	// Test STATUS command on custom mailbox
 	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "Projects", "(MESSAGES", "UIDNEXT)"}, state)
@@ -422,17 +422,17 @@ func TestStatusCommand_CustomMailbox(t *testing.T) {
 
 // TestStatusCommand_WithMessages tests STATUS command on a mailbox with messages
 func TestStatusCommand_WithMessages(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := GetDatabaseFromServer(srv)
-	CreateTestUser(t, database, "testuser")
+	database := server.GetDatabaseFromServer(srv)
+	server.CreateTestUser(t, database, "testuser")
 
 	// Insert test messages into INBOX using helpers
 	for i := 1; i <= 3; i++ {
-		InsertTestMail(t, database, "testuser",
+		server.InsertTestMail(t, database, "testuser",
 			fmt.Sprintf("Test Subject %d", i),
 			"sender@example.com",
 			"testuser@example.com",
@@ -467,13 +467,13 @@ func TestStatusCommand_WithMessages(t *testing.T) {
 
 // TestStatusCommand_InvalidStatusItem tests STATUS command with unknown status item
 func TestStatusCommand_InvalidStatusItem(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := GetDatabaseFromServer(srv)
-	CreateTestUser(t, database, "testuser")
+	database := server.GetDatabaseFromServer(srv)
+	server.CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with invalid status item
 	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(INVALID)"}, state)
@@ -490,9 +490,9 @@ func TestStatusCommand_DefaultMailboxes(t *testing.T) {
 
 	for _, mailbox := range defaultMailboxes {
 		t.Run(mailbox, func(t *testing.T) {
-			srv := SetupTestServerSimple(t)
-			conn := NewMockConn()
-			state := SetupAuthenticatedState(t, srv, "testuser")
+			srv := server.SetupTestServerSimple(t)
+			conn := server.NewMockConn()
+			state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 			// Test STATUS command
 			srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", mailbox, "(MESSAGES)"}, state)
@@ -521,14 +521,14 @@ func TestStatusCommand_DefaultMailboxes(t *testing.T) {
 
 // TestStatusCommand_RFC3501Example tests the exact example from RFC 3501
 func TestStatusCommand_RFC3501Example(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists and create the mailbox
-	database := GetDatabaseFromServer(srv)
-	CreateTestUser(t, database, "testuser")
-	CreateMailbox(t, database, "testuser", "blurdybloop")
+	database := server.GetDatabaseFromServer(srv)
+	server.CreateTestUser(t, database, "testuser")
+	server.CreateMailbox(t, database, "testuser", "blurdybloop")
 
 	// Test STATUS command as per RFC 3501 example: STATUS blurdybloop (UIDNEXT MESSAGES)
 	srv.HandleStatus(conn, "A042", []string{"A042", "STATUS", "blurdybloop", "(UIDNEXT", "MESSAGES)"}, state)
@@ -563,13 +563,13 @@ func TestStatusCommand_RFC3501Example(t *testing.T) {
 
 // TestStatusCommand_CaseInsensitiveItems tests STATUS command with mixed case items
 func TestStatusCommand_CaseInsensitiveItems(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Ensure user table exists
-	database := GetDatabaseFromServer(srv)
-	CreateTestUser(t, database, "testuser")
+	database := server.GetDatabaseFromServer(srv)
+	server.CreateTestUser(t, database, "testuser")
 
 	// Test STATUS command with mixed case items
 	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(messages", "UidNext)"}, state)

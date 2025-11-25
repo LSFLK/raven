@@ -12,9 +12,9 @@ import (
 
 // TestLsubCommand_BasicUsage tests LSUB with basic wildcard patterns
 func TestLsubCommand_BasicUsage(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Subscribe to some mailboxes first
 	srv.HandleSubscribe(conn, "S1", []string{"S1", "SUBSCRIBE", "INBOX"}, state)
@@ -47,8 +47,8 @@ func TestLsubCommand_BasicUsage(t *testing.T) {
 
 // TestLsubCommand_NotAuthenticated tests LSUB without authentication
 func TestLsubCommand_NotAuthenticated(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
 	state := &models.ClientState{
 		Authenticated: false,
 	}
@@ -63,9 +63,9 @@ func TestLsubCommand_NotAuthenticated(t *testing.T) {
 
 // TestLsubCommand_MissingArguments tests LSUB with missing arguments
 func TestLsubCommand_MissingArguments(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test with only one argument
 	srv.HandleLsub(conn, "A001", []string{"A001", "LSUB", `""`}, state)
@@ -78,9 +78,9 @@ func TestLsubCommand_MissingArguments(t *testing.T) {
 
 // TestLsubCommand_EmptyPattern tests LSUB with empty pattern (hierarchy delimiter query)
 func TestLsubCommand_EmptyPattern(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// LSUB "" "" should return hierarchy delimiter
 	srv.HandleLsub(conn, "A001", []string{"A001", "LSUB", `""`, `""`}, state)
@@ -98,9 +98,9 @@ func TestLsubCommand_EmptyPattern(t *testing.T) {
 
 // TestLsubCommand_PercentWildcard tests LSUB with % wildcard
 func TestLsubCommand_PercentWildcard(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Subscribe to mailboxes at different hierarchy levels
 	srv.HandleSubscribe(conn, "S1", []string{"S1", "SUBSCRIBE", "INBOX"}, state)
@@ -125,14 +125,14 @@ func TestLsubCommand_PercentWildcard(t *testing.T) {
 // TestLsubCommand_ImpliedParentWithNoselect tests RFC 3501 special case
 // When "foo/bar" is subscribed but "foo" is not, LSUB with % must return "foo" with \Noselect
 func TestLsubCommand_ImpliedParentWithNoselect(t *testing.T) {
-	testDB := CreateTestDB(t)
-	srv := TestServerWithDB(testDB)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	testDB := server.CreateTestDB(t)
+	srv := server.TestServerWithDBManager(testDB)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Subscribe to "Work/Projects" but NOT to "Work"
 	// This creates an implied parent "Work" that should be returned with \Noselect
-	SubscribeToMailbox(t, testDB, "testuser", "Work/Projects")
+	server.SubscribeToMailbox(t, testDB, "testuser", "Work/Projects")
 
 	// Test LSUB with % wildcard at root level
 	srv.HandleLsub(conn, "A001", []string{"A001", "LSUB", `""`, "%"}, state)
@@ -156,14 +156,14 @@ func TestLsubCommand_ImpliedParentWithNoselect(t *testing.T) {
 
 // TestLsubCommand_HierarchyWithPercent tests LSUB with hierarchy and % wildcard
 func TestLsubCommand_HierarchyWithPercent(t *testing.T) {
-	testDB := CreateTestDB(t)
-	srv := TestServerWithDB(testDB)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	testDB := server.CreateTestDB(t)
+	srv := server.TestServerWithDBManager(testDB)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Subscribe to hierarchical mailboxes
-	SubscribeToMailbox(t, testDB, "testuser", "Work/Projects/2024")
-	SubscribeToMailbox(t, testDB, "testuser", "Work/Tasks")
+	server.SubscribeToMailbox(t, testDB, "testuser", "Work/Projects/2024")
+	server.SubscribeToMailbox(t, testDB, "testuser", "Work/Tasks")
 
 	// Test LSUB with "Work/%" pattern (should match Work's immediate children)
 	srv.HandleLsub(conn, "A001", []string{"A001", "LSUB", `""`, "Work/%"}, state)
@@ -192,15 +192,15 @@ func TestLsubCommand_HierarchyWithPercent(t *testing.T) {
 
 // TestLsubCommand_StarWildcard tests LSUB with * wildcard (matches all levels)
 func TestLsubCommand_StarWildcard(t *testing.T) {
-	testDB := CreateTestDB(t)
-	srv := TestServerWithDB(testDB)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	testDB := server.CreateTestDB(t)
+	srv := server.TestServerWithDBManager(testDB)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Subscribe to hierarchical mailboxes
-	SubscribeToMailbox(t, testDB, "testuser", "Work")
-	SubscribeToMailbox(t, testDB, "testuser", "Work/Projects")
-	SubscribeToMailbox(t, testDB, "testuser", "Work/Projects/2024")
+	server.SubscribeToMailbox(t, testDB, "testuser", "Work")
+	server.SubscribeToMailbox(t, testDB, "testuser", "Work/Projects")
+	server.SubscribeToMailbox(t, testDB, "testuser", "Work/Projects/2024")
 
 	// Test LSUB with * wildcard (should match all levels)
 	srv.HandleLsub(conn, "A001", []string{"A001", "LSUB", `""`, "*"}, state)
@@ -225,15 +225,15 @@ func TestLsubCommand_StarWildcard(t *testing.T) {
 
 // TestLsubCommand_ReferenceAndPattern tests LSUB with reference prefix
 func TestLsubCommand_ReferenceAndPattern(t *testing.T) {
-	testDB := CreateTestDB(t)
-	srv := TestServerWithDB(testDB)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	testDB := server.CreateTestDB(t)
+	srv := server.TestServerWithDBManager(testDB)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Subscribe to hierarchical mailboxes
-	SubscribeToMailbox(t, testDB, "testuser", "Work/Projects")
-	SubscribeToMailbox(t, testDB, "testuser", "Work/Tasks")
-	SubscribeToMailbox(t, testDB, "testuser", "Personal/Projects")
+	server.SubscribeToMailbox(t, testDB, "testuser", "Work/Projects")
+	server.SubscribeToMailbox(t, testDB, "testuser", "Work/Tasks")
+	server.SubscribeToMailbox(t, testDB, "testuser", "Personal/Projects")
 
 	// Test LSUB with reference "Work/" and pattern "*"
 	srv.HandleLsub(conn, "A001", []string{"A001", "LSUB", `"Work/"`, "*"}, state)
@@ -261,15 +261,15 @@ func TestLsubCommand_ReferenceAndPattern(t *testing.T) {
 // TestLsubCommand_NonExistentMailboxSubscription tests that LSUB returns subscriptions
 // even if the mailbox doesn't exist (per RFC 3501)
 func TestLsubCommand_NonExistentMailboxSubscription(t *testing.T) {
-	testDB := CreateTestDB(t)
-	srv := TestServerWithDB(testDB)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	testDB := server.CreateTestDB(t)
+	srv := server.TestServerWithDBManager(testDB)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Subscribe to a mailbox that doesn't exist
 	// RFC 3501: "The server MUST NOT unilaterally remove an existing mailbox name
 	// from the subscription list even if a mailbox by that name no longer exists."
-	SubscribeToMailbox(t, testDB, "testuser", "DeletedMailbox")
+	server.SubscribeToMailbox(t, testDB, "testuser", "DeletedMailbox")
 
 	// Test LSUB
 	srv.HandleLsub(conn, "A001", []string{"A001", "LSUB", `""`, "*"}, state)
@@ -288,15 +288,15 @@ func TestLsubCommand_NonExistentMailboxSubscription(t *testing.T) {
 
 // TestLsubCommand_SpecificPattern tests LSUB with specific mailbox name
 func TestLsubCommand_SpecificPattern(t *testing.T) {
-	testDB := CreateTestDB(t)
-	srv := TestServerWithDB(testDB)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	testDB := server.CreateTestDB(t)
+	srv := server.TestServerWithDBManager(testDB)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Subscribe to multiple mailboxes
-	SubscribeToMailbox(t, testDB, "testuser", "INBOX")
-	SubscribeToMailbox(t, testDB, "testuser", "Sent")
-	SubscribeToMailbox(t, testDB, "testuser", "Drafts")
+	server.SubscribeToMailbox(t, testDB, "testuser", "INBOX")
+	server.SubscribeToMailbox(t, testDB, "testuser", "Sent")
+	server.SubscribeToMailbox(t, testDB, "testuser", "Drafts")
 
 	// Test LSUB with specific mailbox name (no wildcards)
 	srv.HandleLsub(conn, "A001", []string{"A001", "LSUB", `""`, "Sent"}, state)
@@ -320,13 +320,13 @@ func TestLsubCommand_SpecificPattern(t *testing.T) {
 
 // TestLsubCommand_CaseInsensitiveINBOX tests that INBOX is case-insensitive
 func TestLsubCommand_CaseInsensitiveINBOX(t *testing.T) {
-	testDB := CreateTestDB(t)
-	srv := TestServerWithDB(testDB)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "testuser")
+	testDB := server.CreateTestDB(t)
+	srv := server.TestServerWithDBManager(testDB)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Subscribe to INBOX
-	SubscribeToMailbox(t, testDB, "testuser", "INBOX")
+	server.SubscribeToMailbox(t, testDB, "testuser", "INBOX")
 
 	// Test LSUB with lowercase "inbox"
 	srv.HandleLsub(conn, "A001", []string{"A001", "LSUB", `""`, "inbox"}, state)
@@ -345,10 +345,10 @@ func TestLsubCommand_CaseInsensitiveINBOX(t *testing.T) {
 
 // TestLsubCommand_EmptySubscriptionList tests LSUB when user has no subscriptions
 func TestLsubCommand_EmptySubscriptionList(t *testing.T) {
-	testDB := CreateTestDB(t)
-	srv := TestServerWithDB(testDB)
-	conn := NewMockConn()
-	state := SetupAuthenticatedState(t, srv, "newuser")
+	testDB := server.CreateTestDB(t)
+	srv := server.TestServerWithDBManager(testDB)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "newuser")
 
 	// Don't subscribe to anything - but default mailboxes should auto-subscribe
 	srv.HandleLsub(conn, "A001", []string{"A001", "LSUB", `""`, "*"}, state)
