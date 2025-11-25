@@ -16,6 +16,8 @@
 #   make test-response     - Run server response tests
 #   make test-storage      - Run delivery storage tests
 #   make test-noop         - Run NOOP command tests
+#   make test-idle         - Run IDLE command tests
+#   make test-namespace    - Run NAMESPACE command tests
 #   make test-check        - Run CHECK command tests
 #   make test-close        - Run CLOSE command tests
 #   make test-expunge      - Run EXPUNGE command tests
@@ -185,6 +187,14 @@ test-capability:
 # Run only NOOP-related tests
 test-noop:
 	go test -tags=test -v ./internal/server -run "TestNoopCommand"
+
+# Run only IDLE-related tests
+test-idle:
+	go test -v ./internal/server/extension -run "TestIdleCommand"
+
+# Run only NAMESPACE-related tests
+test-namespace:
+	go test -v ./internal/server/extension -run "TestNamespaceCommand"
 
 # Run only CHECK-related tests
 test-check:
