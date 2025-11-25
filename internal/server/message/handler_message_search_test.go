@@ -1,6 +1,6 @@
 //go:build test
 
-package message
+package message_test
 
 import (
 	"fmt"
@@ -9,12 +9,13 @@ import (
 	"time"
 
 	"raven/internal/models"
+	"raven/internal/server"
 )
 
 // TestSearchCommand_Unauthenticated tests SEARCH without authentication
 func TestSearchCommand_Unauthenticated(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
 	state := &models.ClientState{
 		Authenticated: false,
 	}
@@ -29,11 +30,11 @@ func TestSearchCommand_Unauthenticated(t *testing.T) {
 
 // TestSearchCommand_NoMailboxSelected tests SEARCH without mailbox selection
 func TestSearchCommand_NoMailboxSelected(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
+	userID := server.CreateTestUser(t, database, "testuser")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -51,17 +52,17 @@ func TestSearchCommand_NoMailboxSelected(t *testing.T) {
 
 // TestSearchCommand_ALL tests SEARCH ALL
 func TestSearchCommand_ALL(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
 	// Create test user and messages
-	userID := CreateTestUser(t, database, "testuser")
-	InsertTestMail(t, database, "testuser", "Test Subject 1", "sender1@test.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "Test Subject 2", "sender2@test.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "Test Subject 3", "sender3@test.com", "testuser@localhost", "INBOX")
+	userID := server.CreateTestUser(t, database, "testuser")
+	server.InsertTestMail(t, database, "testuser", "Test Subject 1", "sender1@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Test Subject 2", "sender2@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Test Subject 3", "sender3@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -82,12 +83,12 @@ func TestSearchCommand_ALL(t *testing.T) {
 
 // TestSearchCommand_EmptyMailbox tests SEARCH on empty mailbox
 func TestSearchCommand_EmptyMailbox(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	userID := server.CreateTestUser(t, database, "testuser")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -109,18 +110,18 @@ func TestSearchCommand_EmptyMailbox(t *testing.T) {
 
 // TestSearchCommand_FlaggedMessages tests SEARCH FLAGGED
 func TestSearchCommand_FlaggedMessages(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
+	userID := server.CreateTestUser(t, database, "testuser")
 
 	// Insert messages with different flags
-	msg1ID := InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
-	msg2ID := InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
-	msg3ID := InsertTestMail(t, database, "testuser", "Message 3", "sender@test.com", "testuser@localhost", "INBOX")
+	msg1ID := server.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+	msg2ID := server.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
+	msg3ID := server.InsertTestMail(t, database, "testuser", "Message 3", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -128,7 +129,7 @@ func TestSearchCommand_FlaggedMessages(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := GetUserDBByID(t, database, state.UserID)
+	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Flag message 2
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg2ID, mailboxID)
@@ -151,16 +152,16 @@ func TestSearchCommand_FlaggedMessages(t *testing.T) {
 
 // TestSearchCommand_DeletedMessages tests SEARCH DELETED and UNDELETED
 func TestSearchCommand_DeletedMessages(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
+	userID := server.CreateTestUser(t, database, "testuser")
 
-	msg1ID := InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
-	msg2ID := InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
+	msg1ID := server.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+	msg2ID := server.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -168,7 +169,7 @@ func TestSearchCommand_DeletedMessages(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := GetUserDBByID(t, database, state.UserID)
+	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 1 as deleted
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
@@ -194,16 +195,16 @@ func TestSearchCommand_DeletedMessages(t *testing.T) {
 
 // TestSearchCommand_SeenUnseen tests SEARCH SEEN and UNSEEN
 func TestSearchCommand_SeenUnseen(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
+	userID := server.CreateTestUser(t, database, "testuser")
 
-	msg1ID := InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
+	msg1ID := server.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -211,7 +212,7 @@ func TestSearchCommand_SeenUnseen(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := GetUserDBByID(t, database, state.UserID)
+	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 1 as seen
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
@@ -235,17 +236,17 @@ func TestSearchCommand_SeenUnseen(t *testing.T) {
 
 // TestSearchCommand_FromHeader tests SEARCH FROM
 func TestSearchCommand_FromHeader(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
+	userID := server.CreateTestUser(t, database, "testuser")
 
-	InsertTestMail(t, database, "testuser", "Message 1", "smith@example.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "Message 2", "jones@example.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "Message 3", "smithson@example.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Message 1", "smith@example.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Message 2", "jones@example.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Message 3", "smithson@example.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -268,17 +269,17 @@ func TestSearchCommand_FromHeader(t *testing.T) {
 
 // TestSearchCommand_SubjectHeader tests SEARCH SUBJECT
 func TestSearchCommand_SubjectHeader(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
+	userID := server.CreateTestUser(t, database, "testuser")
 
-	InsertTestMail(t, database, "testuser", "Meeting Tomorrow", "sender@test.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "Project Update", "sender@test.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "Meeting Notes", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Meeting Tomorrow", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Project Update", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Meeting Notes", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -298,16 +299,16 @@ func TestSearchCommand_SubjectHeader(t *testing.T) {
 
 // TestSearchCommand_ToHeader tests SEARCH TO
 func TestSearchCommand_ToHeader(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
+	userID := server.CreateTestUser(t, database, "testuser")
 
-	InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "alice@example.com", "INBOX")
-	InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "bob@example.com", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "alice@example.com", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "bob@example.com", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -325,18 +326,18 @@ func TestSearchCommand_ToHeader(t *testing.T) {
 
 // TestSearchCommand_SequenceSet tests SEARCH with sequence numbers
 func TestSearchCommand_SequenceSet(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
+	userID := server.CreateTestUser(t, database, "testuser")
 
-	InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "Message 3", "sender@test.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "Message 4", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Message 3", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Message 4", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -363,16 +364,16 @@ func TestSearchCommand_SequenceSet(t *testing.T) {
 
 // TestSearchCommand_NOT tests SEARCH NOT
 func TestSearchCommand_NOT(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
+	userID := server.CreateTestUser(t, database, "testuser")
 
-	msg1ID := InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
+	msg1ID := server.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -380,7 +381,7 @@ func TestSearchCommand_NOT(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := GetUserDBByID(t, database, state.UserID)
+	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 1 as seen
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
@@ -399,17 +400,17 @@ func TestSearchCommand_NOT(t *testing.T) {
 
 // TestSearchCommand_OR tests SEARCH OR
 func TestSearchCommand_OR(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
+	userID := server.CreateTestUser(t, database, "testuser")
 
-	msg1ID := InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
-	msg2ID := InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "Message 3", "sender@test.com", "testuser@localhost", "INBOX")
+	msg1ID := server.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+	msg2ID := server.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Message 3", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -417,7 +418,7 @@ func TestSearchCommand_OR(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := GetUserDBByID(t, database, state.UserID)
+	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 1 as seen, message 2 as flagged
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
@@ -435,17 +436,17 @@ func TestSearchCommand_OR(t *testing.T) {
 
 // TestSearchCommand_CombinedCriteria tests SEARCH with multiple criteria (AND logic)
 func TestSearchCommand_CombinedCriteria(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
+	userID := server.CreateTestUser(t, database, "testuser")
 
-	msg1ID := InsertTestMail(t, database, "testuser", "Meeting", "smith@example.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "Meeting", "jones@example.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "Project", "smith@example.com", "testuser@localhost", "INBOX")
+	msg1ID := server.InsertTestMail(t, database, "testuser", "Meeting", "smith@example.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Meeting", "jones@example.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Project", "smith@example.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -453,7 +454,7 @@ func TestSearchCommand_CombinedCriteria(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := GetUserDBByID(t, database, state.UserID)
+	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 1 as flagged
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
@@ -474,18 +475,18 @@ func TestSearchCommand_CombinedCriteria(t *testing.T) {
 
 // TestSearchCommand_RFC3501Example tests the example from RFC 3501
 func TestSearchCommand_RFC3501Example(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
+	userID := server.CreateTestUser(t, database, "testuser")
 
 	// Create messages with specific dates and flags
-	msg1ID := InsertTestMail(t, database, "testuser", "From Smith", "smith@example.com", "testuser@localhost", "INBOX")
-	msg2ID := InsertTestMail(t, database, "testuser", "From Smith", "smith@example.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "From Jones", "jones@example.com", "testuser@localhost", "INBOX")
+	msg1ID := server.InsertTestMail(t, database, "testuser", "From Smith", "smith@example.com", "testuser@localhost", "INBOX")
+	msg2ID := server.InsertTestMail(t, database, "testuser", "From Smith", "smith@example.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "From Jones", "jones@example.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -493,7 +494,7 @@ func TestSearchCommand_RFC3501Example(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := GetUserDBByID(t, database, state.UserID)
+	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Set dates for messages (after 1-Feb-1994)
 	futureDate := time.Date(1994, 2, 15, 10, 0, 0, 0, time.UTC)
@@ -520,15 +521,15 @@ func TestSearchCommand_RFC3501Example(t *testing.T) {
 
 // TestSearchCommand_EmptyResult tests search with no matching messages
 func TestSearchCommand_EmptyResult(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
+	userID := server.CreateTestUser(t, database, "testuser")
 
-	InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -551,14 +552,14 @@ func TestSearchCommand_EmptyResult(t *testing.T) {
 
 // TestSearchCommand_CHARSET tests SEARCH with CHARSET specification
 func TestSearchCommand_CHARSET(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
-	InsertTestMail(t, database, "testuser", "Test Message", "sender@test.com", "testuser@localhost", "INBOX")
+	userID := server.CreateTestUser(t, database, "testuser")
+	server.InsertTestMail(t, database, "testuser", "Test Message", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -586,17 +587,17 @@ func TestSearchCommand_CHARSET(t *testing.T) {
 
 // TestSearchCommand_LARGER_SMALLER tests SEARCH LARGER and SMALLER
 func TestSearchCommand_LARGER_SMALLER(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
+	userID := server.CreateTestUser(t, database, "testuser")
 
 	// Create messages (they will have different sizes based on subject length)
-	InsertTestMail(t, database, "testuser", "A", "sender@test.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "This is a very long subject line that will make this message larger", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "A", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "This is a very long subject line that will make this message larger", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -623,16 +624,16 @@ func TestSearchCommand_LARGER_SMALLER(t *testing.T) {
 
 // TestSearchCommand_DateSearches tests BEFORE, ON, SINCE
 func TestSearchCommand_DateSearches(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
+	userID := server.CreateTestUser(t, database, "testuser")
 
-	msg1ID := InsertTestMail(t, database, "testuser", "Old Message", "sender@test.com", "testuser@localhost", "INBOX")
-	msg2ID := InsertTestMail(t, database, "testuser", "Recent Message", "sender@test.com", "testuser@localhost", "INBOX")
+	msg1ID := server.InsertTestMail(t, database, "testuser", "Old Message", "sender@test.com", "testuser@localhost", "INBOX")
+	msg2ID := server.InsertTestMail(t, database, "testuser", "Recent Message", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -640,7 +641,7 @@ func TestSearchCommand_DateSearches(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := GetUserDBByID(t, database, state.UserID)
+	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Set different dates
 	oldDate := time.Date(2020, 1, 1, 10, 0, 0, 0, time.UTC)
@@ -668,16 +669,16 @@ func TestSearchCommand_DateSearches(t *testing.T) {
 
 // TestSearchCommand_NEW_OLD tests SEARCH NEW and OLD
 func TestSearchCommand_NEW_OLD(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
+	userID := server.CreateTestUser(t, database, "testuser")
 
-	msg1ID := InsertTestMail(t, database, "testuser", "New Message", "sender@test.com", "testuser@localhost", "INBOX")
-	msg2ID := InsertTestMail(t, database, "testuser", "Old Message", "sender@test.com", "testuser@localhost", "INBOX")
+	msg1ID := server.InsertTestMail(t, database, "testuser", "New Message", "sender@test.com", "testuser@localhost", "INBOX")
+	msg2ID := server.InsertTestMail(t, database, "testuser", "Old Message", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -685,7 +686,7 @@ func TestSearchCommand_NEW_OLD(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := GetUserDBByID(t, database, state.UserID)
+	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// NEW = RECENT and UNSEEN
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Recent' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
@@ -714,16 +715,16 @@ func TestSearchCommand_NEW_OLD(t *testing.T) {
 
 // TestSearchCommand_ANSWERED tests SEARCH ANSWERED and UNANSWERED
 func TestSearchCommand_ANSWERED(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
+	userID := server.CreateTestUser(t, database, "testuser")
 
-	msg1ID := InsertTestMail(t, database, "testuser", "Answered", "sender@test.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "Not Answered", "sender@test.com", "testuser@localhost", "INBOX")
+	msg1ID := server.InsertTestMail(t, database, "testuser", "Answered", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Not Answered", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -731,7 +732,7 @@ func TestSearchCommand_ANSWERED(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := GetUserDBByID(t, database, state.UserID)
+	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 1 as answered
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Answered' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
@@ -755,16 +756,16 @@ func TestSearchCommand_ANSWERED(t *testing.T) {
 
 // TestSearchCommand_DRAFT tests SEARCH DRAFT and UNDRAFT
 func TestSearchCommand_DRAFT(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
+	userID := server.CreateTestUser(t, database, "testuser")
 
-	msg1ID := InsertTestMail(t, database, "testuser", "Draft", "sender@test.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "Not Draft", "sender@test.com", "testuser@localhost", "INBOX")
+	msg1ID := server.InsertTestMail(t, database, "testuser", "Draft", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Not Draft", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -772,7 +773,7 @@ func TestSearchCommand_DRAFT(t *testing.T) {
 		Username:          "testuser",
 		SelectedMailboxID: mailboxID,
 	}
-	userDB := GetUserDBByID(t, database, state.UserID)
+	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 1 as draft
 	userDB.Exec(`UPDATE message_mailbox SET flags = '\Draft' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
@@ -796,16 +797,16 @@ func TestSearchCommand_DRAFT(t *testing.T) {
 
 // TestSearchCommand_HEADER tests SEARCH HEADER
 func TestSearchCommand_HEADER(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
+	userID := server.CreateTestUser(t, database, "testuser")
 
-	InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "Another Subject", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Test Subject", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Another Subject", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -823,17 +824,17 @@ func TestSearchCommand_HEADER(t *testing.T) {
 
 // TestSearchCommand_BODY_TEXT tests SEARCH BODY and TEXT
 func TestSearchCommand_BODY_TEXT(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
+	userID := server.CreateTestUser(t, database, "testuser")
 
 	// Note: Our InsertTestMail creates messages with "Test message body" as the body
-	InsertTestMail(t, database, "testuser", "Subject One", "sender@test.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "Subject Two", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Subject One", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Subject Two", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -860,17 +861,17 @@ func TestSearchCommand_BODY_TEXT(t *testing.T) {
 
 // TestSearchCommand_UID tests SEARCH UID
 func TestSearchCommand_UID(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
+	userID := server.CreateTestUser(t, database, "testuser")
 
-	InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "Message 3", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Message 3", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -897,12 +898,12 @@ func TestSearchCommand_UID(t *testing.T) {
 
 // TestSearchCommand_BadSyntax tests SEARCH with invalid syntax
 func TestSearchCommand_BadSyntax(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	userID := server.CreateTestUser(t, database, "testuser")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -921,16 +922,16 @@ func TestSearchCommand_BadSyntax(t *testing.T) {
 
 // TestSearchCommand_ResponseFormat tests the format of SEARCH responses
 func TestSearchCommand_ResponseFormat(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	conn := NewMockConn()
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
+	userID := server.CreateTestUser(t, database, "testuser")
 
-	InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
-	InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")
 
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 	state := &models.ClientState{
 		Authenticated:     true,
 		UserID:            userID,
@@ -971,12 +972,12 @@ func TestSearchCommand_ResponseFormat(t *testing.T) {
 
 // TestSearchCommand_TagHandling tests various tag formats
 func TestSearchCommand_TagHandling(t *testing.T) {
-	srv := SetupTestServerSimple(t)
-	database := GetDatabaseFromServer(srv)
+	srv := server.SetupTestServerSimple(t)
+	database := server.GetDatabaseFromServer(srv)
 
-	userID := CreateTestUser(t, database, "testuser")
-	InsertTestMail(t, database, "testuser", "Message", "sender@test.com", "testuser@localhost", "INBOX")
-	mailboxID, _ := GetMailboxID(t, database, userID, "INBOX")
+	userID := server.CreateTestUser(t, database, "testuser")
+	server.InsertTestMail(t, database, "testuser", "Message", "sender@test.com", "testuser@localhost", "INBOX")
+	mailboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -998,7 +999,7 @@ func TestSearchCommand_TagHandling(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			conn := NewMockConn()
+			conn := server.NewMockConn()
 			srv.HandleSearch(conn, tc.tag, []string{tc.tag, "SEARCH", "ALL"}, state)
 
 			response := conn.GetWrittenData()
