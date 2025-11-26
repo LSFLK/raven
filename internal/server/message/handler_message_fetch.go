@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -312,12 +313,12 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 						wantMIME = true
 						partNumStr = sectionSpec[:strings.Index(sectionUpper, ".MIME")]
 					}
-					// Parse part number
-					pn, err := strconv.Atoi(partNumStr)
-					if err == nil && pn > 0 {
+					// Parse part number - support nested parts like "1.2"
+					partPath, err := parsePartNumberPath(partNumStr)
+					if err == nil && len(partPath) > 0 {
 						loadParts()
-						// Map IMAP part number to database part
-						target := mapIMAPPartToDBPart(parts, pn)
+						// Map IMAP part number path to database part
+						target := mapIMAPPartPathToDBPart(parts, partPath)
 
 						payload := ""
 						if target != nil {
@@ -332,7 +333,7 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 							} else if isMultipart {
 								// For multipart containers, extract from the full reconstructed message
 								fullMsg := loadRawMsg()
-								payload = extractBodySection(fullMsg, pn)
+								payload = extractBodySectionByPath(fullMsg, partPath)
 							} else {
 								// Part body only - for non-multipart parts
 								if blobID, ok := target["blob_id"].(int64); ok {
@@ -691,6 +692,134 @@ func extractBodySection(fullMessage string, partNum int) string {
 	return partBody
 }
 
+// extractBodySectionByPath extracts a nested MIME body section using a part path like [1, 2] for part 1.2
+func extractBodySectionByPath(fullMessage string, partPath []int) string {
+	if len(partPath) == 0 {
+		return ""
+	}
+
+	// Start with the full message
+	currentMessage := fullMessage
+
+	// Navigate through each level of the path
+	for level, partNum := range partPath {
+		// Extract the part at this level
+		extracted := extractSinglePart(currentMessage, partNum)
+		if extracted == "" {
+			return ""
+		}
+
+		// If this is the last level in the path, return the body
+		if level == len(partPath)-1 {
+			return extracted
+		}
+
+		// Otherwise, use this part as the message for the next level
+		// We need to reconstruct it with headers for the next extraction
+		currentMessage = extracted
+	}
+
+	return ""
+}
+
+// extractSinglePart extracts a single part from a message at the current level
+func extractSinglePart(message string, partNum int) string {
+	lines := strings.Split(message, "\r\n")
+
+	// Find Content-Type and boundary
+	var boundary string
+	headerEnd := -1
+	for i, line := range lines {
+		if line == "" {
+			headerEnd = i
+			break
+		}
+		if strings.HasPrefix(strings.ToUpper(line), "CONTENT-TYPE:") {
+			ctLine := line
+			// Handle multi-line headers
+			for j := i + 1; j < len(lines); j++ {
+				if len(lines[j]) > 0 && (lines[j][0] == ' ' || lines[j][0] == '\t') {
+					ctLine += lines[j]
+				} else {
+					break
+				}
+			}
+			// Extract boundary
+			if idx := strings.Index(strings.ToLower(ctLine), "boundary="); idx != -1 {
+				boundaryPart := ctLine[idx+9:]
+				if len(boundaryPart) > 0 && boundaryPart[0] == '"' {
+					endQuote := strings.Index(boundaryPart[1:], "\"")
+					if endQuote != -1 {
+						boundary = boundaryPart[1 : endQuote+1]
+					}
+				} else {
+					endIdx := strings.IndexAny(boundaryPart, "; \r\n")
+					if endIdx != -1 {
+						boundary = boundaryPart[:endIdx]
+					} else {
+						boundary = strings.TrimSpace(boundaryPart)
+					}
+				}
+			}
+		}
+	}
+
+	if boundary == "" || headerEnd == -1 {
+		return ""
+	}
+
+	// Split by boundary
+	body := strings.Join(lines[headerEnd+1:], "\r\n")
+	delimiter := "--" + boundary
+	parts := strings.Split(body, delimiter)
+
+	// parts[0] = preamble, parts[1] = part 1, parts[2] = part 2, etc.
+	if partNum <= 0 || partNum >= len(parts) {
+		return ""
+	}
+
+	partContent := parts[partNum]
+
+	// Skip closing boundary
+	if strings.HasPrefix(strings.TrimSpace(partContent), "--") {
+		return ""
+	}
+
+	// Trim leading CRLF
+	partContent = strings.TrimPrefix(partContent, "\r\n")
+	partContent = strings.TrimPrefix(partContent, "\n")
+
+	// Extract body (for leaf parts) or return whole part with headers (for nested multiparts)
+	partLines := strings.Split(partContent, "\r\n")
+	partHeaderEnd := -1
+	var partContentType string
+	for i, line := range partLines {
+		if line == "" {
+			partHeaderEnd = i
+			break
+		}
+		if strings.HasPrefix(strings.ToUpper(line), "CONTENT-TYPE:") {
+			partContentType = line
+		}
+	}
+
+	if partHeaderEnd == -1 {
+		return ""
+	}
+
+	// Check if this is a nested multipart
+	if strings.Contains(strings.ToLower(partContentType), "multipart/") {
+		// Return the whole part including headers for further extraction
+		return partContent
+	}
+
+	// For leaf parts, return just the body
+	partBody := strings.Join(partLines[partHeaderEnd+1:], "\r\n")
+	partBody = strings.TrimRight(partBody, "\r\n")
+
+	return partBody
+}
+
 // mapIMAPPartToDBPart maps an IMAP part number to the corresponding database part
 // IMAP numbering: top-level parts are 1, 2, 3..., nested parts are 1.1, 1.2, etc.
 // Database numbering: sequential (1, 2, 3, 4...) with parent_part_id relationships
@@ -721,6 +850,96 @@ func mapIMAPPartToDBPart(parts []map[string]interface{}, imapPartNum int) map[st
 	}
 
 	return nil
+}
+
+// parsePartNumberPath parses a part number like "1" or "1.2" into a path of integers
+func parsePartNumberPath(partNumStr string) ([]int, error) {
+	if partNumStr == "" {
+		return nil, fmt.Errorf("empty part number")
+	}
+
+	// Split by '.' for nested parts
+	parts := strings.Split(partNumStr, ".")
+	path := make([]int, 0, len(parts))
+
+	for _, p := range parts {
+		num, err := strconv.Atoi(p)
+		if err != nil {
+			return nil, fmt.Errorf("invalid part number: %s", p)
+		}
+		if num <= 0 {
+			return nil, fmt.Errorf("part numbers must be positive: %d", num)
+		}
+		path = append(path, num)
+	}
+
+	return path, nil
+}
+
+// mapIMAPPartPathToDBPart maps an IMAP part path (like [1, 2] for part 1.2) to a database part
+// Part path [1] = first top-level part
+// Part path [1, 2] = second child of first top-level part
+func mapIMAPPartPathToDBPart(parts []map[string]interface{}, partPath []int) map[string]interface{} {
+	if len(partPath) == 0 {
+		return nil
+	}
+
+	// Helper to get children of a part
+	getChildren := func(parentPartNum int) []map[string]interface{} {
+		children := []map[string]interface{}{}
+		for _, p := range parts {
+			if parentID, ok := p["parent_part_id"]; ok && parentID != nil {
+				if parentIDInt, ok := parentID.(int64); ok && int(parentIDInt) == parentPartNum {
+					children = append(children, p)
+				}
+			}
+		}
+		// Sort children by part_number to ensure correct order
+		sort.Slice(children, func(i, j int) bool {
+			pnI, _ := children[i]["part_number"].(int)
+			pnJ, _ := children[j]["part_number"].(int)
+			return pnI < pnJ
+		})
+		return children
+	}
+
+	// Get top-level parts
+	topLevelParts := []map[string]interface{}{}
+	for _, p := range parts {
+		parentID, hasParent := p["parent_part_id"]
+		if !hasParent || parentID == nil {
+			topLevelParts = append(topLevelParts, p)
+		}
+	}
+	// Sort by part_number
+	sort.Slice(topLevelParts, func(i, j int) bool {
+		pnI, _ := topLevelParts[i]["part_number"].(int)
+		pnJ, _ := topLevelParts[j]["part_number"].(int)
+		return pnI < pnJ
+	})
+
+	// Start with first part in path (top-level)
+	if partPath[0] <= 0 || partPath[0] > len(topLevelParts) {
+		return nil
+	}
+	current := topLevelParts[partPath[0]-1]
+
+	// Traverse down the path
+	for i := 1; i < len(partPath); i++ {
+		// Get part_number of current part to find its children
+		partNum, ok := current["part_number"].(int)
+		if !ok {
+			return nil
+		}
+
+		children := getChildren(partNum)
+		if partPath[i] <= 0 || partPath[i] > len(children) {
+			return nil
+		}
+		current = children[partPath[i]-1]
+	}
+
+	return current
 }
 
 // buildMIMEHeadersForPart reconstructs MIME headers for a specific part

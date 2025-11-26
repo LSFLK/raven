@@ -659,8 +659,10 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 			isAttachment := false
 			dispLower := strings.ToLower(strings.TrimSpace(disposition))
 			// Never treat multipart containers as attachments
+			// CRITICAL FIX: Skip multipart containers - they're just structure, not content
 			if strings.HasPrefix(strings.ToLower(contentType), "multipart/") {
-				isAttachment = false
+				fmt.Printf("DEBUG ReconstructMessage: Skipping multipart container: type='%s'\n", contentType)
+				continue
 			} else if strings.HasPrefix(dispLower, "attachment") {
 				isAttachment = true
 			} else if !strings.HasPrefix(strings.ToLower(contentType), "text/") && !strings.HasPrefix(dispLower, "inline") {
