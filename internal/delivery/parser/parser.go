@@ -803,45 +803,47 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 func writePartHeaders(buf *bytes.Buffer, part map[string]interface{}) {
 	contentType := part["content_type"].(string)
 
-	// Write Content-Type with charset if available
+	// Content-Type
 	if charset, ok := part["charset"].(string); ok && charset != "" {
-		fmt.Fprintf(buf, "Content-Type: %s; charset=%s", contentType, charset)
+		fmt.Fprintf(buf, "Content-Type: %s; charset=%s\r\n", contentType, charset)
 	} else {
-		fmt.Fprintf(buf, "Content-Type: %s", contentType)
+		fmt.Fprintf(buf, "Content-Type: %s\r\n", contentType)
 	}
 
-	// Add filename to Content-Type if present (for attachments)
-	if filename, ok := part["filename"].(string); ok && filename != "" {
-		fmt.Fprintf(buf, "; name=\"%s\"", filename)
-	}
-	buf.WriteString("\r\n")
-
-	// Write Content-Transfer-Encoding (default to 7bit for text/* if missing)
+	// Content-Transfer-Encoding (default 7bit for text/*)
 	if encoding, ok := part["content_transfer_encoding"].(string); ok && strings.TrimSpace(encoding) != "" {
 		fmt.Fprintf(buf, "Content-Transfer-Encoding: %s\r\n", encoding)
 	} else if strings.HasPrefix(strings.ToLower(contentType), "text/") {
 		buf.WriteString("Content-Transfer-Encoding: 7bit\r\n")
 	}
 
-	// Write Content-ID if present (critical for inline images in Apple Mail)
-	if contentID, ok := part["content_id"].(string); ok && contentID != "" {
+	// Content-ID
+	if contentID, ok := part["content_id"].(string); ok && strings.TrimSpace(contentID) != "" {
 		fmt.Fprintf(buf, "Content-ID: %s\r\n", contentID)
 	}
 
-	// Write Content-Disposition. Default to inline for text/* when absent to help Apple Mail render body
-	if disposition, ok := part["content_disposition"].(string); ok && strings.TrimSpace(disposition) != "" {
-		fmt.Fprintf(buf, "Content-Disposition: %s", disposition)
-		if filename, ok := part["filename"].(string); ok && filename != "" {
+	// Content-Disposition
+	if disp, ok := part["content_disposition"].(string); ok && strings.TrimSpace(disp) != "" {
+		lowerDisp := strings.ToLower(disp)
+		buf.WriteString("Content-Disposition: ")
+		buf.WriteString(disp)
+		if filename, ok := part["filename"].(string); ok && strings.TrimSpace(filename) != "" && !strings.Contains(lowerDisp, "filename=") {
 			fmt.Fprintf(buf, "; filename=\"%s\"", filename)
 		}
 		buf.WriteString("\r\n")
-	} else if strings.HasPrefix(strings.ToLower(contentType), "text/") {
-		// Explicit inline for text parts
-		buf.WriteString("Content-Disposition: inline")
-		if filename, ok := part["filename"].(string); ok && filename != "" {
-			fmt.Fprintf(buf, "; filename=\"%s\"", filename)
+	} else {
+		filename, hasFilename := part["filename"].(string)
+		isText := strings.HasPrefix(strings.ToLower(contentType), "text/")
+		if isText {
+			// Omit Content-Disposition for text parts (Apple Mail prefers no disposition)
+			// Do nothing
+		} else if hasFilename && strings.TrimSpace(filename) != "" {
+			// Non-text with filename -> attachment
+			fmt.Fprintf(buf, "Content-Disposition: attachment; filename=\"%s\"\r\n", filename)
+		} else {
+			// Non-text without filename -> omit disposition (inline by default)
+			// Do nothing
 		}
-		buf.WriteString("\r\n")
 	}
 
 	buf.WriteString("\r\n")
