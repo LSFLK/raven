@@ -25,6 +25,7 @@
 #   make test-logout       - Run LOGOUT command tests
 #   make test-append       - Run APPEND command tests
 #   make test-authenticate - Run AUTHENTICATE command tests
+#   make test-auth-coverage - Run auth tests with coverage report
 #   make test-login        - Run LOGIN command tests
 #   make test-starttls     - Run STARTTLS command tests
 #   make test-select       - Run SELECT command tests
@@ -220,6 +221,22 @@ test-append:
 test-authenticate:
 	go test -tags=test -v ./internal/server -run "TestAuthenticate"
 
+# Run auth tests with coverage
+test-auth-coverage:
+	@echo "Running auth tests with coverage..."
+	@go test -tags=test -coverprofile=auth_coverage.out ./internal/server/auth/... || true
+	@echo "\n=== Coverage Report ==="
+	@go tool cover -func=auth_coverage.out | grep -E "(handler_auth.go|total)"
+	@echo "\nFor detailed HTML coverage report, run: go tool cover -html=auth_coverage.out"
+	@COVERAGE=$$(go tool cover -func=auth_coverage.out | grep total | awk '{print $$3}' | sed 's/%//'); \
+	echo "\nTotal auth coverage: $${COVERAGE}%"; \
+	if [ "$$(echo "$${COVERAGE} >= 80.0" | bc)" -eq 1 ]; then \
+		echo "✓ Coverage target met (≥80%)"; \
+	else \
+		echo "✗ Coverage below target (target: ≥80%)"; \
+		exit 1; \
+	fi
+
 # Run AUTHENTICATE benchmarks
 bench-authenticate:
 	go test -tags=test -bench=BenchmarkAuthenticate -benchmem ./internal/server
@@ -376,7 +393,7 @@ bench:
 
 # Clean test artifacts
 clean:
-	rm -f coverage.out coverage.html
+	rm -f coverage.out coverage.html auth_coverage.out
 
 # Run specific test
 test-single:
@@ -448,6 +465,7 @@ help:
 	@echo "  test-logout            - Run LOGOUT command tests only"
 	@echo "  test-append            - Run APPEND command tests only"
 	@echo "  test-authenticate      - Run AUTHENTICATE command tests only"
+	@echo "  test-auth-coverage     - Run auth tests with coverage report"
 	@echo "  test-login             - Run LOGIN command tests only"
 	@echo "  test-starttls          - Run STARTTLS command tests only"
 	@echo "  test-select            - Run SELECT command tests only"

@@ -101,6 +101,17 @@ jobs:
       - name: Test LOGOUT command
         run: go test -tags=test -v ./internal/server -run "TestLogoutCommand"
 
+      - name: Run Auth Tests with Coverage
+        run: |
+          go test -tags=test -coverprofile=auth_coverage.out ./internal/server/auth/...
+          COVERAGE=$(go tool cover -func=auth_coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "Auth folder coverage: ${COVERAGE}%"
+          if (( $(echo "$COVERAGE < 80.0" | bc -l) )); then
+            echo "Error: Auth coverage is below 80% (current: ${COVERAGE}%)"
+            exit 1
+          fi
+          echo "✓ Auth coverage meets target (≥80%)"
+
   # ============================================================================
   # IMAP Command Tests - Mailbox Management
   # ============================================================================
