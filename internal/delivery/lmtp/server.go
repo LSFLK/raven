@@ -70,7 +70,9 @@ func (s *Server) startUnixListener() error {
 		return err
 	}
 
+	s.mu.Lock()
 	s.unixListener = listener
+	s.mu.Unlock()
 	log.Printf("LMTP server listening on UNIX socket: %s", s.config.LMTP.UnixSocket)
 
 	// Set socket permissions
@@ -98,7 +100,9 @@ func (s *Server) startTCPListener() error {
 		return err
 	}
 
+	s.mu.Lock()
 	s.tcpListener = listener
+	s.mu.Unlock()
 	log.Printf("LMTP server listening on TCP: %s (with keep-alive enabled)", s.config.LMTP.TCPAddress)
 
 	s.wg.Add(1)
@@ -168,6 +172,26 @@ func (s *Server) handleConnection(conn net.Conn) {
 	}
 
 	log.Printf("Connection closed: %s", conn.RemoteAddr())
+}
+
+// TCPAddr returns the TCP listener address (thread-safe)
+func (s *Server) TCPAddr() net.Addr {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.tcpListener != nil {
+		return s.tcpListener.Addr()
+	}
+	return nil
+}
+
+// UnixAddr returns the Unix listener address (thread-safe)
+func (s *Server) UnixAddr() net.Addr {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.unixListener != nil {
+		return s.unixListener.Addr()
+	}
+	return nil
 }
 
 // Shutdown gracefully shuts down the server
