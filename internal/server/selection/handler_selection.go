@@ -40,6 +40,14 @@ func HandleSelect(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 	var targetUserID int64
 	var actualMailboxName string
 
+	// RFC 3501: INBOX is case-insensitive - normalize all variants to "INBOX"
+	normalizeInbox := func(name string) string {
+		if strings.EqualFold(name, "INBOX") {
+			return "INBOX"
+		}
+		return name
+	}
+
 	if strings.HasPrefix(folder, "Roles/") {
 		// Parse role mailbox path: Roles/email@domain.com/MAILBOX
 		pathParts := strings.SplitN(folder, "/", 3)
@@ -49,7 +57,7 @@ func HandleSelect(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 		}
 
 		roleEmail := pathParts[1]
-		actualMailboxName = pathParts[2]
+		actualMailboxName = normalizeInbox(pathParts[2])
 
 		// Get role mailbox ID from email
 		sharedDB := deps.GetSharedDB()
@@ -86,7 +94,7 @@ func HandleSelect(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 			return
 		}
 		targetUserID = state.UserID
-		actualMailboxName = folder
+		actualMailboxName = normalizeInbox(folder)
 		state.IsRoleMailbox = false
 		state.SelectedRoleMailboxID = 0
 	}

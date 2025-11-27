@@ -658,7 +658,12 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 			// Classify as attachment or text part
 			isAttachment := false
 			dispLower := strings.ToLower(strings.TrimSpace(disposition))
-			if strings.HasPrefix(dispLower, "attachment") {
+			// Never treat multipart containers as attachments
+			// CRITICAL FIX: Skip multipart containers - they're just structure, not content
+			if strings.HasPrefix(strings.ToLower(contentType), "multipart/") {
+				fmt.Printf("DEBUG ReconstructMessage: Skipping multipart container: type='%s'\n", contentType)
+				continue
+			} else if strings.HasPrefix(dispLower, "attachment") {
 				isAttachment = true
 			} else if !strings.HasPrefix(strings.ToLower(contentType), "text/") && !strings.HasPrefix(dispLower, "inline") {
 				// Non-text types are attachments unless explicitly inline
@@ -798,45 +803,42 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 func writePartHeaders(buf *bytes.Buffer, part map[string]interface{}) {
 	contentType := part["content_type"].(string)
 
-	// Write Content-Type with charset if available
+	// Content-Type
 	if charset, ok := part["charset"].(string); ok && charset != "" {
-		fmt.Fprintf(buf, "Content-Type: %s; charset=%s", contentType, charset)
+		fmt.Fprintf(buf, "Content-Type: %s; charset=%s\r\n", contentType, charset)
 	} else {
-		fmt.Fprintf(buf, "Content-Type: %s", contentType)
+		fmt.Fprintf(buf, "Content-Type: %s\r\n", contentType)
 	}
 
-	// Add filename to Content-Type if present (for attachments)
-	if filename, ok := part["filename"].(string); ok && filename != "" {
-		fmt.Fprintf(buf, "; name=\"%s\"", filename)
-	}
-	buf.WriteString("\r\n")
-
-	// Write Content-Transfer-Encoding (default to 7bit for text/* if missing)
+	// Content-Transfer-Encoding (default 7bit for text/*)
 	if encoding, ok := part["content_transfer_encoding"].(string); ok && strings.TrimSpace(encoding) != "" {
 		fmt.Fprintf(buf, "Content-Transfer-Encoding: %s\r\n", encoding)
 	} else if strings.HasPrefix(strings.ToLower(contentType), "text/") {
 		buf.WriteString("Content-Transfer-Encoding: 7bit\r\n")
 	}
 
-	// Write Content-ID if present (critical for inline images in Apple Mail)
-	if contentID, ok := part["content_id"].(string); ok && contentID != "" {
+	// Content-ID
+	if contentID, ok := part["content_id"].(string); ok && strings.TrimSpace(contentID) != "" {
 		fmt.Fprintf(buf, "Content-ID: %s\r\n", contentID)
 	}
 
-	// Write Content-Disposition. Default to inline for text/* when absent to help Apple Mail render body
-	if disposition, ok := part["content_disposition"].(string); ok && strings.TrimSpace(disposition) != "" {
-		fmt.Fprintf(buf, "Content-Disposition: %s", disposition)
-		if filename, ok := part["filename"].(string); ok && filename != "" {
+	// Content-Disposition
+	if disp, ok := part["content_disposition"].(string); ok && strings.TrimSpace(disp) != "" {
+		lowerDisp := strings.ToLower(disp)
+		buf.WriteString("Content-Disposition: ")
+		buf.WriteString(disp)
+		if filename, ok := part["filename"].(string); ok && strings.TrimSpace(filename) != "" && !strings.Contains(lowerDisp, "filename=") {
 			fmt.Fprintf(buf, "; filename=\"%s\"", filename)
 		}
 		buf.WriteString("\r\n")
-	} else if strings.HasPrefix(strings.ToLower(contentType), "text/") {
-		// Explicit inline for text parts
-		buf.WriteString("Content-Disposition: inline")
-		if filename, ok := part["filename"].(string); ok && filename != "" {
-			fmt.Fprintf(buf, "; filename=\"%s\"", filename)
+	} else {
+		filename, hasFilename := part["filename"].(string)
+		isText := strings.HasPrefix(strings.ToLower(contentType), "text/")
+		// Only write Content-Disposition for non-text parts with a filename
+		// Text parts and non-text parts without filename omit disposition
+		if !isText && hasFilename && strings.TrimSpace(filename) != "" {
+			fmt.Fprintf(buf, "Content-Disposition: attachment; filename=\"%s\"\r\n", filename)
 		}
-		buf.WriteString("\r\n")
 	}
 
 	buf.WriteString("\r\n")
@@ -845,15 +847,51 @@ func writePartHeaders(buf *bytes.Buffer, part map[string]interface{}) {
 // writePartContent writes the content of a message part
 func writePartContent(buf *bytes.Buffer, database *sql.DB, part map[string]interface{}) {
 	// Get content from blob or text_content
+	var content string
 	if blobID, ok := part["blob_id"].(int64); ok {
-		content, err := db.GetBlob(database, blobID)
-		if err == nil {
-			buf.WriteString(content)
+		if c, err := db.GetBlob(database, blobID); err == nil {
+			content = c
 		}
 	} else if textContent, ok := part["text_content"].(string); ok {
-		buf.WriteString(textContent)
+		content = textContent
 	}
-	buf.WriteString("\r\n")
+
+	// If base64 encoding, ensure proper 76 char wrapping per RFC 2045
+	if enc, ok := part["content_transfer_encoding"].(string); ok && strings.EqualFold(strings.TrimSpace(enc), "base64") {
+		// Detect if already wrapped (any line length <= 78 and multiple lines)
+		lines := strings.Split(content, "\r\n")
+		alreadyWrapped := true
+		if len(lines) <= 1 {
+			alreadyWrapped = false
+		} else {
+			for _, l := range lines {
+				if len(l) > 0 && len(l) > 78 { // some lines too long
+					alreadyWrapped = false
+					break
+				}
+			}
+		}
+		if !alreadyWrapped {
+			// Remove any existing whitespace/newlines and re-wrap
+			raw := strings.ReplaceAll(content, "\r", "")
+			raw = strings.ReplaceAll(raw, "\n", "")
+			var wrapped strings.Builder
+			for i := 0; i < len(raw); i += 76 {
+				end := i + 76
+				if end > len(raw) {
+					end = len(raw)
+				}
+				wrapped.WriteString(raw[i:end])
+				wrapped.WriteString("\r\n")
+			}
+			content = wrapped.String()
+		}
+	}
+
+	buf.WriteString(content)
+	if !strings.HasSuffix(content, "\r\n") {
+		buf.WriteString("\r\n")
+	}
 }
 
 // extractRecipients extracts all recipient addresses from To, Cc, and Bcc headers

@@ -136,6 +136,51 @@ func TestBuildBodyStructure_MultipartNested(t *testing.T) {
     if !containsAll(bs, []string{"MIXED"}) { t.Errorf("expected MIXED multipart structure, got: %s", bs) }
 }
 
+// TestBuildBodyStructure_GmailScenario tests the exact Gmail mobile client scenario
+// multipart/mixed containing multipart/alternative (text parts) and an attachment
+func TestBuildBodyStructure_GmailScenario(t *testing.T) {
+    outerBoundary := "----=_Part_Mixed_123"
+    innerBoundary := "----=_Part_Alternative_456"
+
+    headers := "Content-Type: multipart/mixed; boundary=\"" + outerBoundary + "\"\r\n" +
+               "MIME-Version: 1.0"
+
+    // Part 1: multipart/alternative with text/plain and text/html
+    part1 := "--" + outerBoundary + "\r\nContent-Type: multipart/alternative; boundary=\"" + innerBoundary + "\"\r\n\r\n"
+    part1a := "--" + innerBoundary + "\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 7bit\r\n\r\nHi Test gmail client,\r\n"
+    part1b := "--" + innerBoundary + "\r\nContent-Type: text/html; charset=utf-8\r\nContent-Transfer-Encoding: 7bit\r\n\r\n<html><body>Hi Test gmail client,</body></html>\r\n"
+    part1end := "--" + innerBoundary + "--\r\n"
+
+    // Part 2: image attachment
+    part2 := "--" + outerBoundary + "\r\n" +
+            "Content-Type: image/png; name=\"test.png\"\r\n" +
+            "Content-Transfer-Encoding: base64\r\n" +
+            "Content-Disposition: attachment; filename=\"test.png\"\r\n" +
+            "Content-ID: <f_test123>\r\n\r\n" +
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==\r\n"
+
+    end := "--" + outerBoundary + "--\r\n"
+
+    msg := headers + "\r\n\r\n" + part1 + part1a + part1b + part1end + part2 + end
+    bs := BuildBodyStructure(msg)
+
+    t.Logf("Generated BODYSTRUCTURE: %s", bs)
+
+    // Critical checks for Gmail compatibility:
+    // 1. Should have MIXED as outer type
+    // 2. Should have ALTERNATIVE for nested multipart (not "MULTIPART" "ALTERNATIVE" as a single part)
+    // 3. Should have TEXT PLAIN and TEXT HTML as children of alternative
+    // 4. Should have IMAGE PNG as attachment
+    if !containsAll(bs, []string{"MIXED", "ALTERNATIVE", "TEXT", "PLAIN", "HTML", "IMAGE", "PNG"}) {
+        t.Errorf("expected proper nested structure with all parts, got: %s", bs)
+    }
+
+    // Make sure it doesn't have the broken format ("MULTIPART" "ALTERNATIVE")
+    if containsAll(bs, []string{"\"MULTIPART\"", "\"ALTERNATIVE\""}) {
+        t.Errorf("BODYSTRUCTURE incorrectly shows MULTIPART as an atomic part type: %s", bs)
+    }
+}
+
 func TestBuildParamList_Empty(t *testing.T) {
     params := make(map[string]string)
     result := buildParamList(params)

@@ -206,6 +206,19 @@ func buildPartStructure(partMsg string) string {
 		subType = strings.ToUpper(typeParts[1])
 	}
 
+	// CRITICAL FIX: Handle nested multipart parts
+	// If this part is itself a multipart, recursively parse it
+	if mainType == "MULTIPART" {
+		boundary := params["boundary"]
+		if boundary != "" {
+			fmt.Printf("DEBUG buildPartStructure: Found nested multipart/%s with boundary='%s'\n", subType, boundary)
+			// Return just the multipart structure without the "BODYSTRUCTURE" prefix
+			fullStruct := buildMultipartBodyStructure(partMsg, mainType, subType, boundary)
+			// Strip the "BODYSTRUCTURE " prefix to get just the structure
+			return strings.TrimPrefix(fullStruct, "BODYSTRUCTURE ")
+		}
+	}
+
 	// Get encoding
 	encoding := extractHeader(partMsg, "Content-Transfer-Encoding")
 	if encoding == "" {
@@ -366,6 +379,10 @@ func buildFallbackMultipartBodyStructure(rawMsg, mainType, subType, boundary str
 		return buildFallbackBodyStructure(mainType, subType)
 	}
 
-	// Return the multipart structure
-	return fmt.Sprintf("BODYSTRUCTURE (%s %s)", strings.Join(parts, " "), QuoteOrNIL(subType))
+	// Build parameter list with boundary
+	boundaryParams := map[string]string{"BOUNDARY": boundary}
+	paramList := buildParamList(boundaryParams)
+
+	// Return the multipart structure with proper parameters
+	return fmt.Sprintf("BODYSTRUCTURE (%s %s %s NIL NIL)", strings.Join(parts, " "), QuoteOrNIL(subType), paramList)
 }
