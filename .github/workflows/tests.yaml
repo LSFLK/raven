@@ -1,4 +1,4 @@
-name: CI Tests
+name: Unit Tests
 
 permissions:
   contents: read
