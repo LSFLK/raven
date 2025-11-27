@@ -834,15 +834,10 @@ func writePartHeaders(buf *bytes.Buffer, part map[string]interface{}) {
 	} else {
 		filename, hasFilename := part["filename"].(string)
 		isText := strings.HasPrefix(strings.ToLower(contentType), "text/")
-		if isText {
-			// Omit Content-Disposition for text parts (Apple Mail prefers no disposition)
-			// Do nothing
-		} else if hasFilename && strings.TrimSpace(filename) != "" {
-			// Non-text with filename -> attachment
+		// Only write Content-Disposition for non-text parts with a filename
+		// Text parts and non-text parts without filename omit disposition
+		if !isText && hasFilename && strings.TrimSpace(filename) != "" {
 			fmt.Fprintf(buf, "Content-Disposition: attachment; filename=\"%s\"\r\n", filename)
-		} else {
-			// Non-text without filename -> omit disposition (inline by default)
-			// Do nothing
 		}
 	}
 
