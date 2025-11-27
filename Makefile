@@ -383,6 +383,10 @@ test-coverage:
 test-race:
 	go test -tags=test -race ./...
 
+# Run integration tests
+test-integration:
+	go test -tags=integration -v ./test/integration/...
+
 # Run capability tests with detailed output (deprecated, use test-capability)
 test-capability-detailed:
 	go test -tags=test -v -run "TestCapabilityCommand" ./internal/server
