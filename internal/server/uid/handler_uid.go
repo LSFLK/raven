@@ -286,6 +286,10 @@ func handleUIDStore(deps ServerDeps, conn net.Conn, tag string, parts []string, 
 				log.Printf("Failed to move message %d to Spam: %v", messageID, err)
 			} else {
 				log.Printf("Auto-moved message %d to Spam folder (Junk flag added)", messageID)
+				// Send EXPUNGE notification to tell client the message is gone from this mailbox
+				if !silent {
+					deps.SendResponse(conn, fmt.Sprintf("* %d EXPUNGE", seqNum))
+				}
 				// Message was moved - don't send FETCH response since it's no longer in this mailbox
 				continue
 			}
@@ -300,6 +304,10 @@ func handleUIDStore(deps ServerDeps, conn net.Conn, tag string, parts []string, 
 				log.Printf("Failed to move message %d to INBOX: %v", messageID, err)
 			} else {
 				log.Printf("Auto-moved message %d to INBOX (NonJunk flag added)", messageID)
+				// Send EXPUNGE notification to tell client the message is gone from this mailbox
+				if !silent {
+					deps.SendResponse(conn, fmt.Sprintf("* %d EXPUNGE", seqNum))
+				}
 				// Message was moved - don't send FETCH response since it's no longer in this mailbox
 				continue
 			}
