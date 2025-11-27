@@ -98,6 +98,16 @@ func (m *MockConn) AddReadData(data string) {
 	m.readBuffer = append(m.readBuffer, []byte(data)...)
 }
 
+// Reset clears both read and write buffers and resets read position
+func (m *MockConn) Reset() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	m.readBuffer = m.readBuffer[:0]
+	m.writeBuffer = m.writeBuffer[:0]
+	m.readPos = 0
+}
+
 // MockTLSConn wraps MockConn to simulate TLS connection
 type MockTLSConn struct {
 	*MockConn
