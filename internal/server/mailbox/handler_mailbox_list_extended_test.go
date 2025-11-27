@@ -218,12 +218,12 @@ func TestListCommand_ReferencePatternCombination(t *testing.T) {
 		expectedMatches int
 		description     string
 	}{
-		{`""`, `"*"`, 4, "Empty reference with * should match all 4 mailboxes"},
+		{`""`, `"*"`, 5, "Empty reference with * should match all 5 mailboxes"},
 		{`""`, `"INBOX"`, 1, "Empty reference with INBOX should match 1"},
 		{`"INBOX"`, `"*"`, 0, "INBOX reference with * should match none (no sub-mailboxes)"},
 		{`"Mail/"`, `"*"`, 0, "Mail/ reference should match none of our flat mailboxes"},
 		{`""`, `"I*"`, 1, "Empty reference with I* should match INBOX"},
-		{`""`, `"S*"`, 1, "Empty reference with S* should match Sent"},
+		{`""`, `"S*"`, 2, "Empty reference with S* should match Sent and Spam"},
 	}
 
 	for _, tc := range testCases {
