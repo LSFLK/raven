@@ -46,7 +46,7 @@
 #   make test-commands     - Run all command tests
 #   make help              - Show all available targets
 
-.PHONY: test test-db test-db-init test-db-domain test-db-user test-db-mailbox test-db-message test-db-blob test-db-role test-db-manager test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-uid test-commands test-delivery test-parser test-parser-coverage test-sasl test-conf test-utils test-response test-storage test-verbose test-coverage test-race clean
+.PHONY: test test-db test-db-init test-db-domain test-db-user test-db-mailbox test-db-message test-db-blob test-db-role test-db-manager test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-uid test-commands test-delivery test-parser test-parser-coverage test-sasl test-conf test-utils test-response test-storage test-models test-middleware test-selection test-core-server test-verbose test-coverage test-race clean
 
 # Build delivery service
 build-delivery:
@@ -383,6 +383,22 @@ test-coverage:
 test-race:
 	go test -tags=test -race ./...
 
+# Run models tests
+test-models:
+	go test -v ./internal/models/...
+
+# Run middleware tests
+test-middleware:
+	go test -tags=test -v ./internal/server/middleware/...
+
+# Run selection tests
+test-selection:
+	go test -tags=test -v ./internal/server/selection/...
+
+# Run core server tests
+test-core-server:
+	go test -tags=test -v ./internal/server
+
 # Run capability tests with detailed output (deprecated, use test-capability)
 test-capability-detailed:
 	go test -tags=test -v -run "TestCapabilityCommand" ./internal/server
@@ -457,6 +473,10 @@ help:
 	@echo "  test-utils             - Run server utilities tests"
 	@echo "  test-response          - Run server response tests"
 	@echo "  test-storage           - Run delivery storage tests"
+	@echo "  test-models            - Run models tests"
+	@echo "  test-middleware        - Run server middleware tests"
+	@echo "  test-selection         - Run mailbox selection tests"
+	@echo "  test-core-server       - Run core server tests"
 	@echo "  test-capability        - Run CAPABILITY command tests only"
 	@echo "  test-noop              - Run NOOP command tests only"
 	@echo "  test-check             - Run CHECK command tests only"
