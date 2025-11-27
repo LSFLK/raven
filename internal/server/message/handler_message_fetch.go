@@ -3,6 +3,7 @@ package message
 import (
 	"database/sql"
 	"fmt"
+	"math"
 	"net"
 	"sort"
 	"strconv"
@@ -756,6 +757,9 @@ func mapIMAPPartPathToDBPart(parts []map[string]interface{}, partPath []int) map
 		case int64:
 			return int(t), true
 		case uint:
+			if t > math.MaxInt {
+				return 0, false
+			}
 			return int(t), true
 		case uint8:
 			return int(t), true
@@ -764,6 +768,9 @@ func mapIMAPPartPathToDBPart(parts []map[string]interface{}, partPath []int) map
 		case uint32:
 			return int(t), true
 		case uint64:
+			if t > math.MaxInt {
+				return 0, false
+			}
 			return int(t), true
 		case float32:
 			return int(t), true
