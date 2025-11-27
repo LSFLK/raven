@@ -1,0 +1,148 @@
+name: Unit Tests
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "**.go"
+      - go.mod
+      - go.sum
+      - .github/workflows/**
+
+jobs:
+  # ============================================================================
+  # Unit Tests - All Components
+  # ============================================================================
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+
+      - name: Install dependencies
+        run: make deps
+
+      # Database Layer Tests
+      - name: Test Database Layer
+        run: |
+          echo "::group::Database Tests"
+          go test -v -cover ./internal/db/...
+          echo "::endgroup::"
+
+      # Configuration Tests
+      - name: Test Configuration
+        run: |
+          echo "::group::Configuration Tests"
+          go test -v ./internal/conf/...
+          echo "::endgroup::"
+
+      # Models Tests
+      - name: Test Models
+        run: |
+          echo "::group::Models Tests"
+          go test -v ./internal/models/...
+          echo "::endgroup::"
+
+      # IMAP Server Tests - Authentication
+      - name: Test IMAP Authentication
+        run: |
+          echo "::group::IMAP Authentication Tests"
+          go test -tags=test -coverprofile=auth_coverage.out ./internal/server/auth/...
+          COVERAGE=$(go tool cover -func=auth_coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "Auth folder coverage: ${COVERAGE}%"
+          if (( $(echo "$COVERAGE < 80.0" | bc -l) )); then
+            echo "Error: Auth coverage is below 80% (current: ${COVERAGE}%)"
+            exit 1
+          fi
+          echo "✓ Auth coverage meets target (≥80%)"
+          echo "::endgroup::"
+
+      # IMAP Server Tests - Mailbox Management
+      - name: Test IMAP Mailbox Management
+        run: |
+          echo "::group::IMAP Mailbox Tests"
+          go test -tags=test -v ./internal/server/mailbox/...
+          echo "::endgroup::"
+
+      # IMAP Server Tests - Message Operations
+      - name: Test IMAP Message Operations
+        run: |
+          echo "::group::IMAP Message Tests"
+          go test -tags=test -v ./internal/server/message/...
+          echo "::endgroup::"
+
+      # IMAP Server Tests - Extensions
+      - name: Test IMAP Extensions
+        run: |
+          echo "::group::IMAP Extensions Tests"
+          go test -tags=test -v ./internal/server/extension/...
+          echo "::endgroup::"
+
+      # IMAP Server Tests - Selection & UID
+      - name: Test Selection & UID Commands
+        run: |
+          echo "::group::Selection & UID Tests"
+          go test -tags=test -v ./internal/server/selection/...
+          go test -tags=test -v ./internal/server/uid/...
+          echo "::endgroup::"
+
+      # IMAP Server Tests - Core
+      - name: Test Core IMAP Server
+        run: |
+          echo "::group::Core Server Tests"
+          go test -tags=test -v ./internal/server -run "^Test[^A-Z]"
+          echo "::endgroup::"
+
+      # IMAP Server Tests - Middleware
+      - name: Test Server Middleware
+        run: |
+          echo "::group::Middleware Tests"
+          go test -tags=test -v ./internal/server/middleware/...
+          echo "::endgroup::"
+
+      # IMAP Server Tests - Utilities
+      - name: Test Server Utilities
+        run: |
+          echo "::group::Server Utilities Tests"
+          go test -v ./internal/server/utils/...
+          go test -v ./internal/server/response/...
+          echo "::endgroup::"
+
+      # Delivery Service Tests
+      - name: Test Delivery Service
+        run: |
+          echo "::group::Delivery Service Tests"
+          go test -tags=test -v ./internal/delivery/...
+          echo "::endgroup::"
+
+      # SASL Authentication Service Tests
+      - name: Test SASL Authentication Service
+        run: |
+          echo "::group::SASL Service Tests"
+          go test -tags=test -v ./internal/sasl/...
+          echo "::endgroup::"
+
+      # Race Condition Detection
+      - name: Run Race Detector
+        run: |
+          echo "::group::Race Condition Tests"
+          go test -tags=test -race ./...
+          echo "::endgroup::"
+
+      - name: Test Summary
+        if: always()
+        run: |
+          echo "========================================="
+          echo "All unit tests completed!"
+          echo "========================================="

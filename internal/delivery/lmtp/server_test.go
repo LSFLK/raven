@@ -159,11 +159,12 @@ func TestServer_StartTCPListener(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Get the actual address (port was 0, so OS assigned one)
-	if server.tcpListener == nil {
+	tcpAddr := server.TCPAddr()
+	if tcpAddr == nil {
 		t.Fatal("Expected TCP listener to be created")
 	}
 
-	addr := server.tcpListener.Addr().String()
+	addr := tcpAddr.String()
 
 	// Try to connect to the TCP address
 	conn, err := net.Dial("tcp", addr)
@@ -209,7 +210,8 @@ func TestServer_StartBothListeners(t *testing.T) {
 	}
 
 	// Check TCP listener
-	if server.tcpListener == nil {
+	tcpAddrVal := server.TCPAddr()
+	if tcpAddrVal == nil {
 		t.Fatal("Expected TCP listener to be created")
 	}
 
@@ -221,7 +223,7 @@ func TestServer_StartBothListeners(t *testing.T) {
 		_ = unixConn.Close()
 	}
 
-	tcpAddr := server.tcpListener.Addr().String()
+	tcpAddr := tcpAddrVal.String()
 	tcpConn, err := net.Dial("tcp", tcpAddr)
 	if err != nil {
 		t.Errorf("Failed to connect to TCP address: %v", err)
@@ -333,7 +335,7 @@ func TestServer_HandleConnection_TCPOptions(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Connect to server
-	tcpAddr := server.tcpListener.Addr().String()
+	tcpAddr := server.TCPAddr().String()
 	conn, err := net.Dial("tcp", tcpAddr)
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
@@ -433,7 +435,7 @@ func TestServer_MultipleConnections(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	tcpAddr := server.tcpListener.Addr().String()
+	tcpAddr := server.TCPAddr().String()
 
 	// Create multiple connections
 	numConns := 5

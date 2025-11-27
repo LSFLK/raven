@@ -20,6 +20,7 @@ type Server struct {
 	authURL       string
 	domain        string
 	listener      net.Listener
+	listenerMu    sync.RWMutex
 	wg            sync.WaitGroup
 	shutdown      chan struct{}
 	shutdownOnce  sync.Once
@@ -47,7 +48,9 @@ func (s *Server) Start() error {
 	if err != nil {
 		return fmt.Errorf("failed to create Unix socket: %v", err)
 	}
+	s.listenerMu.Lock()
 	s.listener = listener
+	s.listenerMu.Unlock()
 
 	// Set socket permissions (0666 so Postfix can access it)
 	// #nosec G302 -- Unix socket needs world read/write for Postfix access
@@ -89,8 +92,11 @@ func (s *Server) Shutdown() error {
 	var err error
 	s.shutdownOnce.Do(func() {
 		close(s.shutdown)
-		if s.listener != nil {
-			err = s.listener.Close()
+		s.listenerMu.RLock()
+		listener := s.listener
+		s.listenerMu.RUnlock()
+		if listener != nil {
+			err = listener.Close()
 		}
 		s.wg.Wait()
 		_ = os.Remove(s.socketPath)
