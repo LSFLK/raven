@@ -33,6 +33,7 @@ type MockConn struct {
 	writeBuffer []byte
 	readPos     int
 	closed      bool
+	mu          sync.Mutex // Protects concurrent access to readBuffer and writeBuffer
 }
 
 func NewMockConn() *MockConn {
@@ -43,6 +44,9 @@ func NewMockConn() *MockConn {
 }
 
 func (m *MockConn) Read(b []byte) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
 	if m.readPos >= len(m.readBuffer) {
 		return 0, net.ErrClosed
 	}
@@ -52,11 +56,17 @@ func (m *MockConn) Read(b []byte) (int, error) {
 }
 
 func (m *MockConn) Write(b []byte) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
 	m.writeBuffer = append(m.writeBuffer, b...)
 	return len(b), nil
 }
 
 func (m *MockConn) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
 	m.closed = true
 	return nil
 }
@@ -68,14 +78,23 @@ func (m *MockConn) SetReadDeadline(t time.Time) error  { return nil }
 func (m *MockConn) SetWriteDeadline(t time.Time) error { return nil }
 
 func (m *MockConn) GetWrittenData() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
 	return string(m.writeBuffer)
 }
 
 func (m *MockConn) ClearWriteBuffer() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
 	m.writeBuffer = m.writeBuffer[:0]
 }
 
 func (m *MockConn) AddReadData(data string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
 	m.readBuffer = append(m.readBuffer, []byte(data)...)
 }
 
