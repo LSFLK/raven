@@ -59,6 +59,8 @@ func GetMailboxAttributes(mailboxName string) string {
 		return "\\Trash"
 	case "Sent":
 		return "\\Sent"
+	case "Spam":
+		return "\\Junk"
 	case "INBOX":
 		return "\\Unmarked"
 	default:

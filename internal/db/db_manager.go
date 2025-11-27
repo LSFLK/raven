@@ -310,6 +310,7 @@ func createDefaultMailboxes(db *sql.DB, userID int64) error {
 		{"Sent", "\\Sent"},
 		{"Drafts", "\\Drafts"},
 		{"Trash", "\\Trash"},
+		{"Spam", "\\Junk"},
 	}
 
 	for _, mbx := range defaultMailboxes {

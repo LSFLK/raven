@@ -11,6 +11,38 @@ import (
 	"raven/internal/delivery/parser"
 )
 
+// isSpamByHeaders checks if a message should be classified as spam based on Rspamd headers
+func isSpamByHeaders(headers map[string]string) bool {
+	// Primary check: X-Rspamd-Action header
+	if action, ok := headers["X-Rspamd-Action"]; ok {
+		actionLower := strings.ToLower(strings.TrimSpace(action))
+		// Treat these actions as spam
+		if actionLower == "reject" || actionLower == "rewrite subject" || actionLower == "add header" {
+			return true
+		}
+	}
+
+	// Secondary check: X-Spam-Status header
+	if status, ok := headers["X-Spam-Status"]; ok {
+		statusLower := strings.ToLower(strings.TrimSpace(status))
+		// Check if status starts with "yes" (case-insensitive)
+		if strings.HasPrefix(statusLower, "yes") {
+			return true
+		}
+	}
+
+	// Not spam based on Rspamd headers
+	return false
+}
+
+// determineTargetFolder determines which folder to deliver the message to based on spam headers
+func determineTargetFolder(headers map[string]string, defaultFolder string) string {
+	if isSpamByHeaders(headers) {
+		return "Spam"
+	}
+	return defaultFolder
+}
+
 // Storage handles message storage operations
 type Storage struct {
 	dbManager *db.DBManager
@@ -25,6 +57,13 @@ func NewStorage(dbManager *db.DBManager) *Storage {
 
 // DeliverMessage stores a message for a recipient
 func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder string) error {
+	// Determine target folder based on spam detection
+	targetFolder := determineTargetFolder(msg.Headers, folder)
+	if targetFolder == "Spam" && folder != "Spam" {
+		log.Printf("Message classified as spam, routing to Spam folder (X-Rspamd-Action: %s, X-Spam-Status: %s)",
+			msg.Headers["X-Rspamd-Action"], msg.Headers["X-Spam-Status"])
+	}
+
 	// Extract username and domain from email address
 	username, err := parser.ExtractLocalPart(recipient)
 	if err != nil {
@@ -76,10 +115,15 @@ func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder s
 	}
 
 	// Get or create the target mailbox
-	mailboxID, err := db.GetMailboxByNamePerUser(targetDB, targetUserID, folder)
+	mailboxID, err := db.GetMailboxByNamePerUser(targetDB, targetUserID, targetFolder)
 	if err != nil {
 		// Mailbox doesn't exist, create it
-		mailboxID, err = db.CreateMailboxPerUser(targetDB, targetUserID, folder, "")
+		// Determine special use flag for the mailbox
+		specialUse := ""
+		if targetFolder == "Spam" {
+			specialUse = "\\Junk"
+		}
+		mailboxID, err = db.CreateMailboxPerUser(targetDB, targetUserID, targetFolder, specialUse)
 		if err != nil {
 			return fmt.Errorf("failed to create mailbox: %w", err)
 		}
