@@ -3,6 +3,7 @@ package uid
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -243,17 +244,19 @@ func handleUIDStore(deps ServerDeps, conn net.Conn, tag string, parts []string, 
 
 	// Process each UID
 	for _, uid := range uids {
-		// Get current flags and sequence number
+		// Get current flags, sequence number, message ID, and internal date
 		var currentFlags string
 		var seqNum int
+		var messageID int64
+		var internalDate string
 
 		err := targetDB.QueryRow(`
-			SELECT mm.flags,
+			SELECT mm.message_id, mm.flags, mm.internal_date,
 				(SELECT COUNT(*) FROM message_mailbox mm2
 				 WHERE mm2.mailbox_id = mm.mailbox_id AND mm2.uid <= mm.uid) as seq_num
 			FROM message_mailbox mm
 			WHERE mm.mailbox_id = ? AND mm.uid = ?
-		`, state.SelectedMailboxID, uid).Scan(&currentFlags, &seqNum)
+		`, state.SelectedMailboxID, uid).Scan(&messageID, &currentFlags, &internalDate, &seqNum)
 
 		if err != nil {
 			// Non-existent UID is silently ignored
@@ -263,7 +266,46 @@ func handleUIDStore(deps ServerDeps, conn net.Conn, tag string, parts []string, 
 		// Calculate new flags based on operation
 		updatedFlags := message.CalculateNewFlags(currentFlags, newFlags, dataItem)
 
-		// Update flags in database
+		// Check if Junk or NonJunk flags were added
+		currentFlagsSet := parseFlagsToSet(currentFlags)
+		updatedFlagsSet := parseFlagsToSet(updatedFlags)
+
+		junkAdded := !currentFlagsSet["Junk"] && updatedFlagsSet["Junk"]
+		nonJunkAdded := !currentFlagsSet["NonJunk"] && updatedFlagsSet["NonJunk"]
+
+		// Auto-move messages based on Junk/NonJunk flags
+		// These flags are mutually exclusive - ensure only one is set
+		if junkAdded {
+			// Remove NonJunk flag if present (mutually exclusive with Junk)
+			cleanedFlags := removeFlagFromSet(updatedFlagsSet, "NonJunk")
+			cleanedFlagsStr := flagSetToString(cleanedFlags)
+
+			// Move to Spam folder
+			err = message.MoveMessageToMailbox(targetDB, messageID, state.SelectedMailboxID, "Spam", state.UserID, cleanedFlagsStr, internalDate)
+			if err != nil {
+				log.Printf("Failed to move message %d to Spam: %v", messageID, err)
+			} else {
+				log.Printf("Auto-moved message %d to Spam folder (Junk flag added)", messageID)
+				// Message was moved - don't send FETCH response since it's no longer in this mailbox
+				continue
+			}
+		} else if nonJunkAdded {
+			// Remove Junk flag if present (mutually exclusive with NonJunk)
+			cleanedFlags := removeFlagFromSet(updatedFlagsSet, "Junk")
+			cleanedFlagsStr := flagSetToString(cleanedFlags)
+
+			// Move to INBOX
+			err = message.MoveMessageToMailbox(targetDB, messageID, state.SelectedMailboxID, "INBOX", state.UserID, cleanedFlagsStr, internalDate)
+			if err != nil {
+				log.Printf("Failed to move message %d to INBOX: %v", messageID, err)
+			} else {
+				log.Printf("Auto-moved message %d to INBOX (NonJunk flag added)", messageID)
+				// Message was moved - don't send FETCH response since it's no longer in this mailbox
+				continue
+			}
+		}
+
+		// Update flags in database (only if message wasn't moved)
 		_, err = targetDB.Exec(`
 			UPDATE message_mailbox
 			SET flags = ?
@@ -397,4 +439,35 @@ func handleUIDCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, s
 	}
 
 	deps.SendResponse(conn, fmt.Sprintf("%s OK UID COPY completed", tag))
+}
+
+// parseFlagsToSet converts a space-separated flags string into a set (map)
+func parseFlagsToSet(flags string) map[string]bool {
+	flagSet := make(map[string]bool)
+	if flags != "" {
+		for _, flag := range strings.Fields(flags) {
+			flagSet[flag] = true
+		}
+	}
+	return flagSet
+}
+
+// removeFlagFromSet removes a specific flag from the flag set
+func removeFlagFromSet(flagSet map[string]bool, flagToRemove string) map[string]bool {
+	newSet := make(map[string]bool)
+	for flag, val := range flagSet {
+		if flag != flagToRemove {
+			newSet[flag] = val
+		}
+	}
+	return newSet
+}
+
+// flagSetToString converts a flag set back to a space-separated string
+func flagSetToString(flagSet map[string]bool) string {
+	var flags []string
+	for flag := range flagSet {
+		flags = append(flags, flag)
+	}
+	return strings.Join(flags, " ")
 }

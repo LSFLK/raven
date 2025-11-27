@@ -817,15 +817,15 @@ func HandleStore(deps ServerDeps, conn net.Conn, tag string, parts []string, sta
 	for _, seqNum := range sequences {
 		// Get message by sequence number
 		query := `
-			SELECT mm.message_id, mm.uid, mm.flags
+			SELECT mm.message_id, mm.uid, mm.flags, mm.internal_date
 			FROM message_mailbox mm
 			WHERE mm.mailbox_id = ?
 			ORDER BY mm.uid ASC
 			LIMIT 1 OFFSET ?
 		`
 		var messageID, uid int64
-		var currentFlags string
-		err := userDB.QueryRow(query, state.SelectedMailboxID, seqNum-1).Scan(&messageID, &uid, &currentFlags)
+		var currentFlags, internalDate string
+		err := userDB.QueryRow(query, state.SelectedMailboxID, seqNum-1).Scan(&messageID, &uid, &currentFlags, &internalDate)
 		if err != nil {
 			// Message not found - skip
 			continue
@@ -834,7 +834,46 @@ func HandleStore(deps ServerDeps, conn net.Conn, tag string, parts []string, sta
 		// Calculate new flags based on operation
 		updatedFlags := CalculateNewFlags(currentFlags, newFlags, dataItem)
 
-		// Update flags in database
+		// Check if Junk or NonJunk flags were added
+		currentFlagsSet := parseFlagsToSet(currentFlags)
+		updatedFlagsSet := parseFlagsToSet(updatedFlags)
+
+		junkAdded := !currentFlagsSet["Junk"] && updatedFlagsSet["Junk"]
+		nonJunkAdded := !currentFlagsSet["NonJunk"] && updatedFlagsSet["NonJunk"]
+
+		// Auto-move messages based on Junk/NonJunk flags
+		// These flags are mutually exclusive - ensure only one is set
+		if junkAdded {
+			// Remove NonJunk flag if present (mutually exclusive with Junk)
+			cleanedFlags := removeFlagFromSet(updatedFlagsSet, "NonJunk")
+			cleanedFlagsStr := flagSetToString(cleanedFlags)
+
+			// Move to Spam folder
+			err = MoveMessageToMailbox(userDB, messageID, state.SelectedMailboxID, "Spam", state.UserID, cleanedFlagsStr, internalDate)
+			if err != nil {
+				log.Printf("Failed to move message %d to Spam: %v", messageID, err)
+			} else {
+				log.Printf("Auto-moved message %d to Spam folder (Junk flag added)", messageID)
+				// Message was moved - don't send FETCH response since it's no longer in this mailbox
+				continue
+			}
+		} else if nonJunkAdded {
+			// Remove Junk flag if present (mutually exclusive with NonJunk)
+			cleanedFlags := removeFlagFromSet(updatedFlagsSet, "Junk")
+			cleanedFlagsStr := flagSetToString(cleanedFlags)
+
+			// Move to INBOX
+			err = MoveMessageToMailbox(userDB, messageID, state.SelectedMailboxID, "INBOX", state.UserID, cleanedFlagsStr, internalDate)
+			if err != nil {
+				log.Printf("Failed to move message %d to INBOX: %v", messageID, err)
+			} else {
+				log.Printf("Auto-moved message %d to INBOX (NonJunk flag added)", messageID)
+				// Message was moved - don't send FETCH response since it's no longer in this mailbox
+				continue
+			}
+		}
+
+		// Update flags in database (only if message wasn't moved)
 		updateQuery := "UPDATE message_mailbox SET flags = ? WHERE message_id = ? AND mailbox_id = ?"
 		_, err = userDB.Exec(updateQuery, updatedFlags, messageID, state.SelectedMailboxID)
 		if err != nil {
@@ -853,6 +892,37 @@ func HandleStore(deps ServerDeps, conn net.Conn, tag string, parts []string, sta
 	}
 
 	deps.SendResponse(conn, fmt.Sprintf("%s OK STORE completed", tag))
+}
+
+// parseFlagsToSet converts a space-separated flags string into a set (map)
+func parseFlagsToSet(flags string) map[string]bool {
+	flagSet := make(map[string]bool)
+	if flags != "" {
+		for _, flag := range strings.Fields(flags) {
+			flagSet[flag] = true
+		}
+	}
+	return flagSet
+}
+
+// removeFlagFromSet removes a specific flag from the flag set
+func removeFlagFromSet(flagSet map[string]bool, flagToRemove string) map[string]bool {
+	newSet := make(map[string]bool)
+	for flag, val := range flagSet {
+		if flag != flagToRemove {
+			newSet[flag] = val
+		}
+	}
+	return newSet
+}
+
+// flagSetToString converts a flag set back to a space-separated string
+func flagSetToString(flagSet map[string]bool) string {
+	var flags []string
+	for flag := range flagSet {
+		flags = append(flags, flag)
+	}
+	return strings.Join(flags, " ")
 }
 
 // CalculateNewFlags determines the new flags based on the operation
@@ -1026,6 +1096,73 @@ func HandleCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, stat
 	}
 
 	deps.SendResponse(conn, fmt.Sprintf("%s OK COPY completed", tag))
+}
+
+// MoveMessageToMailbox moves a message from the current mailbox to a destination mailbox
+// Returns the new sequence number in the destination mailbox, or 0 if failed
+func MoveMessageToMailbox(userDB *sql.DB, messageID int64, sourceMailboxID int64, destMailboxName string, userID int64, flags string, internalDate string) error {
+	// Get destination mailbox ID
+	var destMailboxID int64
+	err := userDB.QueryRow(`
+		SELECT id FROM mailboxes
+		WHERE name = ? AND user_id = ?
+	`, destMailboxName, userID).Scan(&destMailboxID)
+
+	if err != nil {
+		return fmt.Errorf("destination mailbox not found: %w", err)
+	}
+
+	// Don't move if already in the destination mailbox
+	if sourceMailboxID == destMailboxID {
+		return nil
+	}
+
+	// Begin transaction
+	tx, err := userDB.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Get the next UID for destination mailbox
+	var nextUID int64
+	err = tx.QueryRow(`
+		SELECT COALESCE(MAX(uid), 0) + 1
+		FROM message_mailbox
+		WHERE mailbox_id = ?
+	`, destMailboxID).Scan(&nextUID)
+
+	if err != nil {
+		return fmt.Errorf("failed to get next UID: %w", err)
+	}
+
+	// Insert message into destination mailbox (preserve flags and internal date)
+	_, err = tx.Exec(`
+		INSERT INTO message_mailbox (message_id, mailbox_id, uid, flags, internal_date)
+		VALUES (?, ?, ?, ?, ?)
+	`, messageID, destMailboxID, nextUID, flags, internalDate)
+
+	if err != nil {
+		return fmt.Errorf("failed to insert into destination: %w", err)
+	}
+
+	// Delete message from source mailbox
+	_, err = tx.Exec(`
+		DELETE FROM message_mailbox
+		WHERE message_id = ? AND mailbox_id = ?
+	`, messageID, sourceMailboxID)
+
+	if err != nil {
+		return fmt.Errorf("failed to delete from source: %w", err)
+	}
+
+	// Commit transaction
+	err = tx.Commit()
+	if err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
 }
 
 // ===== APPEND =====
