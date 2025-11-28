@@ -691,3 +691,165 @@ func TestDeliverMessage_WithAttachment(t *testing.T) {
         t.Errorf("expected 1 message, got %d", count)
     }
 }
+
+// Spam filtering tests
+
+func TestSpamFiltering_RspamdActionReject(t *testing.T) {
+    mgr := setupTestDBManager(t)
+    stor := NewStorage(mgr)
+
+    msg := buildParserMessage("sender@example.com", []string{"spamuser@example.com"}, "Spam Test", "Spam body")
+    msg.Headers["X-Rspamd-Action"] = "reject"
+
+    if err := stor.DeliverMessage("spamuser@example.com", msg, "INBOX"); err != nil {
+        t.Fatalf("deliver failed: %v", err)
+    }
+
+    // Should be in Spam folder, not INBOX
+    spamCount, _ := stor.GetMessageCountInFolder("spamuser", "Spam")
+    if spamCount != 1 {
+        t.Errorf("expected 1 message in Spam folder, got %d", spamCount)
+    }
+
+    inboxCount, _ := stor.GetMessageCountInFolder("spamuser", "INBOX")
+    if inboxCount != 0 {
+        t.Errorf("expected 0 messages in INBOX, got %d", inboxCount)
+    }
+}
+
+func TestSpamFiltering_RspamdActionAddHeader(t *testing.T) {
+    mgr := setupTestDBManager(t)
+    stor := NewStorage(mgr)
+
+    msg := buildParserMessage("sender@example.com", []string{"spamuser2@example.com"}, "Spam Test", "Spam body")
+    msg.Headers["X-Rspamd-Action"] = "add header"
+
+    if err := stor.DeliverMessage("spamuser2@example.com", msg, "INBOX"); err != nil {
+        t.Fatalf("deliver failed: %v", err)
+    }
+
+    spamCount, _ := stor.GetMessageCountInFolder("spamuser2", "Spam")
+    if spamCount != 1 {
+        t.Errorf("expected 1 message in Spam folder, got %d", spamCount)
+    }
+}
+
+func TestSpamFiltering_RspamdActionRewriteSubject(t *testing.T) {
+    mgr := setupTestDBManager(t)
+    stor := NewStorage(mgr)
+
+    msg := buildParserMessage("sender@example.com", []string{"spamuser3@example.com"}, "Spam Test", "Spam body")
+    msg.Headers["X-Rspamd-Action"] = "rewrite subject"
+
+    if err := stor.DeliverMessage("spamuser3@example.com", msg, "INBOX"); err != nil {
+        t.Fatalf("deliver failed: %v", err)
+    }
+
+    spamCount, _ := stor.GetMessageCountInFolder("spamuser3", "Spam")
+    if spamCount != 1 {
+        t.Errorf("expected 1 message in Spam folder, got %d", spamCount)
+    }
+}
+
+func TestSpamFiltering_XSpamStatusYes(t *testing.T) {
+    mgr := setupTestDBManager(t)
+    stor := NewStorage(mgr)
+
+    msg := buildParserMessage("sender@example.com", []string{"spamuser4@example.com"}, "Spam Test", "Spam body")
+    msg.Headers["X-Spam-Status"] = "Yes, score=10.5"
+
+    if err := stor.DeliverMessage("spamuser4@example.com", msg, "INBOX"); err != nil {
+        t.Fatalf("deliver failed: %v", err)
+    }
+
+    spamCount, _ := stor.GetMessageCountInFolder("spamuser4", "Spam")
+    if spamCount != 1 {
+        t.Errorf("expected 1 message in Spam folder, got %d", spamCount)
+    }
+}
+
+func TestSpamFiltering_NoActionGoesToInbox(t *testing.T) {
+    mgr := setupTestDBManager(t)
+    stor := NewStorage(mgr)
+
+    msg := buildParserMessage("sender@example.com", []string{"hamuser@example.com"}, "Ham Test", "Ham body")
+    msg.Headers["X-Rspamd-Action"] = "no action"
+    msg.Headers["X-Spam-Status"] = "No, score=-1.10"
+
+    if err := stor.DeliverMessage("hamuser@example.com", msg, "INBOX"); err != nil {
+        t.Fatalf("deliver failed: %v", err)
+    }
+
+    inboxCount, _ := stor.GetMessageCountInFolder("hamuser", "INBOX")
+    if inboxCount != 1 {
+        t.Errorf("expected 1 message in INBOX, got %d", inboxCount)
+    }
+
+    spamCount, _ := stor.GetMessageCountInFolder("hamuser", "Spam")
+    if spamCount != 0 {
+        t.Errorf("expected 0 messages in Spam folder, got %d", spamCount)
+    }
+}
+
+func TestSpamFiltering_NoHeadersGoesToInbox(t *testing.T) {
+    mgr := setupTestDBManager(t)
+    stor := NewStorage(mgr)
+
+    msg := buildParserMessage("sender@example.com", []string{"cleanuser@example.com"}, "Clean Test", "Clean body")
+    // No Rspamd headers at all
+
+    if err := stor.DeliverMessage("cleanuser@example.com", msg, "INBOX"); err != nil {
+        t.Fatalf("deliver failed: %v", err)
+    }
+
+    inboxCount, _ := stor.GetMessageCountInFolder("cleanuser", "INBOX")
+    if inboxCount != 1 {
+        t.Errorf("expected 1 message in INBOX, got %d", inboxCount)
+    }
+
+    spamCount, _ := stor.GetMessageCountInFolder("cleanuser", "Spam")
+    if spamCount != 0 {
+        t.Errorf("expected 0 messages in Spam folder, got %d", spamCount)
+    }
+}
+
+func TestSpamFiltering_CaseInsensitive(t *testing.T) {
+    mgr := setupTestDBManager(t)
+    stor := NewStorage(mgr)
+
+    msg := buildParserMessage("sender@example.com", []string{"caseuser@example.com"}, "Case Test", "Body")
+    msg.Headers["X-Rspamd-Action"] = "REJECT"  // Uppercase
+    msg.Headers["X-Spam-Status"] = "YES, score=5.0"  // Uppercase
+
+    if err := stor.DeliverMessage("caseuser@example.com", msg, "INBOX"); err != nil {
+        t.Fatalf("deliver failed: %v", err)
+    }
+
+    spamCount, _ := stor.GetMessageCountInFolder("caseuser", "Spam")
+    if spamCount != 1 {
+        t.Errorf("expected 1 message in Spam folder (case-insensitive matching), got %d", spamCount)
+    }
+}
+
+func TestSpamFiltering_GreylistGoesToInbox(t *testing.T) {
+    mgr := setupTestDBManager(t)
+    stor := NewStorage(mgr)
+
+    msg := buildParserMessage("sender@example.com", []string{"greyuser@example.com"}, "Greylist Test", "Body")
+    msg.Headers["X-Rspamd-Action"] = "greylist"
+
+    if err := stor.DeliverMessage("greyuser@example.com", msg, "INBOX"); err != nil {
+        t.Fatalf("deliver failed: %v", err)
+    }
+
+    // Greylist action should go to INBOX, not Spam
+    inboxCount, _ := stor.GetMessageCountInFolder("greyuser", "INBOX")
+    if inboxCount != 1 {
+        t.Errorf("expected 1 message in INBOX for greylist, got %d", inboxCount)
+    }
+
+    spamCount, _ := stor.GetMessageCountInFolder("greyuser", "Spam")
+    if spamCount != 0 {
+        t.Errorf("expected 0 messages in Spam folder for greylist, got %d", spamCount)
+    }
+}

@@ -187,7 +187,7 @@ func HandleLsub(deps ServerDeps, conn net.Conn, tag string, parts []string, stat
 
 	// If no subscriptions exist, subscribe to default mailboxes
 	if len(subscriptions) == 0 {
-		defaultMailboxes := []string{"INBOX", "Sent", "Drafts", "Trash"}
+		defaultMailboxes := []string{"INBOX", "Sent", "Drafts", "Trash", "Spam"}
 		for _, mailbox := range defaultMailboxes {
 			_ = db.SubscribeToMailboxPerUser(userDB, state.UserID, mailbox)
 		}
