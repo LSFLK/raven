@@ -1,28 +1,29 @@
-# 📬 Raven Mail Server
+# Raven Mail Server
 
-A lightweight mail server implementation in Go with IMAP access and LMTP delivery.
+A lightweight IMAP, LMTP and SASL mail server implementation in Go with SQLite storage.
 
----
+## Architecture
 
-## 🏗️ Architecture Overview
+Raven consists of three services:
 
-Raven consists of two main components:
+### IMAP Server (Ports 143, 993)
+- Email client access to mailboxes
+- Standard IMAP commands: SELECT, FETCH, SEARCH, STORE, COPY, APPEND, EXPUNGE
+- Mailbox operations: CREATE, DELETE, RENAME, LIST, SUBSCRIBE
+- TLS/SSL support (STARTTLS and IMAPS)
 
-### 1. **IMAP Server** (Port 143 & 993)
-- Allows email clients to access and manage mailboxes
-- Supports standard IMAP commands (SELECT, FETCH, SEARCH, STORE, etc.)
-- Handles user authentication and TLS encryption
-
-### 2. **Delivery Service** (LMTP over Unix socket or TCP( Port 24))
-- Receives incoming emails from mail transfer agents (like Postfix)
-- Parses and stores messages in the database
+### LMTP Delivery Service (Port 24)
+- Receives incoming mail from MTAs (e.g., Postfix)
+- Parses and stores messages in SQLite database
 - Routes messages to user mailboxes
 
-Both services share a single **SQLite database** for storing users, mailboxes, and messages.
+### SASL Authentication Service (Unix socket)
+- Handles authentication via external auth server
+- Integrates with MTAs for SMTP authentication
 
----
+All services use a **multi-database SQLite architecture** for efficient data isolation and scalability.
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Option 1: Pull from GitHub Container Registry (Recommended)
 
@@ -51,7 +52,7 @@ cd raven
 docker build -t raven .
 docker run -d --rm \
   --name raven \
-  -p 143:143 -p 993:993 \
+  -p 143:143 -p 993:993 -p 24:24 \
   -v $(pwd)/config:/etc/raven \
   -v $(pwd)/data:/app/data \
   -v $(pwd)/certs:/certs \
@@ -73,7 +74,7 @@ Connect using any IMAP client to start managing your emails.
 | Volume | Path | Description |
 |--------|------|-------------|
 | **Configuration** | `-v $(pwd)/config:/etc/raven` | Configuration directory containing `raven.yaml` |
-| **Data** | `-v $(pwd)/data:/app/data` | Data directory for SQLite database (`mail.db`) and mail storage |
+| **Data** | `-v $(pwd)/data:/app/data` | Data directory for SQLite databases (`shared.db`, `user_db_*.db`, `role_db_*.db`) and mail storage |
 | **Certificates** | `-v $(pwd)/certs:/certs` | TLS/SSL certificates directory containing `fullchain.pem` and `privkey.pem` for IMAPS and STARTTLS |
 | **Delivery** | `-v $(pwd)/delivery.yaml:/app/delivery.yaml` | Delivery service configuration file |
 
