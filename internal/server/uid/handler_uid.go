@@ -510,20 +510,23 @@ func handleUIDExpunge(deps ServerDeps, conn net.Conn, tag string, parts []string
 	}
 
 	// Query for messages that are both in the UID set AND have \Deleted flag
-	// Build a query with IN clause for the UIDs
-	uidStrings := make([]string, len(uids))
+	// Build a parameterized query with placeholders for the IN clause
+	placeholders := make([]string, len(uids))
+	args := make([]any, len(uids)+1)
+	args[0] = state.SelectedMailboxID
 	for i, uid := range uids {
-		uidStrings[i] = strconv.Itoa(uid)
+		placeholders[i] = "?"
+		args[i+1] = uid
 	}
-	uidList := strings.Join(uidStrings, ",")
+	placeholderList := strings.Join(placeholders, ",")
 
 	query := fmt.Sprintf(`
 		SELECT id, uid FROM message_mailbox
 		WHERE mailbox_id = ? AND uid IN (%s) AND flags LIKE '%%\Deleted%%'
 		ORDER BY uid ASC
-	`, uidList)
+	`, placeholderList)
 
-	rows, err := targetDB.Query(query, state.SelectedMailboxID)
+	rows, err := targetDB.Query(query, args...)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO UID EXPUNGE failed: %v", tag, err))
 		return
