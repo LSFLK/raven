@@ -520,11 +520,13 @@ func handleUIDExpunge(deps ServerDeps, conn net.Conn, tag string, parts []string
 	}
 	placeholderList := strings.Join(placeholders, ",")
 
-	query := fmt.Sprintf(`
+	// Build query using string concatenation to avoid fmt.Sprintf security warning
+	// This is safe because placeholderList only contains "?" characters joined by commas
+	query := `
 		SELECT id, uid FROM message_mailbox
-		WHERE mailbox_id = ? AND uid IN (%s) AND flags LIKE '%%\Deleted%%'
+		WHERE mailbox_id = ? AND uid IN (` + placeholderList + `) AND flags LIKE '%%\Deleted%%'
 		ORDER BY uid ASC
-	`, placeholderList)
+	`
 
 	rows, err := targetDB.Query(query, args...)
 	if err != nil {
