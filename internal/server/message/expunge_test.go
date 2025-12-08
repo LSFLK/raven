@@ -119,7 +119,9 @@ func TestExpungeCommand_SingleDeletedMessage(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 2 as deleted
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, msg2ID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, msg2ID); err != nil {
+		t.Fatalf("Failed to mark message as deleted: %v", err)
+	}
 
 	srv.HandleExpunge(conn, "E004", state)
 
@@ -145,7 +147,9 @@ func TestExpungeCommand_SingleDeletedMessage(t *testing.T) {
 
 	// Verify message was deleted
 	var countAfter int
-	userDB.QueryRow(`SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?`, mailboxID).Scan(&countAfter)
+	if err := userDB.QueryRow(`SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?`, mailboxID).Scan(&countAfter); err != nil {
+		t.Fatalf("Failed to query count after expunge: %v", err)
+	}
 	if countAfter != 2 {
 		t.Errorf("Expected 2 messages after EXPUNGE, got %d", countAfter)
 	}
@@ -179,10 +183,18 @@ func TestExpungeCommand_MultipleDeletedMessages(t *testing.T) {
 
 	// Mark messages 3, 4, 7, and 11 as deleted (indices 2, 3, 6, 10)
 	// Per RFC 3501 example
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageIDs[2])
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageIDs[3])
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageIDs[6])
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageIDs[10])
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageIDs[2]); err != nil {
+		t.Fatalf("Failed to mark message 3 as deleted: %v", err)
+	}
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageIDs[3]); err != nil {
+		t.Fatalf("Failed to mark message 4 as deleted: %v", err)
+	}
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageIDs[6]); err != nil {
+		t.Fatalf("Failed to mark message 7 as deleted: %v", err)
+	}
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageIDs[10]); err != nil {
+		t.Fatalf("Failed to mark message 11 as deleted: %v", err)
+	}
 
 	srv.HandleExpunge(conn, "A202", state)
 
@@ -220,7 +232,9 @@ func TestExpungeCommand_MultipleDeletedMessages(t *testing.T) {
 
 	// Verify 7 messages remain (11 - 4 deleted)
 	var countAfter int
-	userDB.QueryRow(`SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?`, mailboxID).Scan(&countAfter)
+	if err := userDB.QueryRow(`SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?`, mailboxID).Scan(&countAfter); err != nil {
+		t.Fatalf("Failed to query message_mailbox count after multiple expunge: %v", err)
+	}
 	if countAfter != 7 {
 		t.Errorf("Expected 7 messages after EXPUNGE, got %d", countAfter)
 	}
@@ -246,7 +260,9 @@ func TestExpungeCommand_StateUpdate(t *testing.T) {
 	server.InsertTestMail(t, database, "testuser", "Message 2", "sender@example.com", "testuser@localhost", "INBOX")
 
 	userDB := server.GetUserDBByID(t, database, state.UserID)
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, msg1ID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, msg1ID); err != nil {
+		t.Fatalf("Failed to mark message as deleted: %v", err)
+	}
 
 	// Set initial state
 	state.LastMessageCount = 2
@@ -394,7 +410,9 @@ func TestExpungeCommand_RFC3501Compliance(t *testing.T) {
 		msgID := server.InsertTestMail(t, database, "testuser", "Test", "sender@example.com", "testuser@localhost", "INBOX")
 
 		userDB := server.GetUserDBByID(t, database, state.UserID)
-		userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, msgID)
+		if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, msgID); err != nil {
+			t.Fatalf("Failed to mark message as deleted: %v", err)
+		}
 
 		srv.HandleExpunge(conn, "RFC3", state)
 
@@ -453,7 +471,9 @@ func TestExpungeCommand_VsClose(t *testing.T) {
 		msgID := server.InsertTestMail(t, databaseExp, "testuser", "Test", "sender@example.com", "testuser@localhost", "INBOX")
 
 		userDBExp := server.GetUserDBByID(t, databaseExp, stateExp.UserID)
-		userDBExp.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxIDExp, msgID)
+		if _, err := userDBExp.Exec(`UPDATE message_mailbox SET flags = '\\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxIDExp, msgID); err != nil {
+			t.Fatalf("Failed to mark message deleted for expunge test: %v", err)
+		}
 
 		serverExp.HandleExpunge(connExp, "E001", stateExp)
 		expungeResponse := connExp.GetWrittenData()
@@ -470,7 +490,9 @@ func TestExpungeCommand_VsClose(t *testing.T) {
 		msgID2 := server.InsertTestMail(t, databaseClose, "testuser2", "Test", "sender@example.com", "testuser2@localhost", "INBOX")
 
 		userDBClose := server.GetUserDBByID(t, databaseClose, stateClose.UserID)
-		userDBClose.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxIDClose, msgID2)
+		if _, err := userDBClose.Exec(`UPDATE message_mailbox SET flags = '\\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxIDClose, msgID2); err != nil {
+			t.Fatalf("Failed to mark message deleted for close test: %v", err)
+		}
 
 		serverClose.HandleClose(connClose, "C001", stateClose)
 		closeResponse := connClose.GetWrittenData()
@@ -541,20 +563,26 @@ func TestExpungeCommand_PreservesMessageData(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Mark it as deleted
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE mailbox_id = ? AND message_id = ?`, mailboxID, messageID); err != nil {
+		t.Fatalf("Failed to mark message as deleted: %v", err)
+	}
 
 	srv.HandleExpunge(conn, "PRESERVE", state)
 
 	// Message should be removed from mailbox
 	var countInMailbox int
-	userDB.QueryRow(`SELECT COUNT(*) FROM message_mailbox WHERE message_id = ?`, messageID).Scan(&countInMailbox)
+	if err := userDB.QueryRow(`SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?`, mailboxID).Scan(&countInMailbox); err != nil {
+		t.Fatalf("Failed to query message_mailbox count: %v", err)
+	}
 	if countInMailbox != 0 {
 		t.Errorf("Expected message to be removed from mailbox, but found %d entries", countInMailbox)
 	}
 
 	// But message data should still exist in messages table
 	var countInMessages int
-	userDB.QueryRow(`SELECT COUNT(*) FROM messages WHERE id = ?`, messageID).Scan(&countInMessages)
+	if err := userDB.QueryRow(`SELECT COUNT(*) FROM messages WHERE id = ?`, messageID).Scan(&countInMessages); err != nil {
+		t.Fatalf("Failed to query messages table for message: %v", err)
+	}
 	if countInMessages != 1 {
 		t.Errorf("Expected message data to be preserved in messages table, found %d entries", countInMessages)
 	}

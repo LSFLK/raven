@@ -66,7 +66,9 @@ func TestFetchCommand_FLAGS(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Set some flags
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen \Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen \Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID); err != nil {
+		t.Fatalf("Failed to set flags: %v", err)
+	}
 
 	srv.HandleFetch(conn, "F003", []string{"F003", "FETCH", "1", "FLAGS"}, state)
 

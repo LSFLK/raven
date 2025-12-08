@@ -36,7 +36,11 @@ auth_server_url: %s
 	if err != nil {
 		t.Fatalf("Failed to create config file: %v", err)
 	}
-	defer os.Remove(configPath)
+	defer func() {
+		if err := os.Remove(configPath); err != nil && !os.IsNotExist(err) {
+			t.Logf("Failed to remove config file during cleanup: %v", err)
+		}
+	}()
 
 	// Reload config
 	_, err = conf.LoadConfig()
@@ -92,7 +96,11 @@ auth_server_url: https://invalid-auth-server-that-does-not-exist.example.com:999
 	if err != nil {
 		t.Fatalf("Failed to create config file: %v", err)
 	}
-	defer os.Remove(configPath)
+	defer func() {
+		if err := os.Remove(configPath); err != nil && !os.IsNotExist(err) {
+			t.Logf("Failed to remove config file during cleanup: %v", err)
+		}
+	}()
 
 	// Reload config
 	_, err = conf.LoadConfig()
@@ -215,7 +223,11 @@ auth_server_url: %s
 	if err != nil {
 		t.Fatalf("Failed to create config: %v", err)
 	}
-	defer os.Remove(configPath)
+	defer func() {
+		if err := os.Remove(configPath); err != nil && !os.IsNotExist(err) {
+			t.Logf("Failed to remove config file during cleanup: %v", err)
+		}
+	}()
 
 	_, err = conf.LoadConfig()
 	if err != nil {
@@ -270,7 +282,11 @@ auth_server_url: %s
 	if err != nil {
 		t.Fatalf("Failed to create config: %v", err)
 	}
-	defer os.Remove(configPath)
+	defer func() {
+		if err := os.Remove(configPath); err != nil && !os.IsNotExist(err) {
+			t.Logf("Failed to remove config file during cleanup: %v", err)
+		}
+	}()
 
 	_, err = conf.LoadConfig()
 	if err != nil {
@@ -325,7 +341,11 @@ auth_server_url: %s
 	if err != nil {
 		t.Fatalf("Failed to create config: %v", err)
 	}
-	defer os.Remove(configPath)
+	defer func() {
+		if err := os.Remove(configPath); err != nil && !os.IsNotExist(err) {
+			t.Logf("Failed to remove config file during cleanup: %v", err)
+		}
+	}()
 
 	_, err = conf.LoadConfig()
 	if err != nil {
@@ -379,7 +399,11 @@ auth_server_url: https://auth.example.com
 	if err != nil {
 		t.Fatalf("Failed to create config: %v", err)
 	}
-	defer os.Remove(configPath)
+	defer func() {
+		if err := os.Remove(configPath); err != nil && !os.IsNotExist(err) {
+			t.Logf("Failed to remove config file during cleanup: %v", err)
+		}
+	}()
 
 	_, err = conf.LoadConfig()
 	if err != nil {

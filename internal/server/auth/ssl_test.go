@@ -10,20 +10,6 @@ import (
 	"raven/internal/server/auth"
 )
 
-// mockClientHandler is a test handler that tracks if it was called
-type mockClientHandler struct {
-	called       bool
-	conn         net.Conn
-	state        *models.ClientState
-	handlerError error
-}
-
-func (m *mockClientHandler) Handle(conn net.Conn, state *models.ClientState) {
-	m.called = true
-	m.conn = conn
-	m.state = state
-}
-
 // TestHandleSSLConnection_CertLoadFailure tests SSL connection with missing cert files
 func TestHandleSSLConnection_CertLoadFailure(t *testing.T) {
 	// Create a mock connection

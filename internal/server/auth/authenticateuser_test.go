@@ -55,7 +55,11 @@ auth_server_url: %s
 
 	return func() {
 		// Restore original working directory
-		_ = os.Chdir(oldWd)
+		defer func() {
+			if err := os.Chdir(oldWd); err != nil {
+				t.Logf("Failed to restore working directory: %v", err)
+			}
+		}()
 	}
 }
 
@@ -72,7 +76,11 @@ func TestAuthenticateUser_ConfigLoadError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to change directory: %v", err)
 	}
-	defer os.Chdir(oldWd)
+	defer func() {
+		if err := os.Chdir(oldWd); err != nil {
+			t.Logf("Failed to restore working directory: %v", err)
+		}
+	}()
 
 	// No config file exists in this directory
 

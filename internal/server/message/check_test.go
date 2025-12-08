@@ -1,6 +1,7 @@
 package message_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -310,6 +311,7 @@ func TestCheckCommand_ConcurrentAccess(t *testing.T) {
 
 	const numRequests = 20
 	done := make(chan bool, numRequests)
+	errCh := make(chan error, numRequests)
 
 	// Launch concurrent CHECK requests
 	for i := 0; i < numRequests; i++ {
@@ -319,7 +321,9 @@ func TestCheckCommand_ConcurrentAccess(t *testing.T) {
 			database := server.GetDatabaseFromServer(srv)
 			mailboxID, err := server.GetMailboxID(t, database, state.UserID, "INBOX")
 			if err != nil {
-				t.Fatalf("Failed to get INBOX mailbox: %v", err)
+				errCh <- fmt.Errorf("failed to get INBOX mailbox: %v", err)
+				done <- true
+				return
 			}
 			state.SelectedMailboxID = mailboxID
 			state.SelectedFolder = "INBOX"
@@ -328,7 +332,9 @@ func TestCheckCommand_ConcurrentAccess(t *testing.T) {
 
 			response := conn.GetWrittenData()
 			if !strings.Contains(response, "CONCURRENT OK CHECK completed") {
-				t.Errorf("Request %d failed: %s", index, response)
+				errCh <- fmt.Errorf("request %d failed: %s", index, response)
+			} else {
+				errCh <- nil
 			}
 			done <- true
 		}(i)
@@ -337,6 +343,13 @@ func TestCheckCommand_ConcurrentAccess(t *testing.T) {
 	// Wait for all requests to complete
 	for i := 0; i < numRequests; i++ {
 		<-done
+	}
+
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("Concurrent CHECK test failure: %v", err)
+		}
 	}
 }
 

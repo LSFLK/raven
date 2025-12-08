@@ -107,13 +107,17 @@ func TestCopyCommand_SingleMessage(t *testing.T) {
 
 	// Verify message was copied to Sent folder
 	var count int
-	userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", sentID).Scan(&count)
+	if err := userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", sentID).Scan(&count); err != nil {
+		t.Fatalf("Failed to query sent mailbox count: %v", err)
+	}
 	if count != 1 {
 		t.Errorf("Expected 1 message in Sent folder, got %d", count)
 	}
 
 	// Verify original message still exists in INBOX
-	userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", inboxID).Scan(&count)
+	if err := userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", inboxID).Scan(&count); err != nil {
+		t.Fatalf("Failed to query inbox mailbox count: %v", err)
+	}
 	if count != 1 {
 		t.Errorf("Expected 1 message in INBOX, got %d", count)
 	}
@@ -155,13 +159,17 @@ func TestCopyCommand_RFC3501Example(t *testing.T) {
 
 	// Verify 3 messages were copied to MEETING folder
 	var count int
-	userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", meetingID).Scan(&count)
+	if err := userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", meetingID).Scan(&count); err != nil {
+		t.Fatalf("Failed to query meeting mailbox count: %v", err)
+	}
 	if count != 3 {
 		t.Errorf("Expected 3 messages in MEETING folder, got %d", count)
 	}
 
 	// Verify original messages still exist in INBOX (4 messages)
-	userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", inboxID).Scan(&count)
+	if err := userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", inboxID).Scan(&count); err != nil {
+		t.Fatalf("Failed to query inbox mailbox count: %v", err)
+	}
 	if count != 4 {
 		t.Errorf("Expected 4 messages in INBOX, got %d", count)
 	}
@@ -188,7 +196,9 @@ func TestCopyCommand_PreserveFlags(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Set specific flags
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen \Flagged' WHERE message_id = ? AND mailbox_id = ?`, msgID, inboxID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen \Flagged' WHERE message_id = ? AND mailbox_id = ?`, msgID, inboxID); err != nil {
+		t.Fatalf("Failed to set flags: %v", err)
+	}
 
 	// Copy message to Archive
 	srv.HandleCopy(conn, "C005", []string{"COPY", "1", "Archive"}, state)
@@ -200,7 +210,9 @@ func TestCopyCommand_PreserveFlags(t *testing.T) {
 
 	// Verify flags were preserved (and \Recent added)
 	var flags string
-	userDB.QueryRow("SELECT flags FROM message_mailbox WHERE mailbox_id = ?", archiveID).Scan(&flags)
+	if err := userDB.QueryRow("SELECT flags FROM message_mailbox WHERE mailbox_id = ?", archiveID).Scan(&flags); err != nil {
+		t.Fatalf("Failed to query flags: %v", err)
+	}
 	if !strings.Contains(flags, `\Seen`) || !strings.Contains(flags, `\Flagged`) {
 		t.Errorf("Expected flags to be preserved, got: %s", flags)
 	}
@@ -231,7 +243,9 @@ func TestCopyCommand_PreserveInternalDate(t *testing.T) {
 
 	// Set specific internal date
 	specificDate := "2024-01-15 10:30:00"
-	userDB.Exec(`UPDATE message_mailbox SET internal_date = ? WHERE message_id = ? AND mailbox_id = ?`, specificDate, msgID, inboxID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET internal_date = ? WHERE message_id = ? AND mailbox_id = ?`, specificDate, msgID, inboxID); err != nil {
+		t.Fatalf("Failed to set internal date: %v", err)
+	}
 
 	// Copy message to Archive
 	srv.HandleCopy(conn, "C006", []string{"COPY", "1", "Archive"}, state)
@@ -243,7 +257,9 @@ func TestCopyCommand_PreserveInternalDate(t *testing.T) {
 
 	// Verify internal date was preserved (SQLite may format dates differently, so just check it exists and is similar)
 	var internalDate string
-	userDB.QueryRow("SELECT internal_date FROM message_mailbox WHERE mailbox_id = ?", archiveID).Scan(&internalDate)
+	if err := userDB.QueryRow("SELECT internal_date FROM message_mailbox WHERE mailbox_id = ?", archiveID).Scan(&internalDate); err != nil {
+		t.Fatalf("Failed to query internal date: %v", err)
+	}
 	if !strings.Contains(internalDate, "2024-01-15") {
 		t.Errorf("Expected internal date containing %s, got: %s", "2024-01-15", internalDate)
 	}
@@ -281,7 +297,9 @@ func TestCopyCommand_MultipleMessages(t *testing.T) {
 
 	// Verify 2 messages were copied to Work folder
 	var count int
-	userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", workID).Scan(&count)
+	if err := userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", workID).Scan(&count); err != nil {
+		t.Fatalf("Failed to query work mailbox count: %v", err)
+	}
 	if count != 2 {
 		t.Errorf("Expected 2 messages in Work folder, got %d", count)
 	}
@@ -396,7 +414,9 @@ func TestCopyCommand_AllMessages(t *testing.T) {
 
 	// Verify last message was copied
 	var count int
-	userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", allID).Scan(&count)
+	if err := userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", allID).Scan(&count); err != nil {
+		t.Fatalf("Failed to query all mailbox count: %v", err)
+	}
 	if count != 1 {
 		t.Errorf("Expected 1 message in All folder (only last message), got %d", count)
 	}
@@ -435,7 +455,9 @@ func TestCopyCommand_RangeWithStar(t *testing.T) {
 
 	// Verify 3 messages were copied (2, 3, 4)
 	var count int
-	userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", archiveID).Scan(&count)
+	if err := userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", archiveID).Scan(&count); err != nil {
+		t.Fatalf("Failed to query archive mailbox count: %v", err)
+	}
 	if count != 3 {
 		t.Errorf("Expected 3 messages in Archive folder, got %d", count)
 	}
@@ -503,7 +525,9 @@ func TestCopyCommand_AtomicOperation(t *testing.T) {
 
 	// Get initial count in destination
 	var initialCount int
-	userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", destID).Scan(&initialCount)
+	if err := userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", destID).Scan(&initialCount); err != nil {
+		t.Fatalf("Failed to query initial count: %v", err)
+	}
 
 	// Copy valid message
 	srv.HandleCopy(conn, "C013", []string{"COPY", "1", "Destination"}, state)
@@ -515,7 +539,9 @@ func TestCopyCommand_AtomicOperation(t *testing.T) {
 
 	// Verify message was copied
 	var finalCount int
-	userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", destID).Scan(&finalCount)
+	if err := userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", destID).Scan(&finalCount); err != nil {
+		t.Fatalf("Failed to query final count: %v", err)
+	}
 	if finalCount != initialCount+1 {
 		t.Errorf("Expected count to increase by 1, initial: %d, final: %d", initialCount, finalCount)
 	}

@@ -130,7 +130,9 @@ func TestSearchCommand_FlaggedMessages(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Flag message 2
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg2ID, mailboxID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg2ID, mailboxID); err != nil {
+		t.Fatalf("Failed to flag message: %v", err)
+	}
 
 	srv.HandleSearch(conn, "S005", []string{"S005", "SEARCH", "FLAGGED"}, state)
 
@@ -170,7 +172,9 @@ func TestSearchCommand_DeletedMessages(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 1 as deleted
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Deleted' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID); err != nil {
+		t.Fatalf("Failed to mark message as deleted: %v", err)
+	}
 
 	// Test DELETED
 	srv.HandleSearch(conn, "S006", []string{"S006", "SEARCH", "DELETED"}, state)
@@ -213,7 +217,9 @@ func TestSearchCommand_SeenUnseen(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 1 as seen
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID); err != nil {
+		t.Fatalf("Failed to mark message as seen: %v", err)
+	}
 
 	// Test SEEN
 	srv.HandleSearch(conn, "S008", []string{"S008", "SEARCH", "SEEN"}, state)
@@ -382,7 +388,9 @@ func TestSearchCommand_NOT(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 1 as seen
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID); err != nil {
+		t.Fatalf("Failed to mark message as seen: %v", err)
+	}
 
 	// Search for NOT SEEN (equivalent to UNSEEN)
 	srv.HandleSearch(conn, "S015", []string{"S015", "SEARCH", "NOT", "SEEN"}, state)
@@ -419,8 +427,12 @@ func TestSearchCommand_OR(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 1 as seen, message 2 as flagged
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg2ID, mailboxID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID); err != nil {
+		t.Fatalf("Failed to mark message as seen: %v", err)
+	}
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg2ID, mailboxID); err != nil {
+		t.Fatalf("Failed to mark message as flagged: %v", err)
+	}
 
 	// Search for SEEN OR FLAGGED
 	srv.HandleSearch(conn, "S016", []string{"S016", "SEARCH", "OR", "SEEN", "FLAGGED"}, state)
@@ -455,7 +467,9 @@ func TestSearchCommand_CombinedCriteria(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 1 as flagged
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID); err != nil {
+		t.Fatalf("Failed to mark message as flagged: %v", err)
+	}
 
 	// Search for FLAGGED messages FROM "smith" with SUBJECT "Meeting"
 	// Should only match message 1
@@ -496,12 +510,20 @@ func TestSearchCommand_RFC3501Example(t *testing.T) {
 
 	// Set dates for messages (after 1-Feb-1994)
 	futureDate := time.Date(1994, 2, 15, 10, 0, 0, 0, time.UTC)
-	userDB.Exec(`UPDATE message_mailbox SET internal_date = ? WHERE message_id = ? AND mailbox_id = ?`, futureDate, msg1ID, mailboxID)
-	userDB.Exec(`UPDATE message_mailbox SET internal_date = ? WHERE message_id = ? AND mailbox_id = ?`, futureDate, msg2ID, mailboxID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET internal_date = ? WHERE message_id = ? AND mailbox_id = ?`, futureDate, msg1ID, mailboxID); err != nil {
+		t.Fatalf("Failed to set internal date for message 1: %v", err)
+	}
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET internal_date = ? WHERE message_id = ? AND mailbox_id = ?`, futureDate, msg2ID, mailboxID); err != nil {
+		t.Fatalf("Failed to set internal date for message 2: %v", err)
+	}
 
 	// Mark messages 1 and 2 as flagged (representing messages since Feb 1994 from Smith)
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg2ID, mailboxID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID); err != nil {
+		t.Fatalf("Failed to mark message 1 as flagged: %v", err)
+	}
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg2ID, mailboxID); err != nil {
+		t.Fatalf("Failed to mark message 2 as flagged: %v", err)
+	}
 
 	// RFC 3501 Example: SEARCH FLAGGED SINCE 1-Feb-1994 NOT FROM "Smith"
 	// Since our implementation doesn't have DELETED flag support in test data,
@@ -645,8 +667,12 @@ func TestSearchCommand_DateSearches(t *testing.T) {
 	oldDate := time.Date(2020, 1, 1, 10, 0, 0, 0, time.UTC)
 	recentDate := time.Date(2024, 12, 1, 10, 0, 0, 0, time.UTC)
 
-	userDB.Exec(`UPDATE message_mailbox SET internal_date = ? WHERE message_id = ? AND mailbox_id = ?`, oldDate, msg1ID, mailboxID)
-	userDB.Exec(`UPDATE message_mailbox SET internal_date = ? WHERE message_id = ? AND mailbox_id = ?`, recentDate, msg2ID, mailboxID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET internal_date = ? WHERE message_id = ? AND mailbox_id = ?`, oldDate, msg1ID, mailboxID); err != nil {
+		t.Fatalf("Failed to set old date: %v", err)
+	}
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET internal_date = ? WHERE message_id = ? AND mailbox_id = ?`, recentDate, msg2ID, mailboxID); err != nil {
+		t.Fatalf("Failed to set recent date: %v", err)
+	}
 
 	// Test SINCE - should find recent messages
 	srv.HandleSearch(conn, "S020", []string{"S020", "SEARCH", "SINCE", "1-Jan-2024"}, state)
@@ -687,7 +713,9 @@ func TestSearchCommand_NEW_OLD(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// NEW = RECENT and UNSEEN
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Recent' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Recent' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID); err != nil {
+		t.Fatalf("Failed to set recent flag: %v", err)
+	}
 
 	// OLD = NOT RECENT
 	// Message 2 has no flags, so it's not recent
@@ -733,7 +761,9 @@ func TestSearchCommand_ANSWERED(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 1 as answered
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Answered' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Answered' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID); err != nil {
+		t.Fatalf("Failed to mark message as answered: %v", err)
+	}
 
 	// Test ANSWERED
 	srv.HandleSearch(conn, "S024", []string{"S024", "SEARCH", "ANSWERED"}, state)
@@ -774,7 +804,9 @@ func TestSearchCommand_DRAFT(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Mark message 1 as draft
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Draft' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Draft' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID); err != nil {
+		t.Fatalf("Failed to mark message as draft: %v", err)
+	}
 
 	// Test DRAFT
 	srv.HandleSearch(conn, "S026", []string{"S026", "SEARCH", "DRAFT"}, state)

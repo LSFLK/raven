@@ -53,6 +53,7 @@ auth_server_url: https://auth.test.example.com
 
 	if cfg == nil {
 		t.Fatal("Expected config to be non-nil")
+		return
 	}
 
 	if cfg.Domain != "test.example.com" {
@@ -143,6 +144,7 @@ func TestLoadConfig_EmptyFile(t *testing.T) {
 
 	if cfg == nil {
 		t.Fatal("Expected config to be non-nil")
+		return
 	}
 
 	// Empty file should result in empty config fields
