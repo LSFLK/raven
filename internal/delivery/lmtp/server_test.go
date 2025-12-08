@@ -63,6 +63,7 @@ func TestNewServer(t *testing.T) {
 
 	if server == nil {
 		t.Fatal("Expected non-nil server")
+		return
 	}
 
 	if server.dbManager == nil {

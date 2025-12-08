@@ -1,5 +1,3 @@
-//go:build test
-
 package mailbox_test
 
 import (
@@ -96,7 +94,11 @@ func TestStatusCommand_NonExistentMailbox(t *testing.T) {
 func TestStatusCommand_MessagesItem(t *testing.T) {
 	// Create test database and user
 	database := server.CreateTestDB(t)
-	defer database.Close()
+	defer func() {
+		if err := database.Close(); err != nil {
+			t.Logf("Failed to close database during cleanup: %v", err)
+		}
+	}()
 	server.CreateTestUser(t, database, "testuser")
 
 	// Create server with the database

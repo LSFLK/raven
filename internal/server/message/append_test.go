@@ -1,5 +1,3 @@
-//go:build test
-
 package message_test
 
 import (
@@ -15,7 +13,7 @@ import (
 func TestAppendCommand_Basic(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
-	state := server.SetupAuthenticatedState(t, srv,"testuser")
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Simulate APPEND command with a simple message
 	message := "From: sender@example.com\r\nTo: recipient@example.com\r\nSubject: Test Message\r\n\r\nThis is a test message body.\r\n"
@@ -50,7 +48,7 @@ func TestAppendCommand_Basic(t *testing.T) {
 func TestAppendCommand_WithFlags(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
-	state := server.SetupAuthenticatedState(t, srv,"testuser")
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	message := "From: sender@example.com\r\nTo: recipient@example.com\r\nSubject: Test\r\n\r\nBody\r\n"
 	appendCmd := fmt.Sprintf("A002 APPEND Sent (\\Seen) {%d}", len(message))
@@ -98,7 +96,7 @@ func TestAppendCommand_InvalidFolder(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
 
-	state := server.SetupAuthenticatedState(t, srv,"testuser")
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	message := "Test message"
 	appendCmd := fmt.Sprintf("A004 APPEND NonExistent {%d}", len(message))
@@ -121,7 +119,7 @@ func TestAppendCommand_InvalidFolder(t *testing.T) {
 func TestAppendCommand_ToINBOX(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
-	state := server.SetupAuthenticatedState(t, srv,"testuser")
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	message := "From: sender@example.com\r\nTo: recipient@example.com\r\nSubject: INBOX Test\r\n\r\nINBOX test message.\r\n"
 	appendCmd := fmt.Sprintf("A005 APPEND INBOX {%d}", len(message))
@@ -142,7 +140,7 @@ func TestAppendCommand_ToINBOX(t *testing.T) {
 func TestAppendCommand_ToDrafts(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
-	state := server.SetupAuthenticatedState(t, srv,"testuser")
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	message := "From: sender@example.com\r\nSubject: Draft\r\n\r\nDraft message.\r\n"
 	appendCmd := fmt.Sprintf("A006 APPEND Drafts (\\Draft) {%d}", len(message))
@@ -164,7 +162,7 @@ func TestAppendCommand_MissingSize(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
 
-	state := server.SetupAuthenticatedState(t, srv,"testuser")
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	appendCmd := "A007 APPEND Sent"
 	parts := strings.Fields(appendCmd)
@@ -182,11 +180,11 @@ func TestAppendCommand_MissingSize(t *testing.T) {
 func TestAppendCommand_RFC3501Example(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
-	state := server.SetupAuthenticatedState(t, srv,"testuser")
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Create the saved-messages mailbox first (as per RFC example)
 	database := server.GetDatabaseFromServer(srv)
-	server.CreateMailbox(t, database,"testuser", "saved-messages")
+	server.CreateMailbox(t, database, "testuser", "saved-messages")
 
 	// RFC 3501 example message
 	message := "Date: Mon, 7 Feb 1994 21:52:25 -0800 (PST)\r\n" +
@@ -225,7 +223,7 @@ func TestAppendCommand_RFC3501Example(t *testing.T) {
 func TestAppendCommand_MultipleFlags(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
-	state := server.SetupAuthenticatedState(t, srv,"testuser")
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	message := "From: test@example.com\r\nSubject: Test\r\n\r\nBody\r\n"
 	appendCmd := fmt.Sprintf("A008 APPEND INBOX (\\Seen \\Flagged) {%d}", len(message))
@@ -246,7 +244,7 @@ func TestAppendCommand_MultipleFlags(t *testing.T) {
 func TestAppendCommand_EmptyMessage(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
-	state := server.SetupAuthenticatedState(t, srv,"testuser")
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	message := ""
 	appendCmd := fmt.Sprintf("A009 APPEND INBOX {%d}", len(message))
@@ -268,7 +266,7 @@ func TestAppendCommand_EmptyMessage(t *testing.T) {
 func TestAppendCommand_LargeMessage(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
-	state := server.SetupAuthenticatedState(t, srv,"testuser")
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Create a 1MB message
 	messageSize := 1024 * 1024
@@ -294,7 +292,7 @@ func TestAppendCommand_InvalidSize(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
 
-	state := server.SetupAuthenticatedState(t, srv,"testuser")
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	appendCmd := "A011 APPEND INBOX {-1}"
 	parts := strings.Fields(appendCmd)
@@ -313,7 +311,7 @@ func TestAppendCommand_ExcessiveSize(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
 
-	state := server.SetupAuthenticatedState(t, srv,"testuser")
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Try to append a message larger than 50MB limit
 	appendCmd := "A012 APPEND INBOX {52428801}" // 50MB + 1 byte
@@ -336,7 +334,7 @@ func TestAppendCommand_ExcessiveSize(t *testing.T) {
 func TestAppendCommand_QuotedMailboxName(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
-	state := server.SetupAuthenticatedState(t, srv,"testuser")
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	message := "From: test@example.com\r\nSubject: Test\r\n\r\nBody\r\n"
 	appendCmd := fmt.Sprintf("A013 APPEND \"Sent\" {%d}", len(message))
@@ -357,7 +355,7 @@ func TestAppendCommand_QuotedMailboxName(t *testing.T) {
 func TestAppendCommand_WithoutFlags(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
-	state := server.SetupAuthenticatedState(t, srv,"testuser")
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	message := "From: test@example.com\r\nSubject: No Flags\r\n\r\nMessage without flags\r\n"
 	appendCmd := fmt.Sprintf("A014 APPEND INBOX {%d}", len(message))
@@ -379,7 +377,7 @@ func TestAppendCommand_MissingMailboxName(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
 
-	state := server.SetupAuthenticatedState(t, srv,"testuser")
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	appendCmd := "A015 APPEND"
 	parts := strings.Fields(appendCmd)
@@ -401,7 +399,7 @@ func TestAppendCommand_MissingMailboxName(t *testing.T) {
 func TestAppendCommand_8BitCharacters(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
-	state := server.SetupAuthenticatedState(t, srv,"testuser")
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Message with UTF-8 characters (8-bit)
 	message := "From: test@example.com\r\nSubject: Tëst Mëssägë\r\n\r\nBody with 8-bit: café, naïve, résumé\r\n"
@@ -427,7 +425,7 @@ func TestAppendCommand_AllDefaultMailboxes(t *testing.T) {
 		t.Run(mailbox, func(t *testing.T) {
 			srv := server.SetupTestServerSimple(t)
 			conn := server.NewMockConn()
-			state := server.SetupAuthenticatedState(t, srv,"testuser")
+			state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 			message := fmt.Sprintf("From: test@example.com\r\nSubject: Test to %s\r\n\r\nBody\r\n", mailbox)
 			appendCmd := fmt.Sprintf("A017 APPEND %s {%d}", mailbox, len(message))
@@ -450,7 +448,7 @@ func TestAppendCommand_AllDefaultMailboxes(t *testing.T) {
 func TestAppendCommand_ReturnsAppendUID(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
-	state := server.SetupAuthenticatedState(t, srv,"testuser")
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	message := "From: test@example.com\r\nSubject: UID Test\r\n\r\nBody\r\n"
 	appendCmd := fmt.Sprintf("A018 APPEND INBOX {%d}", len(message))
@@ -475,7 +473,7 @@ func TestAppendCommand_ReturnsAppendUID(t *testing.T) {
 func TestAppendCommand_MessageParsing(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
-	state := server.SetupAuthenticatedState(t, srv,"testuser")
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Message with all important headers
 	message := "Date: Mon, 7 Feb 1994 21:52:25 -0800 (PST)\r\n" +
@@ -503,7 +501,7 @@ func TestAppendCommand_MessageParsing(t *testing.T) {
 func TestAppendCommand_LiteralPlus(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
-	state := server.SetupAuthenticatedState(t, srv,"testuser")
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	// Test LITERAL+ syntax: {size+} means client sends data immediately
 	message := "From: sender@example.com\r\nSubject: Test LITERAL+\r\n\r\nBody\r\n"

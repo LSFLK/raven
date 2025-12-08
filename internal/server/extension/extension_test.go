@@ -232,7 +232,7 @@ func TestNoopCommand_NewMessages(t *testing.T) {
 	// Setup state with lower message count
 	state.SelectedFolder = "INBOX"
 	state.SelectedMailboxID = 1
-	state.LastMessageCount = 1  // Simulate that client knows about 1 message
+	state.LastMessageCount = 1 // Simulate that client knows about 1 message
 	state.LastRecentCount = 0
 
 	srv.HandleNoop(conn, "NEW", state)
@@ -273,7 +273,7 @@ func TestNoopCommand_ExpungedMessages(t *testing.T) {
 	// Setup state with higher message count (simulate messages were deleted)
 	state.SelectedFolder = "INBOX"
 	state.SelectedMailboxID = 1
-	state.LastMessageCount = 5  // Client thinks there are 5 messages
+	state.LastMessageCount = 5 // Client thinks there are 5 messages
 	state.LastRecentCount = 0
 
 	srv.HandleNoop(conn, "EXP", state)
@@ -310,8 +310,8 @@ func TestNoopCommand_FlagChanges(t *testing.T) {
 	// Setup state with same count but different recent count
 	state.SelectedFolder = "INBOX"
 	state.SelectedMailboxID = 1
-	state.LastMessageCount = 2  // Same as current
-	state.LastRecentCount = 0   // Different from current (unseen count)
+	state.LastMessageCount = 2 // Same as current
+	state.LastRecentCount = 0  // Different from current (unseen count)
 
 	srv.HandleNoop(conn, "FLAG", state)
 
@@ -501,9 +501,9 @@ func TestIdleCommand_ErrorHandling(t *testing.T) {
 		{
 			name: "No folder selected",
 			state: &models.ClientState{
-				Authenticated:      true,
-				Username:           "testuser",
-				SelectedMailboxID:  0,
+				Authenticated:     true,
+				Username:          "testuser",
+				SelectedMailboxID: 0,
 			},
 			expectedErr: "No folder selected",
 		},

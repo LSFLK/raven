@@ -215,12 +215,12 @@ func TestCreateCommand_ListShowsCreatedMailbox(t *testing.T) {
 	// List mailboxes
 	srv.HandleList(conn, "A002", []string{"A002", "LIST", "", "*"}, state)
 	listResponse := conn.GetWrittenData()
-	
+
 	// Check that the new mailbox appears in the LIST response
 	if !strings.Contains(listResponse, "NewMailbox") {
 		t.Errorf("Expected LIST to show created mailbox 'NewMailbox', got: %s", listResponse)
 	}
-	
+
 	if !strings.Contains(listResponse, "A002 OK LIST completed") {
 		t.Errorf("Expected successful LIST completion, got: %s", listResponse)
 	}

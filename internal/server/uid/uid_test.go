@@ -1,5 +1,3 @@
-//go:build test
-
 package uid_test
 
 import (
@@ -73,9 +71,15 @@ func TestUIDFetch_RFC3501Example(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Set specific UIDs (simulating real UIDs)
-	userDB.Exec("UPDATE message_mailbox SET uid = 4827313, flags = '\\Seen' WHERE message_id = ?", msgID1)
-	userDB.Exec("UPDATE message_mailbox SET uid = 4827943, flags = '\\Seen' WHERE message_id = ?", msgID2)
-	userDB.Exec("UPDATE message_mailbox SET uid = 4828442, flags = '\\Seen' WHERE message_id = ?", msgID3)
+	if _, err := userDB.Exec("UPDATE message_mailbox SET uid = 4827313, flags = '\\Seen' WHERE message_id = ?", msgID1); err != nil {
+		t.Fatalf("Failed to set uid for msg1: %v", err)
+	}
+	if _, err := userDB.Exec("UPDATE message_mailbox SET uid = 4827943, flags = '\\Seen' WHERE message_id = ?", msgID2); err != nil {
+		t.Fatalf("Failed to set uid for msg2: %v", err)
+	}
+	if _, err := userDB.Exec("UPDATE message_mailbox SET uid = 4828442, flags = '\\Seen' WHERE message_id = ?", msgID3); err != nil {
+		t.Fatalf("Failed to set uid for msg3: %v", err)
+	}
 
 	// UID FETCH 4827313:4828442 FLAGS
 	srv.HandleUID(conn, "A999", []string{"UID", "UID", "FETCH", "4827313:4828442", "FLAGS"}, state)
@@ -258,9 +262,15 @@ func TestUIDSearch_UIDRange(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Set specific UIDs
-	userDB.Exec("UPDATE message_mailbox SET uid = 443 WHERE message_id = ?", msgID1)
-	userDB.Exec("UPDATE message_mailbox SET uid = 495 WHERE message_id = ?", msgID2)
-	userDB.Exec("UPDATE message_mailbox SET uid = 557 WHERE message_id = ?", msgID3)
+	if _, err := userDB.Exec("UPDATE message_mailbox SET uid = 443 WHERE message_id = ?", msgID1); err != nil {
+		t.Fatalf("Failed to set uid 443: %v", err)
+	}
+	if _, err := userDB.Exec("UPDATE message_mailbox SET uid = 495 WHERE message_id = ?", msgID2); err != nil {
+		t.Fatalf("Failed to set uid 495: %v", err)
+	}
+	if _, err := userDB.Exec("UPDATE message_mailbox SET uid = 557 WHERE message_id = ?", msgID3); err != nil {
+		t.Fatalf("Failed to set uid 557: %v", err)
+	}
 
 	// UID SEARCH 1:100 UID 443:557
 	srv.HandleUID(conn, "U007", []string{"UID", "UID", "SEARCH", "1:100", "UID", "443:557"}, state)
@@ -400,7 +410,9 @@ func TestUIDCopy_SingleMessage(t *testing.T) {
 
 	// Verify message was copied
 	var count int
-	userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", sentID).Scan(&count)
+	if err := userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", sentID).Scan(&count); err != nil {
+		t.Fatalf("Failed to query sent mailbox count: %v", err)
+	}
 	if count != 1 {
 		t.Errorf("Expected 1 message in Sent folder, got %d", count)
 	}
@@ -439,7 +451,9 @@ func TestUIDCopy_UIDRange(t *testing.T) {
 
 	// Verify 2 messages were copied
 	var count int
-	userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", archiveID).Scan(&count)
+	if err := userDB.QueryRow("SELECT COUNT(*) FROM message_mailbox WHERE mailbox_id = ?", archiveID).Scan(&count); err != nil {
+		t.Fatalf("Failed to query archive mailbox count: %v", err)
+	}
 	if count != 2 {
 		t.Errorf("Expected 2 messages in Archive folder, got %d", count)
 	}
@@ -704,7 +718,9 @@ func TestUIDStore_AddFlags(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, userID)
 
 	// Set initial flag
-	userDB.Exec("UPDATE message_mailbox SET flags = '\\Seen' WHERE mailbox_id = ?", inboxID)
+	if _, err := userDB.Exec("UPDATE message_mailbox SET flags = '\\Seen' WHERE mailbox_id = ?", inboxID); err != nil {
+		t.Fatalf("Failed to set initial flag: %v", err)
+	}
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -739,7 +755,9 @@ func TestUIDStore_RemoveFlags(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, userID)
 
 	// Set multiple flags
-	userDB.Exec("UPDATE message_mailbox SET flags = '\\Seen \\Deleted' WHERE mailbox_id = ?", inboxID)
+	if _, err := userDB.Exec("UPDATE message_mailbox SET flags = '\\Seen \\Deleted' WHERE mailbox_id = ?", inboxID); err != nil {
+		t.Fatalf("Failed to set multiple flags: %v", err)
+	}
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -831,7 +849,9 @@ func TestUIDCopy_PreservesFlags(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, userID)
 
 	// Set flags on the message
-	userDB.Exec("UPDATE message_mailbox SET flags = '\\Seen \\Flagged' WHERE mailbox_id = ?", inboxID)
+	if _, err := userDB.Exec("UPDATE message_mailbox SET flags = '\\Seen \\Flagged' WHERE mailbox_id = ?", inboxID); err != nil {
+		t.Fatalf("Failed to set flags: %v", err)
+	}
 
 	state := &models.ClientState{
 		Authenticated:     true,
@@ -850,7 +870,9 @@ func TestUIDCopy_PreservesFlags(t *testing.T) {
 
 	// Check that flags are preserved and \Recent is added
 	var flags string
-	userDB.QueryRow("SELECT flags FROM message_mailbox WHERE mailbox_id = ?", archiveID).Scan(&flags)
+	if err := userDB.QueryRow("SELECT flags FROM message_mailbox WHERE mailbox_id = ?", archiveID).Scan(&flags); err != nil {
+		t.Fatalf("Failed to query flags from archive mailbox: %v", err)
+	}
 	if !strings.Contains(flags, "\\Seen") || !strings.Contains(flags, "\\Flagged") {
 		t.Errorf("Expected flags to be preserved, got: %s", flags)
 	}

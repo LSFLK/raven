@@ -205,270 +205,270 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 	}
 
 	itemsUpper := strings.ToUpper(items)
-		responseParts := []string{}
-		var literalData string // Store literal data separately
+	responseParts := []string{}
+	var literalData string // Store literal data separately
 
-		if strings.Contains(itemsUpper, "UID") {
-			responseParts = append(responseParts, fmt.Sprintf("UID %d", uid))
+	if strings.Contains(itemsUpper, "UID") {
+		responseParts = append(responseParts, fmt.Sprintf("UID %d", uid))
+	}
+	if strings.Contains(itemsUpper, "FLAGS") {
+		if flags == "" {
+			flags = "()"
+		} else {
+			flags = fmt.Sprintf("(%s)", flags)
 		}
-		if strings.Contains(itemsUpper, "FLAGS") {
-			if flags == "" {
-				flags = "()"
+		responseParts = append(responseParts, fmt.Sprintf("FLAGS %s", flags))
+	}
+	if strings.Contains(itemsUpper, "INTERNALDATE") {
+		var internalDate time.Time
+		// Query message_mailbox for internal_date using new schema
+		query := "SELECT internal_date FROM message_mailbox WHERE message_id = ? AND mailbox_id = ?"
+		err := targetDB.QueryRow(query, messageID, state.SelectedMailboxID).Scan(&internalDate)
+
+		var dateStr string
+		if err != nil || internalDate.IsZero() {
+			dateStr = "01-Jan-1970 00:00:00 +0000"
+		} else {
+			// Format as RFC 3501: "02-Jan-2006 15:04:05 -0700"
+			dateStr = internalDate.Format("02-Jan-2006 15:04:05 -0700")
+		}
+		responseParts = append(responseParts, fmt.Sprintf("INTERNALDATE \"%s\"", dateStr))
+	}
+	if strings.Contains(itemsUpper, "RFC822.SIZE") {
+		msg := loadRawMsg()
+		responseParts = append(responseParts, fmt.Sprintf("RFC822.SIZE %d", len(msg)))
+	}
+
+	// Handle ENVELOPE
+	if strings.Contains(itemsUpper, "ENVELOPE") {
+		msg := loadRawMsg()
+		envelope := response.BuildEnvelope(msg)
+		responseParts = append(responseParts, envelope)
+	}
+
+	// Handle BODYSTRUCTURE
+	if strings.Contains(itemsUpper, "BODYSTRUCTURE") {
+		msg := loadRawMsg()
+		bodyStructure := response.BuildBodyStructure(msg)
+		responseParts = append(responseParts, bodyStructure)
+	}
+
+	// Handle BODY (non-extensible BODYSTRUCTURE)
+	if strings.Contains(itemsUpper, "BODY") && !strings.Contains(itemsUpper, "BODY[") && !strings.Contains(itemsUpper, "BODY.PEEK") && !strings.Contains(itemsUpper, "BODYSTRUCTURE") {
+		// BODY is the non-extensible form of BODYSTRUCTURE
+		msg := loadRawMsg()
+		bodyStructure := response.BuildBodyStructure(msg)
+		// Replace BODYSTRUCTURE with BODY in the response
+		bodyStructure = strings.Replace(bodyStructure, "BODYSTRUCTURE", "BODY", 1)
+		responseParts = append(responseParts, bodyStructure)
+	}
+
+	// Handle numeric BODY sections like BODY.PEEK[1], BODY[2], BODY[1.MIME] with optional partial ranges
+	if strings.Contains(itemsUpper, "BODY[") || strings.Contains(itemsUpper, "BODY.PEEK[") {
+		// Lazy-load parts for this message if needed
+		var parts []map[string]interface{}
+		loadParts := func() {
+			if parts == nil {
+				p, err := db.GetMessageParts(targetDB, messageID)
+				if err == nil {
+					parts = p
+				}
+			}
+		}
+
+		orig := items
+		upper := itemsUpper
+		pos := 0
+		for {
+			idxPeek := strings.Index(upper[pos:], "BODY.PEEK[")
+			idxBody := strings.Index(upper[pos:], "BODY[")
+			if idxPeek == -1 && idxBody == -1 {
+				break
+			}
+			offset := pos
+			prefix := "BODY["
+			if idxPeek != -1 && (idxBody == -1 || idxPeek < idxBody) {
+				offset += idxPeek
+				prefix = "BODY.PEEK["
 			} else {
-				flags = fmt.Sprintf("(%s)", flags)
-			}
-			responseParts = append(responseParts, fmt.Sprintf("FLAGS %s", flags))
-		}
-		if strings.Contains(itemsUpper, "INTERNALDATE") {
-			var internalDate time.Time
-			// Query message_mailbox for internal_date using new schema
-			query := "SELECT internal_date FROM message_mailbox WHERE message_id = ? AND mailbox_id = ?"
-			err := targetDB.QueryRow(query, messageID, state.SelectedMailboxID).Scan(&internalDate)
-
-			var dateStr string
-			if err != nil || internalDate.IsZero() {
-				dateStr = "01-Jan-1970 00:00:00 +0000"
-			} else {
-				// Format as RFC 3501: "02-Jan-2006 15:04:05 -0700"
-				dateStr = internalDate.Format("02-Jan-2006 15:04:05 -0700")
-			}
-			responseParts = append(responseParts, fmt.Sprintf("INTERNALDATE \"%s\"", dateStr))
-		}
-		if strings.Contains(itemsUpper, "RFC822.SIZE") {
-			msg := loadRawMsg()
-			responseParts = append(responseParts, fmt.Sprintf("RFC822.SIZE %d", len(msg)))
-		}
-
-		// Handle ENVELOPE
-		if strings.Contains(itemsUpper, "ENVELOPE") {
-			msg := loadRawMsg()
-			envelope := response.BuildEnvelope(msg)
-			responseParts = append(responseParts, envelope)
-		}
-
-		// Handle BODYSTRUCTURE
-		if strings.Contains(itemsUpper, "BODYSTRUCTURE") {
-			msg := loadRawMsg()
-			bodyStructure := response.BuildBodyStructure(msg)
-			responseParts = append(responseParts, bodyStructure)
-		}
-
-		// Handle BODY (non-extensible BODYSTRUCTURE)
-		if strings.Contains(itemsUpper, "BODY") && !strings.Contains(itemsUpper, "BODY[") && !strings.Contains(itemsUpper, "BODY.PEEK") && !strings.Contains(itemsUpper, "BODYSTRUCTURE") {
-			// BODY is the non-extensible form of BODYSTRUCTURE
-			msg := loadRawMsg()
-			bodyStructure := response.BuildBodyStructure(msg)
-			// Replace BODYSTRUCTURE with BODY in the response
-			bodyStructure = strings.Replace(bodyStructure, "BODYSTRUCTURE", "BODY", 1)
-			responseParts = append(responseParts, bodyStructure)
-		}
-
-		// Handle numeric BODY sections like BODY.PEEK[1], BODY[2], BODY[1.MIME] with optional partial ranges
-		if strings.Contains(itemsUpper, "BODY[") || strings.Contains(itemsUpper, "BODY.PEEK[") {
-			// Lazy-load parts for this message if needed
-			var parts []map[string]interface{}
-			loadParts := func() {
-				if parts == nil {
-					p, err := db.GetMessageParts(targetDB, messageID)
-					if err == nil {
-						parts = p
-					}
-				}
+				offset += idxBody
 			}
 
-			orig := items
-			upper := itemsUpper
-			pos := 0
-			for {
-				idxPeek := strings.Index(upper[pos:], "BODY.PEEK[")
-				idxBody := strings.Index(upper[pos:], "BODY[")
-				if idxPeek == -1 && idxBody == -1 {
-					break
+			// Find closing bracket
+			start := offset + len(prefix)
+			end := strings.Index(upper[start:], "]")
+			if end == -1 {
+				break
+			}
+			end = start + end
+
+			sectionSpec := orig[start:end] // preserve original case/format for echo
+			sectionUpper := strings.ToUpper(sectionSpec)
+
+			// Only handle numeric sections here; others handled elsewhere
+			if len(sectionSpec) > 0 && sectionSpec[0] >= '0' && sectionSpec[0] <= '9' {
+				// Determine if .MIME requested
+				wantMIME := false
+				partNumStr := sectionSpec
+				if strings.Contains(sectionUpper, ".MIME") {
+					wantMIME = true
+					partNumStr = sectionSpec[:strings.Index(sectionUpper, ".MIME")]
 				}
-				offset := pos
-				prefix := "BODY["
-				if idxPeek != -1 && (idxBody == -1 || idxPeek < idxBody) {
-					offset += idxPeek
-					prefix = "BODY.PEEK["
-				} else {
-					offset += idxBody
-				}
+				// Parse part number - support nested parts like "1.2"
+				partPath, err := parsePartNumberPath(partNumStr)
+				if err == nil && len(partPath) > 0 {
+					loadParts()
+					// Map IMAP part number path to database part
+					target := mapIMAPPartPathToDBPart(parts, partPath)
 
-				// Find closing bracket
-				start := offset + len(prefix)
-				end := strings.Index(upper[start:], "]")
-				if end == -1 {
-					break
-				}
-				end = start + end
+					payload := ""
+					if target != nil {
+						// Check if this is a multipart container (has no body)
+						contentType, _ := target["content_type"].(string)
+						isMultipart := strings.HasPrefix(contentType, "multipart/")
 
-				sectionSpec := orig[start:end] // preserve original case/format for echo
-				sectionUpper := strings.ToUpper(sectionSpec)
-
-				// Only handle numeric sections here; others handled elsewhere
-				if len(sectionSpec) > 0 && sectionSpec[0] >= '0' && sectionSpec[0] <= '9' {
-					// Determine if .MIME requested
-					wantMIME := false
-					partNumStr := sectionSpec
-					if strings.Contains(sectionUpper, ".MIME") {
-						wantMIME = true
-						partNumStr = sectionSpec[:strings.Index(sectionUpper, ".MIME")]
-					}
-					// Parse part number - support nested parts like "1.2"
-					partPath, err := parsePartNumberPath(partNumStr)
-					if err == nil && len(partPath) > 0 {
-						loadParts()
-						// Map IMAP part number path to database part
-						target := mapIMAPPartPathToDBPart(parts, partPath)
-
-						payload := ""
-						if target != nil {
-							// Check if this is a multipart container (has no body)
-							contentType, _ := target["content_type"].(string)
-							isMultipart := strings.HasPrefix(contentType, "multipart/")
-
-							if wantMIME {
-								// Build MIME headers for the part
-								hdr := buildMIMEHeadersForPart(target)
-								payload = hdr
-							} else if isMultipart {
-								// For multipart containers, extract from the full reconstructed message
-								fullMsg := loadRawMsg()
-								payload = extractBodySectionByPath(fullMsg, partPath)
-							} else {
-								// Part body only - for non-multipart parts
-								if blobID, ok := target["blob_id"].(int64); ok {
-									if content, err := db.GetBlob(targetDB, blobID); err == nil {
-										payload = content
-									}
-								} else if textContent, ok := target["text_content"].(string); ok {
-									payload = textContent
-								}
-							}
-						}
-
-						// Check for partial spec immediately following the closing bracket
-						partialStartPos := -1
-						after := end + 1
-						if after < len(upper) && upper[after] == '<' {
-							close := strings.Index(upper[after:], ">")
-							if close != -1 {
-								rangeSpec := upper[after+1 : after+close]
-								var startPos, length int
-								if _, err := fmt.Sscanf(rangeSpec, "%d.%d", &startPos, &length); err == nil {
-									partialStartPos = startPos
-									if startPos < len(payload) {
-										endPos := startPos + length
-										if endPos > len(payload) {
-											endPos = len(payload)
-										}
-										payload = payload[startPos:endPos]
-									} else {
-										payload = ""
-									}
-								}
-								// Advance parser position past the range
-								end = after + close
-							}
-						}
-
-						// Append response
-						if payload == "" {
-							responseParts = append(responseParts, fmt.Sprintf("BODY[%s] NIL", sectionSpec))
+						if wantMIME {
+							// Build MIME headers for the part
+							hdr := buildMIMEHeadersForPart(target)
+							payload = hdr
+						} else if isMultipart {
+							// For multipart containers, extract from the full reconstructed message
+							fullMsg := loadRawMsg()
+							payload = extractBodySectionByPath(fullMsg, partPath)
 						} else {
-							if literalData != "" {
-								literalData += " "
+							// Part body only - for non-multipart parts
+							if blobID, ok := target["blob_id"].(int64); ok {
+								if content, err := db.GetBlob(targetDB, blobID); err == nil {
+									payload = content
+								}
+							} else if textContent, ok := target["text_content"].(string); ok {
+								payload = textContent
 							}
-							// Include partial start position in response if this was a partial fetch
-							if partialStartPos >= 0 {
-								responseParts = append(responseParts, fmt.Sprintf("BODY[%s]<%d>", sectionSpec, partialStartPos))
-							} else {
-								responseParts = append(responseParts, fmt.Sprintf("BODY[%s]", sectionSpec))
-							}
-							literalData += fmt.Sprintf("{%d}\r\n%s", len(payload), payload)
 						}
 					}
-				}
 
-				// Move past this section for next search
-				pos = end + 1
+					// Check for partial spec immediately following the closing bracket
+					partialStartPos := -1
+					after := end + 1
+					if after < len(upper) && upper[after] == '<' {
+						close := strings.Index(upper[after:], ">")
+						if close != -1 {
+							rangeSpec := upper[after+1 : after+close]
+							var startPos, length int
+							if _, err := fmt.Sscanf(rangeSpec, "%d.%d", &startPos, &length); err == nil {
+								partialStartPos = startPos
+								if startPos < len(payload) {
+									endPos := startPos + length
+									if endPos > len(payload) {
+										endPos = len(payload)
+									}
+									payload = payload[startPos:endPos]
+								} else {
+									payload = ""
+								}
+							}
+							// Advance parser position past the range
+							end = after + close
+						}
+					}
+
+					// Append response
+					if payload == "" {
+						responseParts = append(responseParts, fmt.Sprintf("BODY[%s] NIL", sectionSpec))
+					} else {
+						if literalData != "" {
+							literalData += " "
+						}
+						// Include partial start position in response if this was a partial fetch
+						if partialStartPos >= 0 {
+							responseParts = append(responseParts, fmt.Sprintf("BODY[%s]<%d>", sectionSpec, partialStartPos))
+						} else {
+							responseParts = append(responseParts, fmt.Sprintf("BODY[%s]", sectionSpec))
+						}
+						literalData += fmt.Sprintf("{%d}\r\n%s", len(payload), payload)
+					}
+				}
+			}
+
+			// Move past this section for next search
+			pos = end + 1
+		}
+	}
+
+	// Handle multiple body parts - process each separately
+	// Handle BODY.PEEK[HEADER.FIELDS (...)] or BODY[HEADER.FIELDS (...)] - specific header fields
+	if strings.Contains(itemsUpper, "BODY.PEEK[HEADER.FIELDS") || strings.Contains(itemsUpper, "BODY[HEADER.FIELDS") {
+		start := strings.Index(itemsUpper, "BODY.PEEK[HEADER.FIELDS")
+		if start == -1 {
+			start = strings.Index(itemsUpper, "BODY[HEADER.FIELDS")
+		}
+
+		// Extract requested header field names
+		requestedHeaders := []string{"FROM", "TO", "CC", "BCC", "SUBJECT", "DATE", "MESSAGE-ID", "PRIORITY", "X-PRIORITY", "REFERENCES", "NEWSGROUPS", "IN-REPLY-TO", "CONTENT-TYPE", "REPLY-TO"}
+		if start != -1 {
+			isPeek := strings.Contains(itemsUpper, "BODY.PEEK[HEADER.FIELDS")
+			prefixLen := len("BODY[HEADER.FIELDS (")
+			if isPeek {
+				prefixLen = len("BODY.PEEK[HEADER.FIELDS (")
+			}
+
+			fieldsStr := items[start+prefixLen:]
+			closeParen := strings.Index(fieldsStr, ")")
+			if closeParen != -1 {
+				fieldsStr = fieldsStr[:closeParen]
+				fields := strings.Fields(fieldsStr)
+				if len(fields) > 0 {
+					requestedHeaders = []string{}
+					for _, f := range fields {
+						requestedHeaders = append(requestedHeaders, strings.ToUpper(strings.TrimSpace(f)))
+					}
+				}
 			}
 		}
 
-		// Handle multiple body parts - process each separately
-		// Handle BODY.PEEK[HEADER.FIELDS (...)] or BODY[HEADER.FIELDS (...)] - specific header fields
-		if strings.Contains(itemsUpper, "BODY.PEEK[HEADER.FIELDS") || strings.Contains(itemsUpper, "BODY[HEADER.FIELDS") {
-			start := strings.Index(itemsUpper, "BODY.PEEK[HEADER.FIELDS")
-			if start == -1 {
-				start = strings.Index(itemsUpper, "BODY[HEADER.FIELDS")
+		// Extract only the requested headers from the message
+		msg := loadRawMsg()
+		headersMap := map[string]string{}
+		lines := strings.Split(msg, "\r\n")
+		currentHeader := ""
+		for _, line := range lines {
+			if line == "" {
+				break // End of headers
 			}
-
-			// Extract requested header field names
-			requestedHeaders := []string{"FROM", "TO", "CC", "BCC", "SUBJECT", "DATE", "MESSAGE-ID", "PRIORITY", "X-PRIORITY", "REFERENCES", "NEWSGROUPS", "IN-REPLY-TO", "CONTENT-TYPE", "REPLY-TO"}
-			if start != -1 {
-				isPeek := strings.Contains(itemsUpper, "BODY.PEEK[HEADER.FIELDS")
-				prefixLen := len("BODY[HEADER.FIELDS (")
-				if isPeek {
-					prefixLen = len("BODY.PEEK[HEADER.FIELDS (")
+			// Check if this is a continuation line (starts with space or tab)
+			if len(line) > 0 && (line[0] == ' ' || line[0] == '\t') {
+				if currentHeader != "" {
+					headersMap[currentHeader] += "\r\n" + line
 				}
-
-				fieldsStr := items[start+prefixLen:]
-				closeParen := strings.Index(fieldsStr, ")")
-				if closeParen != -1 {
-					fieldsStr = fieldsStr[:closeParen]
-					fields := strings.Fields(fieldsStr)
-					if len(fields) > 0 {
-						requestedHeaders = []string{}
-						for _, f := range fields {
-							requestedHeaders = append(requestedHeaders, strings.ToUpper(strings.TrimSpace(f)))
-						}
+				continue
+			}
+			// New header line
+			colonIdx := strings.Index(line, ":")
+			if colonIdx != -1 {
+				headerName := strings.ToUpper(strings.TrimSpace(line[:colonIdx]))
+				for _, h := range requestedHeaders {
+					if headerName == h {
+						currentHeader = h
+						headersMap[h] = line
+						break
 					}
 				}
 			}
+		}
 
-			// Extract only the requested headers from the message
-			msg := loadRawMsg()
-			headersMap := map[string]string{}
-			lines := strings.Split(msg, "\r\n")
-			currentHeader := ""
-			for _, line := range lines {
-				if line == "" {
-					break // End of headers
-				}
-				// Check if this is a continuation line (starts with space or tab)
-				if len(line) > 0 && (line[0] == ' ' || line[0] == '\t') {
-					if currentHeader != "" {
-						headersMap[currentHeader] += "\r\n" + line
-					}
-					continue
-				}
-				// New header line
-				colonIdx := strings.Index(line, ":")
-				if colonIdx != -1 {
-					headerName := strings.ToUpper(strings.TrimSpace(line[:colonIdx]))
-					for _, h := range requestedHeaders {
-						if headerName == h {
-							currentHeader = h
-							headersMap[h] = line
-							break
-						}
-					}
-				}
+		// Build response with requested headers in order
+		var headerLines []string
+		for _, h := range requestedHeaders {
+			if val, ok := headersMap[h]; ok {
+				headerLines = append(headerLines, val)
 			}
-
-			// Build response with requested headers in order
-			var headerLines []string
-			for _, h := range requestedHeaders {
-				if val, ok := headersMap[h]; ok {
-					headerLines = append(headerLines, val)
-				}
-			}
-			headersStr := strings.Join(headerLines, "\r\n")
-			if len(headersStr) > 0 {
-				headersStr += "\r\n"
-			}
-			headersStr += "\r\n" // Final blank line
-				// Match the exact format the client requested
+		}
+		headersStr := strings.Join(headerLines, "\r\n")
+		if len(headersStr) > 0 {
+			headersStr += "\r\n"
+		}
+		headersStr += "\r\n" // Final blank line
+		// Match the exact format the client requested
 		fieldList := strings.Join(requestedHeaders, " ")
 		responseParts = append(responseParts, fmt.Sprintf("BODY[HEADER.FIELDS (%s)]", fieldList))
 		literalData = fmt.Sprintf("{%d}\r\n%s", len(headersStr), headersStr)
@@ -490,7 +490,7 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 			startIdx := strings.Index(itemsUpper, "<")
 			endIdx := strings.Index(itemsUpper, ">")
 			if startIdx != -1 && endIdx > startIdx {
-				partialSpec := itemsUpper[startIdx+1:endIdx]
+				partialSpec := itemsUpper[startIdx+1 : endIdx]
 				_, _ = fmt.Sscanf(partialSpec, "%d.%d", &partialStart, &partialLength)
 				if partialStart < len(body) {
 					endPos := partialStart + partialLength
@@ -513,7 +513,7 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 
 	// Handle BODY.PEEK[HEADER] or BODY[HEADER] - all headers (check it's not HEADER.FIELDS)
 	if (strings.Contains(itemsUpper, "BODY.PEEK[HEADER]") || strings.Contains(itemsUpper, "BODY[HEADER]")) &&
-	   !strings.Contains(itemsUpper, "HEADER.FIELDS") {
+		!strings.Contains(itemsUpper, "HEADER.FIELDS") {
 		msg := loadRawMsg()
 		headerEnd := strings.Index(msg, "\r\n\r\n")
 		headers := msg
@@ -559,9 +559,9 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 
 	// Handle BODY[] / BODY.PEEK[] / RFC822 / RFC822.PEEK - full message
 	if strings.Contains(itemsUpper, "BODY[]") || strings.Contains(itemsUpper, "BODY.PEEK[]") ||
-	   strings.Contains(itemsUpper, "RFC822.PEEK") ||
-	   (strings.Contains(itemsUpper, "RFC822") && !strings.Contains(itemsUpper, "RFC822.SIZE") &&
-	    !strings.Contains(itemsUpper, "RFC822.HEADER") && !strings.Contains(itemsUpper, "RFC822.TEXT") && !strings.Contains(itemsUpper, "RFC822.PEEK")) {
+		strings.Contains(itemsUpper, "RFC822.PEEK") ||
+		(strings.Contains(itemsUpper, "RFC822") && !strings.Contains(itemsUpper, "RFC822.SIZE") &&
+			!strings.Contains(itemsUpper, "RFC822.HEADER") && !strings.Contains(itemsUpper, "RFC822.TEXT") && !strings.Contains(itemsUpper, "RFC822.PEEK")) {
 		msg := loadRawMsg()
 		if literalData != "" {
 			literalData += " "
@@ -876,4 +876,3 @@ func buildMIMEHeadersForPart(part map[string]interface{}) string {
 	b.WriteString("\r\n")
 	return b.String()
 }
-

@@ -212,7 +212,7 @@ func TestRenameCommand_HierarchicalRename(t *testing.T) {
 	srv.HandleList(conn, "A005", []string{"A005", "LIST", "\"\"", "*"}, state)
 
 	response = conn.GetWrittenData()
-	
+
 	// Should have new names
 	if !strings.Contains(response, "zap") {
 		t.Errorf("Expected 'zap' to exist after rename, got: %s", response)
@@ -258,12 +258,12 @@ func TestRenameCommand_CreateSuperiorHierarchy(t *testing.T) {
 	srv.HandleList(conn, "A003", []string{"A003", "LIST", "\"\"", "*"}, state)
 
 	response = conn.GetWrittenData()
-	
+
 	// Should have the target mailbox
 	if !strings.Contains(response, "baz/rag/zowie") {
 		t.Errorf("Expected 'baz/rag/zowie' to exist after rename, got: %s", response)
 	}
-	
+
 	// Should have superior hierarchy mailboxes
 	if !strings.Contains(response, "\"baz\"") {
 		t.Errorf("Expected 'baz' to exist as superior hierarchy, got: %s", response)
@@ -352,11 +352,11 @@ func TestRenameCommand_Multiple(t *testing.T) {
 	srv.HandleRename(conn, "A006", []string{"A006", "RENAME", "Box3", "NewBox3"}, state)
 
 	response := conn.GetWrittenData()
-	
+
 	// All operations should succeed
 	expectedResponses := []string{
 		"A004 OK RENAME completed",
-		"A005 OK RENAME completed", 
+		"A005 OK RENAME completed",
 		"A006 OK RENAME completed",
 	}
 
@@ -401,16 +401,16 @@ func TestRenameCommand_ErrorRecovery(t *testing.T) {
 	srv.HandleRename(conn, "A004", []string{"A004", "RENAME", "TestBox", "ValidName"}, state)
 
 	response := conn.GetWrittenData()
-	
+
 	// Check that errors were reported correctly and valid operation succeeded
 	if !strings.Contains(response, "A002 NO Source mailbox does not exist") {
 		t.Errorf("Expected source not found error for A002, got: %s", response)
 	}
-	
+
 	if !strings.Contains(response, "A003 NO Cannot rename to INBOX") {
 		t.Errorf("Expected cannot rename to INBOX error for A003, got: %s", response)
 	}
-	
+
 	if !strings.Contains(response, "A004 OK RENAME completed") {
 		t.Errorf("Expected successful rename for A004, got: %s", response)
 	}

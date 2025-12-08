@@ -12,6 +12,7 @@ func TestDefaultConfig(t *testing.T) {
 
 	if cfg == nil {
 		t.Fatal("DefaultConfig returned nil")
+		return
 	}
 
 	if err := cfg.Validate(); err != nil {

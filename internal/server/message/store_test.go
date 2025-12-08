@@ -1,5 +1,3 @@
-//go:build test
-
 package message_test
 
 import (
@@ -68,7 +66,9 @@ func TestStoreCommand_FLAGS_Replace(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Set initial flags
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen \Answered' WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen \Answered' WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID); err != nil {
+		t.Fatalf("Failed to set initial flags: %v", err)
+	}
 
 	// Replace flags with \Deleted
 	srv.HandleStore(conn, "S003", []string{"S003", "STORE", "1", "FLAGS", "(\\Deleted)"}, state)
@@ -90,7 +90,9 @@ func TestStoreCommand_FLAGS_Replace(t *testing.T) {
 
 	// Verify in database
 	var flags string
-	userDB.QueryRow(`SELECT flags FROM message_mailbox WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID).Scan(&flags)
+	if err := userDB.QueryRow(`SELECT flags FROM message_mailbox WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID).Scan(&flags); err != nil {
+		t.Fatalf("Failed to query flags: %v", err)
+	}
 	if !strings.Contains(flags, "\\Deleted") {
 		t.Errorf("Expected \\Deleted in database, got: %s", flags)
 	}
@@ -116,7 +118,9 @@ func TestStoreCommand_AddFlags(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Set initial flag
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID); err != nil {
+		t.Fatalf("Failed to set initial flag: %v", err)
+	}
 
 	// Add \Deleted flag
 	srv.HandleStore(conn, "S004", []string{"S004", "STORE", "1", "+FLAGS", "(\\Deleted)"}, state)
@@ -151,7 +155,9 @@ func TestStoreCommand_RemoveFlags(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Set initial flags
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen \Deleted \Flagged' WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen \Deleted \Flagged' WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID); err != nil {
+		t.Fatalf("Failed to set initial flags: %v", err)
+	}
 
 	// Remove \Deleted flag
 	srv.HandleStore(conn, "S005", []string{"S005", "STORE", "1", "-FLAGS", "(\\Deleted)"}, state)
@@ -200,7 +206,9 @@ func TestStoreCommand_FLAGS_SILENT(t *testing.T) {
 
 	// Verify flags were still updated in database
 	var flags string
-	userDB.QueryRow(`SELECT flags FROM message_mailbox WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID).Scan(&flags)
+	if err := userDB.QueryRow(`SELECT flags FROM message_mailbox WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID).Scan(&flags); err != nil {
+		t.Fatalf("Failed to query flags: %v", err)
+	}
 	if !strings.Contains(flags, "\\Seen") {
 		t.Errorf("Expected \\Seen in database even with .SILENT, got: %s", flags)
 	}
@@ -254,7 +262,9 @@ func TestStoreCommand_RemoveFLAGS_SILENT(t *testing.T) {
 	}
 	userDB := server.GetUserDBByID(t, database, state.UserID)
 
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen \Deleted' WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen \Deleted' WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID); err != nil {
+		t.Fatalf("Failed to set flags: %v", err)
+	}
 
 	srv.HandleStore(conn, "S008", []string{"S008", "STORE", "1", "-FLAGS.SILENT", "(\\Deleted)"}, state)
 
@@ -331,8 +341,12 @@ func TestStoreCommand_RFC3501Example(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Set initial flags like in RFC example
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msg2ID, mailboxID)
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Flagged \Seen' WHERE message_id = ? AND mailbox_id = ?`, msg4ID, mailboxID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msg2ID, mailboxID); err != nil {
+		t.Fatalf("Failed to set flags for message 2: %v", err)
+	}
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Flagged \Seen' WHERE message_id = ? AND mailbox_id = ?`, msg4ID, mailboxID); err != nil {
+		t.Fatalf("Failed to set flags for message 4: %v", err)
+	}
 
 	// RFC 3501 Example: C: A003 STORE 2:4 +FLAGS (\Deleted)
 	// Expected responses:
@@ -488,7 +502,9 @@ func TestStoreCommand_NoRecentFlag(t *testing.T) {
 
 	// Verify in database - \Recent should not be there
 	var flags string
-	userDB.QueryRow(`SELECT flags FROM message_mailbox WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID).Scan(&flags)
+	if err := userDB.QueryRow(`SELECT flags FROM message_mailbox WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID).Scan(&flags); err != nil {
+		t.Fatalf("Failed to query flags: %v", err)
+	}
 	if strings.Contains(flags, "\\Recent") {
 		t.Errorf("\\Recent flag should not be settable by client, got: %s", flags)
 	}
@@ -514,7 +530,9 @@ func TestStoreCommand_EmptyFlags(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Set some initial flags
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen \Flagged' WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen \Flagged' WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID); err != nil {
+		t.Fatalf("Failed to set initial flags: %v", err)
+	}
 
 	// Clear all flags
 	srv.HandleStore(conn, "S013", []string{"S013", "STORE", "1", "FLAGS", "()"}, state)
@@ -527,7 +545,9 @@ func TestStoreCommand_EmptyFlags(t *testing.T) {
 
 	// Verify in database
 	var flags string
-	userDB.QueryRow(`SELECT flags FROM message_mailbox WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID).Scan(&flags)
+	if err := userDB.QueryRow(`SELECT flags FROM message_mailbox WHERE message_id = ? AND mailbox_id = ?`, msgID, mailboxID).Scan(&flags); err != nil {
+		t.Fatalf("Failed to query flags: %v", err)
+	}
 	if flags != "" {
 		t.Errorf("Expected empty flags in database, got: %s", flags)
 	}

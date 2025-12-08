@@ -54,6 +54,8 @@ func HandleUID(deps ServerDeps, conn net.Conn, tag string, parts []string, state
 		handleUIDStore(deps, conn, tag, parts, state)
 	case "COPY":
 		handleUIDCopy(deps, conn, tag, parts, state)
+	case "EXPUNGE":
+		handleUIDExpunge(deps, conn, tag, parts, state)
 	default:
 		deps.SendResponse(conn, fmt.Sprintf("%s BAD Unknown UID command: %s", tag, subCmd))
 	}
@@ -478,4 +480,137 @@ func flagSetToString(flagSet map[string]bool) string {
 		flags = append(flags, flag)
 	}
 	return strings.Join(flags, " ")
+}
+
+// ===== UID EXPUNGE =====
+
+// handleUIDExpunge implements UID EXPUNGE command (RFC 4315 - UIDPLUS extension)
+// Syntax: UID EXPUNGE <uid-set>
+// Permanently removes messages in the UID set that have the \Deleted flag
+func handleUIDExpunge(deps ServerDeps, conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	if len(parts) < 4 {
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD UID EXPUNGE requires UID sequence", tag))
+		return
+	}
+
+	// Get appropriate database (user or role mailbox)
+	targetDB, _, err := deps.GetSelectedDB(state)
+	if err != nil {
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
+	}
+
+	// Parse UID sequence set
+	uidSequence := parts[3]
+	uids := utils.ParseUIDSequenceSetWithDB(uidSequence, state.SelectedMailboxID, targetDB)
+	if len(uids) == 0 {
+		// Non-existent UIDs are ignored without error - just return OK
+		deps.SendResponse(conn, fmt.Sprintf("%s OK UID EXPUNGE completed", tag))
+		return
+	}
+
+	// Query for messages that are both in the UID set AND have \Deleted flag
+	// Build a parameterized query with placeholders for the IN clause
+	placeholders := make([]string, len(uids))
+	args := make([]any, 0, len(uids)+1)
+
+	args = append(args, state.SelectedMailboxID)
+
+	for i, uid := range uids {
+		placeholders[i] = "?"
+		args = append(args, uid)
+	}
+
+	// #nosec G202 -- placeholder list is generated internally and contains only "?" placeholders
+	query := `
+		SELECT id, uid FROM message_mailbox
+		WHERE mailbox_id = ? AND uid IN (` + strings.Join(placeholders, ",") + `)
+		AND flags LIKE '%\Deleted%'
+		ORDER BY uid ASC
+	`
+
+	rows, err := targetDB.Query(query, args...)
+	if err != nil {
+		deps.SendResponse(conn, fmt.Sprintf("%s NO UID EXPUNGE failed: %v", tag, err))
+		return
+	}
+	defer func() { _ = rows.Close() }()
+
+	// Collect messages to delete with their UIDs
+	type messageToDelete struct {
+		id  int64
+		uid int64
+	}
+	var messagesToDelete []messageToDelete
+	for rows.Next() {
+		var msg messageToDelete
+		if err := rows.Scan(&msg.id, &msg.uid); err == nil {
+			messagesToDelete = append(messagesToDelete, msg)
+		}
+	}
+	_ = rows.Close()
+
+	// If no messages to delete, just return OK
+	if len(messagesToDelete) == 0 {
+		deps.SendResponse(conn, fmt.Sprintf("%s OK UID EXPUNGE completed", tag))
+		return
+	}
+
+	// Get all messages in the mailbox to calculate sequence numbers
+	allRows, err := targetDB.Query(`
+		SELECT id, uid FROM message_mailbox
+		WHERE mailbox_id = ?
+		ORDER BY uid ASC
+	`, state.SelectedMailboxID)
+
+	if err != nil {
+		deps.SendResponse(conn, fmt.Sprintf("%s NO UID EXPUNGE failed: %v", tag, err))
+		return
+	}
+	defer func() { _ = allRows.Close() }()
+
+	// Build a map of message IDs to sequence numbers
+	sequenceMap := make(map[int64]int)
+	seqNum := 1
+	for allRows.Next() {
+		var id, uid int64
+		if err := allRows.Scan(&id, &uid); err == nil {
+			sequenceMap[id] = seqNum
+			seqNum++
+		}
+	}
+	_ = allRows.Close()
+
+	// Delete messages and send EXPUNGE responses
+	// Important: As we delete messages, sequence numbers change for subsequent messages
+	// We need to account for this by tracking how many messages we've deleted
+	deletedCount := 0
+	for _, msg := range messagesToDelete {
+		// Get the original sequence number for this message
+		originalSeqNum := sequenceMap[msg.id]
+
+		// Adjust for previously deleted messages in this EXPUNGE operation
+		// When we delete message N, all messages after it shift down by 1
+		adjustedSeqNum := originalSeqNum - deletedCount
+
+		// Send untagged EXPUNGE response with the adjusted sequence number
+		deps.SendResponse(conn, fmt.Sprintf("* %d EXPUNGE", adjustedSeqNum))
+
+		// Delete the message from the mailbox
+		_, err = targetDB.Exec(`DELETE FROM message_mailbox WHERE id = ?`, msg.id)
+		if err != nil {
+			log.Printf("Failed to delete message %d (UID %d): %v", msg.id, msg.uid, err)
+		}
+
+		deletedCount++
+	}
+
+	// Update state tracking
+	state.LastMessageCount -= len(messagesToDelete)
+	if state.LastMessageCount < 0 {
+		state.LastMessageCount = 0
+	}
+
+	// Send completion response
+	deps.SendResponse(conn, fmt.Sprintf("%s OK UID EXPUNGE completed", tag))
 }

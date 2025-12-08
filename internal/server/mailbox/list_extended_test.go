@@ -83,12 +83,12 @@ func TestListCommand_WildcardEdgeCases(t *testing.T) {
 	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	testCases := []struct {
-		pattern          string
-		shouldMatchINBOX bool
-		shouldMatchSent  bool
-		shouldMatchTrash bool
+		pattern           string
+		shouldMatchINBOX  bool
+		shouldMatchSent   bool
+		shouldMatchTrash  bool
 		shouldMatchDrafts bool
-		description      string
+		description       string
 	}{
 		{"*", true, true, true, true, "Asterisk should match all"},
 		{"%", true, true, true, true, "Percent should match all (no hierarchy)"},
@@ -109,7 +109,7 @@ func TestListCommand_WildcardEdgeCases(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("Pattern_%s", tc.pattern), func(t *testing.T) {
 			conn.ClearWriteBuffer()
-			
+
 			if tc.pattern == "" {
 				// Empty pattern is special case - hierarchy delimiter
 				srv.HandleList(conn, "A001", []string{"A001", "LIST", `""`, `""`}, state)
@@ -131,21 +131,21 @@ func TestListCommand_WildcardEdgeCases(t *testing.T) {
 					tc.pattern, tc.shouldMatchINBOX, inboxFound, response)
 			}
 
-			// Check Sent matching  
+			// Check Sent matching
 			sentFound := strings.Contains(response, `"Sent"`)
 			if sentFound != tc.shouldMatchSent {
 				t.Errorf("Pattern %s: Sent match expected=%v, got=%v. Response: %s",
 					tc.pattern, tc.shouldMatchSent, sentFound, response)
 			}
 
-			// Check Trash matching  
+			// Check Trash matching
 			trashFound := strings.Contains(response, `"Trash"`)
 			if trashFound != tc.shouldMatchTrash {
 				t.Errorf("Pattern %s: Trash match expected=%v, got=%v. Response: %s",
 					tc.pattern, tc.shouldMatchTrash, trashFound, response)
 			}
 
-			// Check Drafts matching  
+			// Check Drafts matching
 			draftsFound := strings.Contains(response, `"Drafts"`)
 			if draftsFound != tc.shouldMatchDrafts {
 				t.Errorf("Pattern %s: Drafts match expected=%v, got=%v. Response: %s",
@@ -167,10 +167,10 @@ func TestListCommand_HierarchyDelimiterVariations(t *testing.T) {
 	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	testCases := []struct {
-		reference         string
-		mailbox           string
-		expectedRootName  string
-		description       string
+		reference        string
+		mailbox          string
+		expectedRootName string
+		description      string
 	}{
 		{`""`, `""`, `""`, "Both empty - should return empty root"},
 		{`"foo"`, `""`, `"foo"`, "Reference only - should return reference as root"},

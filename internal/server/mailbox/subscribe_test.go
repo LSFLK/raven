@@ -274,7 +274,7 @@ func TestSubscribeCommand_DuplicateSubscription(t *testing.T) {
 	srv.HandleSubscribe(conn, "A002", []string{"A002", "SUBSCRIBE", "TestFolder"}, state)
 
 	response := conn.GetWrittenData()
-	
+
 	// Both commands should succeed
 	if !strings.Contains(response, "A001 OK SUBSCRIBE completed") {
 		t.Errorf("First SUBSCRIBE should succeed")

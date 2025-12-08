@@ -1,5 +1,3 @@
-//go:build test
-
 package selection_test
 
 import (
@@ -590,7 +588,7 @@ func TestCloseCommand_DeletesMarkedMessages(t *testing.T) {
 	database := server.GetDatabaseFromServer(srv)
 
 	userID := server.CreateTestUser(t, database, "testuser")
-	
+
 	// Insert multiple messages
 	msg1ID := server.InsertTestMail(t, database, "testuser", "Message 1", "sender@test.com", "testuser@localhost", "INBOX")
 	server.InsertTestMail(t, database, "testuser", "Message 2", "sender@test.com", "testuser@localhost", "INBOX")

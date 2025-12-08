@@ -112,6 +112,7 @@ func TestNewSession(t *testing.T) {
 
 	if session == nil {
 		t.Fatal("Expected non-nil session")
+		return
 	}
 
 	if session.conn != conn {

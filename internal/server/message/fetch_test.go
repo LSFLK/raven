@@ -1,5 +1,3 @@
-//go:build test
-
 package message_test
 
 import (
@@ -68,7 +66,9 @@ func TestFetchCommand_FLAGS(t *testing.T) {
 	userDB := server.GetUserDBByID(t, database, state.UserID)
 
 	// Set some flags
-	userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen \Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID)
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen \Flagged' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, mailboxID); err != nil {
+		t.Fatalf("Failed to set flags: %v", err)
+	}
 
 	srv.HandleFetch(conn, "F003", []string{"F003", "FETCH", "1", "FLAGS"}, state)
 
@@ -670,17 +670,17 @@ func TestFetchCommand_BodyPartPartial(t *testing.T) {
 	srv.HandleFetch(conn, "F201", []string{"F201", "FETCH", "1", "BODY.PEEK[1]<10.20>"}, state)
 
 	response := conn.GetWrittenData()
-	
+
 	// Should contain BODY[1]<10> indicating the start position
 	if !strings.Contains(response, "BODY[1]<10>") {
 		t.Errorf("Expected BODY[1]<10> in response for partial fetch, got: %s", response)
 	}
-	
+
 	// Should contain a literal with the partial content (may be less than 20 if part is smaller)
 	if !strings.Contains(response, "{") && !strings.Contains(response, "NIL") {
 		t.Errorf("Expected literal or NIL in response, got: %s", response)
 	}
-	
+
 	if !strings.Contains(response, "F201 OK FETCH completed") {
 		t.Errorf("Expected completion, got: %s", response)
 	}
@@ -693,11 +693,11 @@ func TestFetchCommand_MultipartAlternativeWithAttachment(t *testing.T) {
 	// multipart/mixed
 	//   1: multipart/alternative (container - should return NIL)
 	//   2: attachment (should return attachment data)
-	
+
 	// Note: This is a simplified test - the actual multipart structure would need
 	// to be created via LMTP delivery for proper testing
 	// For now, we test with a simple message structure
-	
+
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
 	database := server.GetDatabaseFromServer(srv)
@@ -717,7 +717,7 @@ func TestFetchCommand_MultipartAlternativeWithAttachment(t *testing.T) {
 	conn.Reset()
 	srv.HandleFetch(conn, "F301", []string{"F301", "FETCH", "1", "BODY.PEEK[1]"}, state)
 	response := conn.GetWrittenData()
-	
+
 	// Should have some response (either content or NIL)
 	if !strings.Contains(response, "BODY[1]") && !strings.Contains(response, "F301 OK") {
 		t.Errorf("Expected valid FETCH response, got: %s", response)
