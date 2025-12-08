@@ -28,20 +28,20 @@ func hasCapabilityToken(line, token string) bool {
 // TestCapabilityCommand_RFCCompliance tests RFC 3501 compliance
 func TestCapabilityCommand_RFCCompliance(t *testing.T) {
 	tests := []struct {
-		name        string
-		connType    string
-		expectCaps  []string
-		forbidCaps  []string
+		name       string
+		connType   string
+		expectCaps []string
+		forbidCaps []string
 	}{
 		{
 			name:     "Non-TLS Connection",
 			connType: "plain",
 			expectCaps: []string{
 				"IMAP4rev1",
-				"STARTTLS", 
+				"STARTTLS",
 				"LOGINDISABLED",
 				"UIDPLUS",
-				"IDLE", 
+				"IDLE",
 				"NAMESPACE",
 				"UNSELECT",
 				"LITERAL+",
@@ -60,7 +60,7 @@ func TestCapabilityCommand_RFCCompliance(t *testing.T) {
 				"LOGIN",
 				"UIDPLUS",
 				"IDLE",
-				"NAMESPACE", 
+				"NAMESPACE",
 				"UNSELECT",
 				"LITERAL+",
 			},
@@ -83,11 +83,11 @@ func TestCapabilityCommand_RFCCompliance(t *testing.T) {
 			}
 
 			state := &models.ClientState{Authenticated: false}
-			srv.HandleCapability(conn,"TEST", state)
+			srv.HandleCapability(conn, "TEST", state)
 
 			response := conn.GetWrittenData()
 			lines := strings.Split(strings.TrimSpace(response), "\r\n")
-			
+
 			if len(lines) < 1 {
 				t.Fatal("No response received")
 			}
@@ -114,8 +114,8 @@ func TestCapabilityCommand_RFCCompliance(t *testing.T) {
 // TestCapabilityCommand_TagHandling tests various tag formats
 func TestCapabilityCommand_TagHandling(t *testing.T) {
 	testCases := []struct {
-		tag          string
-		expectedTag  string
+		tag         string
+		expectedTag string
 	}{
 		{"A001", "A001"},
 		{"a1", "a1"},
@@ -131,7 +131,7 @@ func TestCapabilityCommand_TagHandling(t *testing.T) {
 			conn := server.NewMockConn()
 			state := &models.ClientState{Authenticated: false}
 
-			srv.HandleCapability(conn,tc.tag, state)
+			srv.HandleCapability(conn, tc.tag, state)
 
 			response := conn.GetWrittenData()
 			lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -143,7 +143,7 @@ func TestCapabilityCommand_TagHandling(t *testing.T) {
 			// Last line should be the tagged OK response
 			okLine := lines[len(lines)-1]
 			expectedOK := fmt.Sprintf("%s OK CAPABILITY completed", tc.expectedTag)
-			
+
 			if okLine != expectedOK {
 				t.Errorf("Expected tagged response '%s', got '%s'", expectedOK, okLine)
 			}
@@ -161,7 +161,7 @@ func TestCapabilityCommand_CapabilityFormatting(t *testing.T) {
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
-	
+
 	capLine := lines[0]
 
 	// Test capability line format
@@ -178,7 +178,7 @@ func TestCapabilityCommand_CapabilityFormatting(t *testing.T) {
 		if cap == "" {
 			t.Errorf("Empty capability found at position %d", i)
 		}
-		
+
 		// Test that capabilities don't contain invalid characters
 		if strings.Contains(cap, "\r") || strings.Contains(cap, "\n") {
 			t.Errorf("Capability contains invalid characters: %s", cap)
@@ -214,7 +214,7 @@ func TestCapabilityCommand_EdgeCases(t *testing.T) {
 		conn := server.NewMockConn()
 		state := &models.ClientState{Authenticated: false}
 
-		srv.HandleCapability(conn,"", state)
+		srv.HandleCapability(conn, "", state)
 
 		response := conn.GetWrittenData()
 		// Should still work with empty tag
@@ -237,7 +237,7 @@ func TestCapabilityCommand_EdgeCases(t *testing.T) {
 			}
 		}()
 
-		srv.HandleCapability(conn,"NIL", nil)
+		srv.HandleCapability(conn, "NIL", nil)
 	})
 }
 
@@ -262,7 +262,7 @@ func TestCapabilityCommand_ResponseTiming(t *testing.T) {
 		t.Errorf("First line should be untagged CAPABILITY response, got: %s", lines[0])
 	}
 
-	// Second line should be tagged OK response  
+	// Second line should be tagged OK response
 	if !strings.HasSuffix(lines[1], " OK CAPABILITY completed") {
 		t.Errorf("Second line should be tagged OK response, got: %s", lines[1])
 	}
@@ -276,13 +276,13 @@ func TestCapabilityCommand_ResponseTiming(t *testing.T) {
 // TestCapabilityCommand_MemoryUsage tests for memory leaks or excessive allocation
 func TestCapabilityCommand_MemoryUsage(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
-	
+
 	// Run many capability commands to check for memory issues
 	for i := 0; i < 1000; i++ {
 		conn := server.NewMockConn()
 		state := &models.ClientState{Authenticated: false}
-		srv.HandleCapability(conn,fmt.Sprintf("MEM%d", i), state)
-		
+		srv.HandleCapability(conn, fmt.Sprintf("MEM%d", i), state)
+
 		// Verify response is still correct
 		response := conn.GetWrittenData()
 		if !strings.Contains(response, "* CAPABILITY") {
@@ -308,7 +308,7 @@ func TestCapabilityCommand_StateIsolation(t *testing.T) {
 	// Get capability response for each state
 	for i, state := range states {
 		conn := server.NewMockConn()
-		srv.HandleCapability(conn,fmt.Sprintf("STATE%d", i), state)
+		srv.HandleCapability(conn, fmt.Sprintf("STATE%d", i), state)
 		responses[i] = conn.GetWrittenData()
 	}
 
@@ -318,7 +318,7 @@ func TestCapabilityCommand_StateIsolation(t *testing.T) {
 	for i := 1; i < len(responses); i++ {
 		currentResponse := strings.Split(responses[i], "\r\n")[0]
 		if baseResponse != currentResponse {
-			t.Errorf("State %d produced different capabilities:\nBase: %s\nGot:  %s", 
+			t.Errorf("State %d produced different capabilities:\nBase: %s\nGot:  %s",
 				i, baseResponse, currentResponse)
 		}
 	}

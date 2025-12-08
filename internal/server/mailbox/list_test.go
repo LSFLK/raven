@@ -169,34 +169,34 @@ func TestListCommand_WildcardMatching(t *testing.T) {
 	state := server.SetupAuthenticatedState(t, srv, "testuser")
 
 	testCases := []struct {
-		pattern          string
-		expectedContains []string
+		pattern             string
+		expectedContains    []string
 		expectedNotContains []string
-		description      string
+		description         string
 	}{
 		{
-			pattern:          "IN*",
-			expectedContains: []string{"INBOX"},
+			pattern:             "IN*",
+			expectedContains:    []string{"INBOX"},
 			expectedNotContains: []string{"Sent", "Drafts"},
-			description:      "Pattern IN* should match INBOX",
+			description:         "Pattern IN* should match INBOX",
 		},
 		{
-			pattern:          "*ox",
-			expectedContains: []string{"INBOX"},
+			pattern:             "*ox",
+			expectedContains:    []string{"INBOX"},
 			expectedNotContains: []string{"Sent"},
-			description:      "Pattern *ox should match INBOX",
+			description:         "Pattern *ox should match INBOX",
 		},
 		{
-			pattern:          "S*",
-			expectedContains: []string{"Sent"},
+			pattern:             "S*",
+			expectedContains:    []string{"Sent"},
 			expectedNotContains: []string{"INBOX", "Drafts"},
-			description:      "Pattern S* should match Sent",
+			description:         "Pattern S* should match Sent",
 		},
 		{
-			pattern:          "*",
-			expectedContains: []string{"INBOX", "Sent", "Drafts", "Trash"},
+			pattern:             "*",
+			expectedContains:    []string{"INBOX", "Sent", "Drafts", "Trash"},
 			expectedNotContains: []string{},
-			description:      "Pattern * should match all mailboxes",
+			description:         "Pattern * should match all mailboxes",
 		},
 	}
 
@@ -317,7 +317,7 @@ func TestListCommand_QuotedStrings(t *testing.T) {
 
 	testCases := []struct {
 		reference   string
-		mailbox    string
+		mailbox     string
 		description string
 	}{
 		{`""`, `"INBOX"`, "Empty reference, quoted INBOX"},
@@ -360,7 +360,7 @@ func TestListCommand_ReferenceHandling(t *testing.T) {
 	// The canonical pattern should be "Mail/IN*" which shouldn't match our flat mailboxes
 	// So we should get completion without matches
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
-	
+
 	// Should only have completion line (no mailbox matches expected for "Mail/IN*")
 	if len(lines) != 1 {
 		t.Logf("Response lines: %v", lines)

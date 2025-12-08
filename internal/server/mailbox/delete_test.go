@@ -320,7 +320,7 @@ func TestDeleteCommand_DefaultMailboxes(t *testing.T) {
 		conn.ClearWriteBuffer()
 		srv.HandleDelete(conn, "A001", []string{"A001", "DELETE", mailbox}, state)
 		response := conn.GetWrittenData()
-		
+
 		// These are system mailboxes, they should be protected from deletion
 		if !strings.Contains(response, "A001 NO") {
 			t.Errorf("Expected NO response (protected default mailbox) for %s, got: %s", mailbox, response)

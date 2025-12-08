@@ -21,7 +21,7 @@ func TestAuthenticatePlainBasicFlow(t *testing.T) {
 	s.HandleAuthenticate(conn, "A001", []string{"A001", "AUTHENTICATE", "PLAIN"}, state)
 
 	response := conn.GetWrittenData()
-	
+
 	// Should get continuation response
 	if !strings.Contains(response, "+ ") {
 		t.Errorf("Expected continuation response '+', got: %s", response)
@@ -33,21 +33,21 @@ func TestAuthenticatePlainBase64Decoding(t *testing.T) {
 	// Test base64 encoding/decoding of credentials
 	authString := "\x00testuser\x00testpass"
 	authEncoded := base64.StdEncoding.EncodeToString([]byte(authString))
-	
+
 	decoded, err := base64.StdEncoding.DecodeString(authEncoded)
 	if err != nil {
 		t.Fatalf("Failed to decode: %v", err)
 	}
-	
+
 	parts := strings.Split(string(decoded), "\x00")
 	if len(parts) != 3 {
 		t.Errorf("Expected 3 parts, got %d", len(parts))
 	}
-	
+
 	if parts[1] != "testuser" {
 		t.Errorf("Expected username 'testuser', got '%s'", parts[1])
 	}
-	
+
 	if parts[2] != "testpass" {
 		t.Errorf("Expected password 'testpass', got '%s'", parts[2])
 	}
@@ -58,17 +58,17 @@ func TestAuthenticatePlainWithAuthzid(t *testing.T) {
 	// Test format with authzid: authzid\x00authcid\x00password
 	authString := "testuser\x00testuser\x00testpass"
 	authEncoded := base64.StdEncoding.EncodeToString([]byte(authString))
-	
+
 	decoded, err := base64.StdEncoding.DecodeString(authEncoded)
 	if err != nil {
 		t.Fatalf("Failed to decode: %v", err)
 	}
-	
+
 	parts := strings.Split(string(decoded), "\x00")
 	if len(parts) != 3 {
 		t.Errorf("Expected 3 parts, got %d", len(parts))
 	}
-	
+
 	// authzid, authcid, password
 	if parts[0] != "testuser" {
 		t.Errorf("Expected authzid 'testuser', got '%s'", parts[0])
@@ -93,7 +93,7 @@ func TestAuthenticateWithoutTLS(t *testing.T) {
 	s.HandleAuthenticate(conn, "A001", []string{"A001", "AUTHENTICATE", "PLAIN"}, state)
 
 	response := conn.GetWrittenData()
-	
+
 	// Per RFC 3501: Should get NO response (plaintext auth disallowed)
 	if !strings.Contains(response, "A001 NO") {
 		t.Errorf("Expected NO response without TLS, got: %s", response)
@@ -115,7 +115,7 @@ func TestAuthenticateUnsupportedMechanism(t *testing.T) {
 	s.HandleAuthenticate(conn, "A001", []string{"A001", "AUTHENTICATE", "GSSAPI"}, state)
 
 	response := conn.GetWrittenData()
-	
+
 	// Should get NO response
 	if !strings.Contains(response, "A001 NO") {
 		t.Errorf("Expected NO response for unsupported mechanism, got: %s", response)
@@ -137,7 +137,7 @@ func TestAuthenticateMissingMechanism(t *testing.T) {
 	s.HandleAuthenticate(conn, "A001", []string{"A001", "AUTHENTICATE"}, state)
 
 	response := conn.GetWrittenData()
-	
+
 	// Should get BAD response
 	if !strings.Contains(response, "A001 BAD") {
 		t.Errorf("Expected BAD response for missing mechanism, got: %s", response)
@@ -160,7 +160,7 @@ func TestAuthenticatePlainCaseInsensitive(t *testing.T) {
 			s.HandleAuthenticate(conn, "A001", []string{"A001", "AUTHENTICATE", mechanism}, state)
 
 			response := conn.GetWrittenData()
-			
+
 			// Should get continuation response for all case variations
 			if !strings.Contains(response, "+ ") {
 				t.Errorf("Expected continuation response for %s, got: %s", mechanism, response)
@@ -173,7 +173,7 @@ func TestAuthenticatePlainCaseInsensitive(t *testing.T) {
 func TestAuthenticateBase64InvalidFormat(t *testing.T) {
 	// Test that invalid base64 is handled gracefully
 	invalidBase64 := "!!!invalid-base64!!!"
-	
+
 	_, err := base64.StdEncoding.DecodeString(invalidBase64)
 	if err == nil {
 		t.Error("Expected error for invalid base64, got nil")
@@ -185,14 +185,14 @@ func TestAuthenticatePlainEmptyCredentials(t *testing.T) {
 	// Test empty credentials format
 	authString := "\x00\x00"
 	authEncoded := base64.StdEncoding.EncodeToString([]byte(authString))
-	
+
 	decoded, err := base64.StdEncoding.DecodeString(authEncoded)
 	if err != nil {
 		t.Fatalf("Failed to decode: %v", err)
 	}
-	
+
 	parts := strings.Split(string(decoded), "\x00")
-	
+
 	// Check that we can detect empty username/password
 	hasEmpty := false
 	for i, part := range parts {
@@ -200,7 +200,7 @@ func TestAuthenticatePlainEmptyCredentials(t *testing.T) {
 			hasEmpty = true
 		}
 	}
-	
+
 	if !hasEmpty {
 		t.Error("Expected to detect empty credentials")
 	}
@@ -211,14 +211,14 @@ func TestAuthenticatePlainMalformedData(t *testing.T) {
 	// Test data without NUL separators
 	authString := "usernamepassword"
 	authEncoded := base64.StdEncoding.EncodeToString([]byte(authString))
-	
+
 	decoded, err := base64.StdEncoding.DecodeString(authEncoded)
 	if err != nil {
 		t.Fatalf("Failed to decode: %v", err)
 	}
-	
+
 	parts := strings.Split(string(decoded), "\x00")
-	
+
 	// Should have only 1 part (no NUL separators)
 	if len(parts) != 1 {
 		t.Errorf("Expected 1 part for malformed data, got %d", len(parts))
@@ -228,7 +228,7 @@ func TestAuthenticatePlainMalformedData(t *testing.T) {
 // BenchmarkAuthenticatePlainBase64 benchmarks base64 encoding/decoding
 func BenchmarkAuthenticatePlainBase64(b *testing.B) {
 	authString := "\x00testuser\x00testpass"
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		authEncoded := base64.StdEncoding.EncodeToString([]byte(authString))
@@ -268,15 +268,15 @@ func TestAuthenticatePlainSuccessResponse(t *testing.T) {
 	// This test verifies that per RFC 3501, server MAY include CAPABILITY
 	// response code in the tagged OK response after successful AUTHENTICATE
 	// Note: This is a unit test of the response format expectation
-	
+
 	expectedFormat := "A001 OK [CAPABILITY IMAP4rev1 AUTH=PLAIN UIDPLUS IDLE NAMESPACE UNSELECT LITERAL+] Authenticated"
-	
+
 	// Verify the format includes:
 	// 1. Tag (A001)
 	// 2. OK status
 	// 3. [CAPABILITY ...] response code
 	// 4. Human-readable message
-	
+
 	if !strings.Contains(expectedFormat, "OK [CAPABILITY") {
 		t.Error("Expected CAPABILITY response code in OK response")
 	}
@@ -289,7 +289,7 @@ func TestAuthenticatePlainSuccessResponse(t *testing.T) {
 func TestAuthenticatePlainNOResponse(t *testing.T) {
 	// Per RFC 3501, authentication failures should return NO, not BAD
 	// BAD is only for protocol errors (malformed commands, cancelled exchange)
-	
+
 	testCases := []struct {
 		name           string
 		authString     string
@@ -309,7 +309,7 @@ func TestAuthenticatePlainNOResponse(t *testing.T) {
 			description:    "Malformed format should return NO (authentication failure)",
 		},
 	}
-	
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Verify expected status is NO per RFC 3501
@@ -325,7 +325,7 @@ func TestAuthenticateBADResponse(t *testing.T) {
 	// Per RFC 3501, BAD responses should be used for:
 	// 1. Command unknown or arguments invalid
 	// 2. Authentication exchange cancelled (by client sending "*")
-	
+
 	testCases := []struct {
 		name        string
 		description string
@@ -339,7 +339,7 @@ func TestAuthenticateBADResponse(t *testing.T) {
 			description: "Client cancellation with '*' should return BAD",
 		},
 	}
-	
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// These are documentation tests to ensure we understand RFC 3501 requirements
@@ -357,30 +357,30 @@ func TestAuthenticateSASLPlainFormat(t *testing.T) {
 	// identity (identity whose password will be used), followed by a NUL
 	// (U+0000) character, followed by the clear-text password.
 	// Format: [authzid] NUL authcid NUL passwd
-	
+
 	testCases := []struct {
-		name     string
-		format   string
-		authzid  string
-		authcid  string
-		passwd   string
+		name    string
+		format  string
+		authzid string
+		authcid string
+		passwd  string
 	}{
 		{
-			name:     "WithAuthzid",
-			format:   "user\x00user\x00pass",
-			authzid:  "user",
-			authcid:  "user",
-			passwd:   "pass",
+			name:    "WithAuthzid",
+			format:  "user\x00user\x00pass",
+			authzid: "user",
+			authcid: "user",
+			passwd:  "pass",
 		},
 		{
-			name:     "WithoutAuthzid",
-			format:   "\x00user\x00pass",
-			authzid:  "",
-			authcid:  "user",
-			passwd:   "pass",
+			name:    "WithoutAuthzid",
+			format:  "\x00user\x00pass",
+			authzid: "",
+			authcid: "user",
+			passwd:  "pass",
 		},
 	}
-	
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			parts := strings.Split(tc.format, "\x00")
@@ -404,20 +404,20 @@ func TestAuthenticateSASLPlainFormat(t *testing.T) {
 func TestAuthenticateBase64Encoding(t *testing.T) {
 	// Per RFC 3501: "The client response consists of a single line
 	// consisting of a BASE64 encoded string."
-	
+
 	authString := "\x00testuser\x00testpass"
 	encoded := base64.StdEncoding.EncodeToString([]byte(authString))
-	
+
 	// Verify it's valid base64
 	decoded, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		t.Fatalf("Failed to decode base64: %v", err)
 	}
-	
+
 	if string(decoded) != authString {
 		t.Errorf("Decoded string doesn't match original")
 	}
-	
+
 	// Verify the decoded string has proper SASL PLAIN format
 	parts := strings.Split(string(decoded), "\x00")
 	if len(parts) != 3 {
@@ -437,7 +437,7 @@ func TestAuthenticateContinuationRequest(t *testing.T) {
 	s.HandleAuthenticate(conn, "A001", []string{"A001", "AUTHENTICATE", "PLAIN"}, state)
 
 	response := conn.GetWrittenData()
-	
+
 	// Per RFC 3501: "A server challenge consists of a command continuation
 	// request response with the '+' token followed by a BASE64 encoded string."
 	// For PLAIN mechanism without initial response, server sends empty challenge: "+ "
