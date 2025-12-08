@@ -1,5 +1,3 @@
-//go:build test
-
 package middleware_test
 
 import (
@@ -16,11 +14,11 @@ import (
 
 // MockServer implements ServerInterface for testing
 type MockServer struct {
-	responses       []string
-	getUserDBError  error
+	responses          []string
+	getUserDBError     error
 	getSelectedDBError error
-	userDB          *sql.DB
-	selectedDB      *sql.DB
+	userDB             *sql.DB
+	selectedDB         *sql.DB
 }
 
 func NewMockServer() *MockServer {
@@ -75,7 +73,7 @@ func NewMockConn() *MockConn {
 	}
 }
 
-func (m *MockConn) Read(b []byte) (int, error)         { return 0, nil }
+func (m *MockConn) Read(b []byte) (int, error) { return 0, nil }
 func (m *MockConn) Write(b []byte) (int, error) {
 	m.writeBuffer = append(m.writeBuffer, b...)
 	return len(b), nil
