@@ -512,19 +512,20 @@ func handleUIDExpunge(deps ServerDeps, conn net.Conn, tag string, parts []string
 	// Query for messages that are both in the UID set AND have \Deleted flag
 	// Build a parameterized query with placeholders for the IN clause
 	placeholders := make([]string, len(uids))
-	args := make([]any, len(uids)+1)
-	args[0] = state.SelectedMailboxID
+	args := make([]any, 0, len(uids)+1)
+
+	args = append(args, state.SelectedMailboxID)
+
 	for i, uid := range uids {
 		placeholders[i] = "?"
-		args[i+1] = uid
+		args = append(args, uid)
 	}
-	placeholderList := strings.Join(placeholders, ",")
 
-	// Build query using string concatenation to avoid fmt.Sprintf security warning
-	// This is safe because placeholderList only contains "?" characters joined by commas
+	// #nosec G202 -- placeholder list is generated internally and contains only "?" placeholders
 	query := `
 		SELECT id, uid FROM message_mailbox
-		WHERE mailbox_id = ? AND uid IN (` + placeholderList + `) AND flags LIKE '%%\Deleted%%'
+		WHERE mailbox_id = ? AND uid IN (` + strings.Join(placeholders, ",") + `)
+		AND flags LIKE '%\Deleted%'
 		ORDER BY uid ASC
 	`
 
