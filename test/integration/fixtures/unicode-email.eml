@@ -1,0 +1,43 @@
+From: test@example.com
+To: alice@example.com
+Subject: =?UTF-8?B?VGVzdCDwn5GLIFV0Zi04IEVtb2ppIPCfmIggU3ViamVjdA==?=
+Date: Mon, 10 Dec 2025 12:00:00 +0000
+Message-ID: <unicode-test@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+Unicode and Emoji Test Email 🎉
+
+This email contains various Unicode characters and emojis:
+
+Emoji Examples:
+- Happy: 😊 😃 😄
+- Animals: 🐱 🐶 🦊 🐻
+- Food: 🍕 🍔 🍰 🥗
+- Objects: 📱 💻 🚗 ✈️
+
+International Text:
+- English: Hello World!
+- Spanish: ¡Hola Mundo!
+- French: Salut le Monde!
+- German: Hallo Welt!
+- Japanese: こんにちは世界！
+- Chinese: 你好世界！
+- Russian: Привет мир!
+- Arabic: مرحبا بالعالم!
+
+Special Characters:
+- Mathematical: ∑ ∞ π α β γ
+- Currency: $ € £ ¥ ₹
+- Symbols: © ® ™ § ¶ † ‡
+
+This tests the email system's ability to handle:
+1. UTF-8 encoding
+2. Quoted-printable transfer encoding
+3. Base64 encoded subject headers
+4. Multi-byte characters
+5. Right-to-left text (Arabic)
+
+Best regards,
+Test System 🤖

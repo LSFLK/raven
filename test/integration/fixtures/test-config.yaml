@@ -1,0 +1,35 @@
+# Test Domain Configuration
+domains:
+  - name: "example.com"
+    enabled: true
+    max_users: 1000
+    default_quota: "1GB"
+
+  - name: "test.org"
+    enabled: true
+    max_users: 100
+    default_quota: "500MB"
+
+# IMAP Server Configuration for Testing
+imap:
+  listen_address: "0.0.0.0:143"
+  tls_enabled: false
+  max_connections: 100
+  timeout: "30s"
+
+# LMTP Server Configuration for Testing
+lmtp:
+  listen_address: "0.0.0.0:24"
+  max_connections: 50
+  timeout: "60s"
+
+# Database Configuration
+database:
+  driver: "sqlite"
+  connection_pool_size: 10
+
+# Logging Configuration for Tests
+logging:
+  level: "debug"
+  format: "text"
+  output: "stderr"

@@ -1,0 +1,188 @@
+{
+  "mailbox_structures": {
+    "basic_user": {
+      "user": "alice@example.com",
+      "mailboxes": [
+        {
+          "name": "INBOX",
+          "attributes": ["\\HasNoChildren"],
+          "messages": 5,
+          "recent": 2,
+          "unseen": 3
+        },
+        {
+          "name": "Sent",
+          "attributes": ["\\Sent", "\\HasNoChildren"],
+          "messages": 12,
+          "recent": 0,
+          "unseen": 0
+        },
+        {
+          "name": "Drafts",
+          "attributes": ["\\Drafts", "\\HasNoChildren"],
+          "messages": 3,
+          "recent": 1,
+          "unseen": 3
+        },
+        {
+          "name": "Trash",
+          "attributes": ["\\Trash", "\\HasNoChildren"],
+          "messages": 8,
+          "recent": 0,
+          "unseen": 0
+        }
+      ]
+    },
+    "power_user": {
+      "user": "bob@example.com",
+      "mailboxes": [
+        {
+          "name": "INBOX",
+          "attributes": ["\\HasChildren"],
+          "messages": 25,
+          "recent": 5,
+          "unseen": 8
+        },
+        {
+          "name": "INBOX/Important",
+          "attributes": ["\\HasNoChildren"],
+          "messages": 10,
+          "recent": 2,
+          "unseen": 4
+        },
+        {
+          "name": "INBOX/Work",
+          "attributes": ["\\HasChildren"],
+          "messages": 15,
+          "recent": 1,
+          "unseen": 2
+        },
+        {
+          "name": "INBOX/Work/Projects",
+          "attributes": ["\\HasNoChildren"],
+          "messages": 23,
+          "recent": 3,
+          "unseen": 5
+        },
+        {
+          "name": "INBOX/Work/Meetings",
+          "attributes": ["\\HasNoChildren"],
+          "messages": 18,
+          "recent": 0,
+          "unseen": 1
+        },
+        {
+          "name": "Sent",
+          "attributes": ["\\Sent", "\\HasNoChildren"],
+          "messages": 45,
+          "recent": 0,
+          "unseen": 0
+        },
+        {
+          "name": "Archive",
+          "attributes": ["\\Archive", "\\HasChildren"],
+          "messages": 156,
+          "recent": 0,
+          "unseen": 0
+        },
+        {
+          "name": "Archive/2024",
+          "attributes": ["\\HasChildren"],
+          "messages": 89,
+          "recent": 0,
+          "unseen": 0
+        },
+        {
+          "name": "Archive/2024/Q1",
+          "attributes": ["\\HasNoChildren"],
+          "messages": 34,
+          "recent": 0,
+          "unseen": 0
+        },
+        {
+          "name": "Archive/2024/Q2",
+          "attributes": ["\\HasNoChildren"],
+          "messages": 28,
+          "recent": 0,
+          "unseen": 0
+        }
+      ]
+    },
+    "admin_user": {
+      "user": "admin@test.org",
+      "mailboxes": [
+        {
+          "name": "INBOX",
+          "attributes": ["\\HasChildren"],
+          "messages": 50,
+          "recent": 10,
+          "unseen": 15
+        },
+        {
+          "name": "Sent",
+          "attributes": ["\\Sent", "\\HasNoChildren"],
+          "messages": 78,
+          "recent": 0,
+          "unseen": 0
+        },
+        {
+          "name": "Admin",
+          "attributes": ["\\HasChildren"],
+          "messages": 32,
+          "recent": 5,
+          "unseen": 8
+        },
+        {
+          "name": "Admin/Users",
+          "attributes": ["\\HasNoChildren"],
+          "messages": 22,
+          "recent": 2,
+          "unseen": 4
+        },
+        {
+          "name": "Admin/System",
+          "attributes": ["\\HasNoChildren"],
+          "messages": 15,
+          "recent": 1,
+          "unseen": 3
+        },
+        {
+          "name": "Reports",
+          "attributes": ["\\HasChildren"],
+          "messages": 45,
+          "recent": 3,
+          "unseen": 5
+        },
+        {
+          "name": "Reports/Daily",
+          "attributes": ["\\HasNoChildren"],
+          "messages": 30,
+          "recent": 1,
+          "unseen": 2
+        },
+        {
+          "name": "Reports/Weekly",
+          "attributes": ["\\HasNoChildren"],
+          "messages": 12,
+          "recent": 0,
+          "unseen": 1
+        }
+      ]
+    }
+  },
+  "test_scenarios": {
+    "list_commands": {
+      "description": "Test LIST and LSUB commands with various patterns",
+      "patterns": ["*", "%", "INBOX*", "*/Work/*", "Archive/%"]
+    },
+    "status_commands": {
+      "description": "Test STATUS command on different mailboxes",
+      "mailboxes": ["INBOX", "Sent", "INBOX/Work", "Archive/2024"]
+    },
+    "select_commands": {
+      "description": "Test SELECT command on various mailboxes",
+      "mailboxes": ["INBOX", "INBOX/Important", "Archive/2024/Q1"]
+    }
+  }
+}
+

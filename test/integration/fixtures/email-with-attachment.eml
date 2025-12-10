@@ -1,0 +1,21 @@
+From: alice@example.com
+To: bob@example.com
+Subject: Email with Attachment
+Date: Mon, 10 Dec 2025 12:00:00 +0000
+Message-ID: <attachment789@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mixed-boundary"
+
+--mixed-boundary
+Content-Type: text/plain; charset=utf-8
+
+Please see the attached file.
+
+--mixed-boundary
+Content-Type: application/octet-stream; name="test.txt"
+Content-Disposition: attachment; filename="test.txt"
+Content-Transfer-Encoding: base64
+
+VGhpcyBpcyBhIHRlc3QgYXR0YWNobWVudCBmaWxlLgo=
+
+--mixed-boundary--
