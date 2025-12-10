@@ -1,0 +1,111 @@
+services:
+  # IMAP Server for testing
+  raven-imap:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    ports:
+      - "10143:143"
+    environment:
+      - RAVEN_MODE=imap
+      - RAVEN_IMAP_LISTEN=0.0.0.0:143
+      - RAVEN_DB_DRIVER=sqlite
+      - RAVEN_DB_PATH=/data/test.db
+      - RAVEN_LOG_LEVEL=debug
+    volumes:
+      - imap_data:/data
+      - ./fixtures:/fixtures:ro
+    networks:
+      - raven_test
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "143"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # LMTP Server for testing
+  raven-lmtp:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    ports:
+      - "10024:24"
+    environment:
+      - RAVEN_MODE=lmtp
+      - RAVEN_LMTP_LISTEN=0.0.0.0:24
+      - RAVEN_DB_DRIVER=sqlite
+      - RAVEN_DB_PATH=/data/test.db
+      - RAVEN_LOG_LEVEL=debug
+    volumes:
+      - lmtp_data:/data
+      - ./fixtures:/fixtures:ro
+    networks:
+      - raven_test
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "24"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Combined server for full integration testing
+  raven-full:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    ports:
+      - "10143:143"   # IMAP
+      - "10024:24"    # LMTP
+      - "10993:993"   # IMAPS (if TLS enabled)
+    environment:
+      - RAVEN_MODE=server
+      - RAVEN_IMAP_LISTEN=0.0.0.0:143
+      - RAVEN_LMTP_LISTEN=0.0.0.0:24
+      - RAVEN_DB_DRIVER=sqlite
+      - RAVEN_DB_PATH=/data/test.db
+      - RAVEN_LOG_LEVEL=debug
+      - RAVEN_TLS_ENABLED=false
+    volumes:
+      - full_data:/data
+      - ./fixtures:/fixtures:ro
+    networks:
+      - raven_test
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 143 && nc -z localhost 24"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # Test database for integration tests
+  test-db:
+    image: sqlite:latest
+    volumes:
+      - test_db_data:/data
+    networks:
+      - raven_test
+    profiles:
+      - database
+
+  # Mail client for testing (optional)
+  mail-client:
+    image: alpine:latest
+    command: sleep infinity
+    volumes:
+      - ./fixtures:/fixtures:ro
+    networks:
+      - raven_test
+    profiles:
+      - tools
+
+volumes:
+  imap_data:
+    driver: local
+  lmtp_data:
+    driver: local
+  full_data:
+    driver: local
+  test_db_data:
+    driver: local
+
+networks:
+  raven_test:
+    driver: bridge
