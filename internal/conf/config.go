@@ -1,9 +1,9 @@
 package conf
 
 import (
+	"gopkg.in/yaml.v2"
 	"os"
 	"path/filepath"
-	"gopkg.in/yaml.v2"
 )
 
 type Config struct {
@@ -11,9 +11,17 @@ type Config struct {
 	AuthServerURL string `yaml:"auth_server_url"`
 }
 
-func LoadConfig() (*Config, error) {
+// ParseConfig parses YAML configuration data and returns a Config struct.
+// This function is designed for unit testing and doesn't perform any I/O.
+func ParseConfig(data []byte) (*Config, error) {
 	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
 
+func LoadConfig() (*Config, error) {
 	// Try multiple possible paths
 	configPaths := []string{
 		"/etc/raven/raven.yaml",
@@ -34,9 +42,5 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
-	}
-
-	return &cfg, nil
+	return ParseConfig(data)
 }
