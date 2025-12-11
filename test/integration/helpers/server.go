@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"raven/internal/db"
+	"raven/internal/delivery/config"
+	"raven/internal/delivery/lmtp"
 	"raven/internal/server"
 )
 
@@ -394,30 +396,152 @@ func (c *IMAPClient) WaitForResponse(pattern string, timeout time.Duration) (str
 }
 
 // StartTestLMTPServer starts a test LMTP server
-// Note: This is a placeholder - actual implementation depends on LMTP server structure
-func StartTestLMTPServer(t *testing.T, dbManager *db.DBManager) (addr string, cleanup func()) {
+func StartTestLMTPServer(t *testing.T, dbManager *db.DBManager) (addr string, srv *lmtp.Server, cleanup func()) {
 	t.Helper()
 
-	// TODO: Implement LMTP server startup
-	// For now, return placeholder
-	addr = "127.0.0.1:10024"
-	cleanup = func() {
-		t.Logf("Test LMTP server cleanup")
+	cfg := &config.Config{}
+	cfg.LMTP.TCPAddress = "127.0.0.1:0"
+	cfg.LMTP.UnixSocket = ""
+	cfg.LMTP.Hostname = "localhost"
+	cfg.LMTP.MaxSize = 1024 * 1024
+	cfg.LMTP.MaxRecipients = 50
+	cfg.Delivery.DefaultFolder = "INBOX"
+	cfg.Delivery.AllowedDomains = []string{"example.com"}
+	cfg.Delivery.RejectUnknownUser = true
+
+	srv = lmtp.NewServer(dbManager, cfg)
+
+	go func() { _ = srv.Start() }()
+
+	// Wait until TCP listener is ready
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if ln := srv.TCPAddr(); ln != nil {
+			addr = ln.String()
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if addr == "" {
+		t.Fatalf("LMTP TCP listener did not start")
 	}
 
-	t.Logf("Test LMTP server started on %s (placeholder)", addr)
-	return addr, cleanup
+	cleanup = func() { _ = srv.Shutdown() }
+	t.Logf("Test LMTP server started on %s", addr)
+	return addr, srv, cleanup
 }
 
-// DeliverViaLMTP delivers an email message via LMTP
-// Note: This is a placeholder - actual implementation depends on LMTP protocol
-func DeliverViaLMTP(t *testing.T, addr, recipient string, message []byte) error {
-	t.Helper()
+// LMTPClient is a simple client to speak LMTP for tests
+type LMTPClient struct {
+	conn   net.Conn
+	reader *bufio.Reader
+}
 
-	// TODO: Implement LMTP delivery
-	// For now, return placeholder
-	t.Logf("Delivering email to %s via LMTP at %s (placeholder)", recipient, addr)
+func ConnectLMTP(t *testing.T, addr string) *LMTPClient {
+	t.Helper()
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		t.Fatalf("Failed to connect LMTP: %v", err)
+	}
+	c := &LMTPClient{conn: conn, reader: bufio.NewReader(conn)}
+	// Read greeting
+	if _, err := c.ReadLine(); err != nil {
+		_ = conn.Close()
+		t.Fatalf("Failed to read LMTP greeting: %v", err)
+	}
+	return c
+}
+
+func (c *LMTPClient) Close() error {
+	if c.conn != nil {
+		return c.conn.Close()
+	}
 	return nil
+}
+func (c *LMTPClient) ReadLine() (string, error) {
+	line, err := c.reader.ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(line, "\r\n"), nil
+}
+func (c *LMTPClient) SendLine(line string) error {
+	_, err := c.conn.Write([]byte(line + "\r\n"))
+	return err
+}
+
+func (c *LMTPClient) LHLO(domain string) ([]string, error) {
+	_ = c.SendLine("LHLO " + domain)
+	return c.readUntilStatus()
+}
+func (c *LMTPClient) MAILFROM(addr string) ([]string, error) {
+	_ = c.SendLine("MAIL FROM:<" + addr + ">")
+	return c.readUntilStatus()
+}
+func (c *LMTPClient) RCPTTO(addr string) ([]string, error) {
+	_ = c.SendLine("RCPT TO:<" + addr + ">")
+	lines, err := c.readUntilStatus()
+	if err != nil {
+		return nil, err
+	}
+	// Check if the final line indicates error (5xx or 4xx)
+	if len(lines) > 0 {
+		lastLine := lines[len(lines)-1]
+		if strings.HasPrefix(lastLine, "5") || strings.HasPrefix(lastLine, "4") {
+			return lines, fmt.Errorf("RCPT failed: %s", lastLine)
+		}
+	}
+	return lines, nil
+}
+func (c *LMTPClient) DATA(body []byte) ([]string, error) {
+	// Send DATA command and expect 354 intermediate response
+	if err := c.SendLine("DATA"); err != nil {
+		return nil, err
+	}
+	// Read 354 line
+	line, err := c.ReadLine()
+	if err != nil {
+		return nil, err
+	}
+	if !strings.HasPrefix(line, "354") {
+		// return the line as part of responses
+		return []string{line}, fmt.Errorf("expected 354, got: %s", line)
+	}
+	// Send body followed by CRLF . CRLF terminator
+	// Ensure body ends with CRLF
+	if !strings.HasSuffix(string(body), "\r\n") {
+		body = append(body, '\r', '\n')
+	}
+	if _, err := c.conn.Write(body); err != nil {
+		return nil, err
+	}
+	if err := c.SendLine("."); err != nil {
+		return nil, err
+	}
+	// Read final status lines until status
+	return c.readUntilStatus()
+}
+func (c *LMTPClient) QUIT() ([]string, error) { _ = c.SendLine("QUIT"); return c.readUntilStatus() }
+
+func (c *LMTPClient) readUntilStatus() ([]string, error) {
+	var lines []string
+	for {
+		line, err := c.ReadLine()
+		if err != nil {
+			return nil, err
+		}
+		lines = append(lines, line)
+		// Handle multiline capability (e.g., 250-... followed by final 250 ...)
+		if strings.HasPrefix(line, "250-") {
+			// continuation line; keep reading
+			continue
+		}
+		// Terminal statuses without continuation
+		if strings.HasPrefix(line, "250 ") || strings.HasPrefix(line, "2") || strings.HasPrefix(line, "4") || strings.HasPrefix(line, "5") || strings.Contains(line, "OK") || strings.Contains(line, "ERROR") {
+			break
+		}
+	}
+	return lines, nil
 }
 
 // isTLSConn checks if the underlying connection is already TLS
