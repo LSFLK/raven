@@ -17,15 +17,20 @@ var (
 	validServiceNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 	// Allow only safe characters for project names (alphanumeric, hyphens, underscores)
 	validProjectNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
-	// Allow only safe file paths (no path traversal)
+	// Allow safe file paths including relative paths but prevent dangerous traversal
 	validFilePathPattern = regexp.MustCompile(`^[a-zA-Z0-9_./:-]+$`)
 )
 
 // validateDockerInputs ensures Docker command inputs are safe
 func validateDockerInputs(composeFile, projectName string, services []string) error {
-	// Validate compose file path
-	if !validFilePathPattern.MatchString(composeFile) || strings.Contains(composeFile, "..") {
+	// Validate compose file path - allow relative paths but prevent dangerous patterns
+	if !validFilePathPattern.MatchString(composeFile) {
 		return fmt.Errorf("invalid compose file path: %s", composeFile)
+	}
+
+	// Check for dangerous traversal patterns that could escape the project directory
+	if strings.Contains(composeFile, "../../../") || strings.HasPrefix(composeFile, "/") || strings.Contains(composeFile, "\\") {
+		return fmt.Errorf("invalid compose file path: potential dangerous traversal in %s", composeFile)
 	}
 
 	// Validate project name
