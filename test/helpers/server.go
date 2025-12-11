@@ -61,6 +61,7 @@ func StartTestIMAPServer(t *testing.T, dbManager *db.DBManager) *TestIMAPServer 
 
 	// Create TLS config for auth server using the same test certs
 	authTLSConfig := &tls.Config{
+		MinVersion: tls.VersionTLS12, // Set minimum TLS version to 1.2 for security
 		Certificates: []tls.Certificate{{
 			Certificate: [][]byte{},
 			PrivateKey:  nil,
@@ -74,9 +75,13 @@ func StartTestIMAPServer(t *testing.T, dbManager *db.DBManager) *TestIMAPServer 
 	authTLSConfig.Certificates = []tls.Certificate{authCert}
 
 	authSrv := &http.Server{
-		Addr:      "127.0.0.1:0",
-		Handler:   authMux,
-		TLSConfig: authTLSConfig,
+		Addr:              "127.0.0.1:0",
+		Handler:           authMux,
+		TLSConfig:         authTLSConfig,
+		ReadHeaderTimeout: 10 * time.Second, // Prevent Slowloris attacks
+		ReadTimeout:       30 * time.Second, // Limit read time
+		WriteTimeout:      30 * time.Second, // Limit write time
+		IdleTimeout:       60 * time.Second, // Close idle connections
 	}
 
 	// Listen on random port for auth server
@@ -92,10 +97,10 @@ func StartTestIMAPServer(t *testing.T, dbManager *db.DBManager) *TestIMAPServer 
 
 	// Write temporary config pointing to stub auth server
 	cfgDir := filepath.Join("config")
-	_ = os.MkdirAll(cfgDir, 0o755)
+	_ = os.MkdirAll(cfgDir, 0o750) // More restrictive directory permissions
 	cfgPath := filepath.Join(cfgDir, "raven.yaml")
 	cfgContent := []byte("domain: localhost\nauth_server_url: " + authURL + "\n")
-	if err := os.WriteFile(cfgPath, cfgContent, 0o644); err != nil {
+	if err := os.WriteFile(cfgPath, cfgContent, 0o600); err != nil { // More restrictive file permissions
 		t.Fatalf("Failed to write test config: %v", err)
 	}
 
@@ -220,7 +225,12 @@ func (c *IMAPClient) StartTLS() error {
 	}
 
 	// Wrap existing connection with TLS
-	tlsConn := tls.Client(c.conn, &tls.Config{InsecureSkipVerify: true})
+	tlsConfig := &tls.Config{
+		MinVersion:         tls.VersionTLS12, // Set minimum TLS version
+		InsecureSkipVerify: true,             // #nosec G402 - Only for test environment, NOT for production
+		ServerName:         "localhost",      // Set expected server name
+	}
+	tlsConn := tls.Client(c.conn, tlsConfig)
 	if err := tlsConn.Handshake(); err != nil {
 		return fmt.Errorf("TLS handshake failed: %v", err)
 	}

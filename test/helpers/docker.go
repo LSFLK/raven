@@ -4,10 +4,53 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 )
+
+// Docker security validation patterns
+var (
+	// Allow only alphanumeric characters, hyphens, underscores, and dots for service names
+	validServiceNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
+	// Allow only safe characters for project names (alphanumeric, hyphens, underscores)
+	validProjectNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+	// Allow only safe file paths (no path traversal)
+	validFilePathPattern = regexp.MustCompile(`^[a-zA-Z0-9_./:-]+$`)
+)
+
+// validateDockerInputs ensures Docker command inputs are safe
+func validateDockerInputs(composeFile, projectName string, services []string) error {
+	// Validate compose file path
+	if !validFilePathPattern.MatchString(composeFile) || strings.Contains(composeFile, "..") {
+		return fmt.Errorf("invalid compose file path: %s", composeFile)
+	}
+
+	// Validate project name
+	if !validProjectNamePattern.MatchString(projectName) {
+		return fmt.Errorf("invalid project name: %s", projectName)
+	}
+
+	// Validate service names
+	for _, service := range services {
+		if !validServiceNamePattern.MatchString(service) {
+			return fmt.Errorf("invalid service name: %s", service)
+		}
+	}
+
+	return nil
+}
+
+// validateContainerID ensures container ID is safe (hexadecimal characters only)
+func validateContainerID(containerID string) bool {
+	if len(containerID) < 12 || len(containerID) > 64 {
+		return false
+	}
+	validContainerIDPattern := regexp.MustCompile(`^[a-fA-F0-9]+$`)
+	return validContainerIDPattern.MatchString(containerID)
+}
 
 // DockerTestEnvironment manages Docker containers for integration testing
 type DockerTestEnvironment struct {
@@ -30,14 +73,24 @@ func NewDockerTestEnvironment(t *testing.T) *DockerTestEnvironment {
 // Start starts the Docker test environment
 func (d *DockerTestEnvironment) Start(t *testing.T) {
 	t.Helper()
+
+	// Validate inputs for security
+	if err := validateDockerInputs(d.ComposeFile, d.ProjectName, d.Services); err != nil {
+		t.Fatalf("Invalid Docker inputs: %v", err)
+	}
+
 	// Check if Docker is available
 	if !d.isDockerAvailable(t) {
 		t.Skip("Docker not available, skipping integration test")
 	}
 
 	// Start services
-	cmd := exec.Command("docker-compose",
-		"-f", d.ComposeFile,
+	composeFile, err := filepath.Abs(d.ComposeFile)
+	if err != nil {
+		t.Fatalf("Failed to resolve compose file path: %v", err)
+	}
+	cmd := exec.Command("docker-compose", // #nosec G204 - Validated inputs in test environment
+		"-f", composeFile,
 		"-p", d.ProjectName,
 		"up", "-d",
 	)
@@ -57,9 +110,21 @@ func (d *DockerTestEnvironment) Start(t *testing.T) {
 func (d *DockerTestEnvironment) Stop(t *testing.T) {
 	t.Helper()
 
+	// Validate inputs for security
+	if err := validateDockerInputs(d.ComposeFile, d.ProjectName, d.Services); err != nil {
+		t.Logf("Warning: Invalid Docker inputs during cleanup: %v", err)
+		return
+	}
+
 	// Stop and remove containers
-	cmd := exec.Command("docker-compose",
-		"-f", d.ComposeFile,
+	composeFile, err := filepath.Abs(d.ComposeFile)
+	if err != nil {
+		t.Logf("Warning: Failed to resolve compose file path during cleanup: %v", err)
+		return
+	}
+
+	cmd := exec.Command("docker-compose", // #nosec G204 - Validated inputs in test environment
+		"-f", composeFile,
 		"-p", d.ProjectName,
 		"down", "-v", "--remove-orphans",
 	)
@@ -139,8 +204,20 @@ func (d *DockerTestEnvironment) waitForHealthy(t *testing.T) {
 func (d *DockerTestEnvironment) checkServicesHealthy(t *testing.T) bool {
 	t.Helper()
 
-	cmd := exec.Command("docker-compose",
-		"-f", d.ComposeFile,
+	// Validate inputs for security
+	if err := validateDockerInputs(d.ComposeFile, d.ProjectName, d.Services); err != nil {
+		t.Logf("Invalid Docker inputs during health check: %v", err)
+		return false
+	}
+
+	composeFile, err := filepath.Abs(d.ComposeFile)
+	if err != nil {
+		t.Logf("Failed to resolve compose file path during health check: %v", err)
+		return false
+	}
+
+	cmd := exec.Command("docker-compose", // #nosec G204 - Validated inputs in test environment
+		"-f", composeFile,
 		"-p", d.ProjectName,
 		"ps", "-q",
 	)
@@ -157,9 +234,15 @@ func (d *DockerTestEnvironment) checkServicesHealthy(t *testing.T) bool {
 		return false
 	}
 
-	// Check each container
+	// Check each container with validated IDs
 	for _, containerID := range containerIDs {
-		cmd := exec.Command("docker", "inspect",
+		// Validate container ID for security
+		if !validateContainerID(containerID) {
+			t.Logf("Invalid container ID format: %s", containerID)
+			return false
+		}
+
+		cmd := exec.Command("docker", "inspect", // #nosec G204 - Validated container ID in test environment
 			"--format={{.State.Health.Status}}", containerID)
 
 		output, err := cmd.Output()
@@ -183,14 +266,24 @@ func (d *DockerTestEnvironment) checkServicesHealthy(t *testing.T) bool {
 func (d *DockerTestEnvironment) StartFullEnvironment(t *testing.T) {
 	t.Helper()
 
+	// Validate inputs for security
+	if err := validateDockerInputs(d.ComposeFile, d.ProjectName, d.Services); err != nil {
+		t.Fatalf("Invalid Docker inputs: %v", err)
+	}
+
 	// Check if Docker is available
 	if !d.isDockerAvailable(t) {
 		t.Skip("Docker not available, skipping e2e test")
 	}
 
 	// Start full service
-	cmd := exec.Command("docker-compose",
-		"-f", d.ComposeFile,
+	composeFile, err := filepath.Abs(d.ComposeFile)
+	if err != nil {
+		t.Fatalf("Failed to resolve compose file path: %v", err)
+	}
+
+	cmd := exec.Command("docker-compose", // #nosec G204 - Validated inputs in test environment
+		"-f", composeFile,
 		"-p", d.ProjectName,
 		"up", "-d", "raven-full",
 	)
@@ -209,14 +302,24 @@ func (d *DockerTestEnvironment) StartFullEnvironment(t *testing.T) {
 func (d *DockerTestEnvironment) StartSeparateServices(t *testing.T) {
 	t.Helper()
 
+	// Validate inputs for security
+	if err := validateDockerInputs(d.ComposeFile, d.ProjectName, d.Services); err != nil {
+		t.Fatalf("Invalid Docker inputs: %v", err)
+	}
+
 	// Check if Docker is available
 	if !d.isDockerAvailable(t) {
 		t.Skip("Docker not available, skipping integration test")
 	}
 
 	// Start separate services
-	cmd := exec.Command("docker-compose",
-		"-f", d.ComposeFile,
+	composeFile, err := filepath.Abs(d.ComposeFile)
+	if err != nil {
+		t.Fatalf("Failed to resolve compose file path: %v", err)
+	}
+
+	cmd := exec.Command("docker-compose", // #nosec G204 - Validated inputs in test environment
+		"-f", composeFile,
 		"-p", d.ProjectName,
 		"up", "-d",
 	)
@@ -236,8 +339,26 @@ func (d *DockerTestEnvironment) StartSeparateServices(t *testing.T) {
 func (d *DockerTestEnvironment) Logs(t *testing.T, service string) string {
 	t.Helper()
 
-	cmd := exec.Command("docker-compose",
-		"-f", d.ComposeFile,
+	// Validate service name for security
+	if !validServiceNamePattern.MatchString(service) {
+		t.Logf("Invalid service name: %s", service)
+		return ""
+	}
+
+	// Validate inputs for security
+	if err := validateDockerInputs(d.ComposeFile, d.ProjectName, d.Services); err != nil {
+		t.Logf("Invalid Docker inputs during log retrieval: %v", err)
+		return ""
+	}
+
+	composeFile, err := filepath.Abs(d.ComposeFile)
+	if err != nil {
+		t.Logf("Failed to resolve compose file path during log retrieval: %v", err)
+		return ""
+	}
+
+	cmd := exec.Command("docker-compose", // #nosec G204 - Validated inputs in test environment
+		"-f", composeFile,
 		"-p", d.ProjectName,
 		"logs", service,
 	)

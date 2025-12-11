@@ -2,9 +2,11 @@ package helpers
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -18,14 +20,49 @@ func GetFixturesDir() string {
 	return fixturesDir
 }
 
+// validateFixturePath ensures the file path is within the fixtures directory
+// and doesn't contain any directory traversal attempts
+func validateFixturePath(fixturesDir, filename string) (string, error) {
+	// Clean the filename to remove any path traversal attempts
+	cleanFilename := filepath.Clean(filename)
+
+	// Check for directory traversal patterns
+	if strings.Contains(cleanFilename, "..") || strings.HasPrefix(cleanFilename, "/") || strings.Contains(cleanFilename, "\\") {
+		return "", fmt.Errorf("invalid filename: potential directory traversal detected in %s", filename)
+	}
+
+	// Build the full path
+	fullPath := filepath.Join(fixturesDir, cleanFilename)
+
+	// Ensure the resolved path is still within fixtures directory
+	absFixturesDir, err := filepath.Abs(fixturesDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to get absolute fixtures directory: %v", err)
+	}
+
+	absFullPath, err := filepath.Abs(fullPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to get absolute file path: %v", err)
+	}
+
+	if !strings.HasPrefix(absFullPath, absFixturesDir) {
+		return "", fmt.Errorf("file path %s is outside fixtures directory %s", filename, fixturesDir)
+	}
+
+	return fullPath, nil
+}
+
 // LoadTestEmail loads a test email fixture by filename
 func LoadTestEmail(t *testing.T, filename string) []byte {
 	t.Helper()
 
 	fixturesDir := GetFixturesDir()
-	emailPath := filepath.Join(fixturesDir, filename)
+	emailPath, err := validateFixturePath(fixturesDir, filename)
+	if err != nil {
+		t.Fatalf("Invalid fixture path for %s: %v", filename, err)
+	}
 
-	data, err := os.ReadFile(emailPath)
+	data, err := os.ReadFile(emailPath) // #nosec G304 - Path validated against directory traversal
 	if err != nil {
 		t.Fatalf("Failed to load test email %s: %v", filename, err)
 	}
@@ -74,9 +111,12 @@ func LoadTestUsers(t *testing.T) map[string]interface{} {
 	t.Helper()
 
 	fixturesDir := GetFixturesDir()
-	configPath := filepath.Join(fixturesDir, "test-users.json")
+	configPath, err := validateFixturePath(fixturesDir, "test-users.json")
+	if err != nil {
+		t.Fatalf("Invalid fixture path for test-users.json: %v", err)
+	}
 
-	data, err := os.ReadFile(configPath)
+	data, err := os.ReadFile(configPath) // #nosec G304 - Path validated against directory traversal
 	if err != nil {
 		t.Fatalf("Failed to load test users config: %v", err)
 	}
@@ -96,9 +136,12 @@ func LoadMailboxStructures(t *testing.T) map[string]interface{} {
 	t.Helper()
 
 	fixturesDir := GetFixturesDir()
-	configPath := filepath.Join(fixturesDir, "mailbox-structures.json")
+	configPath, err := validateFixturePath(fixturesDir, "mailbox-structures.json")
+	if err != nil {
+		t.Fatalf("Invalid fixture path for mailbox-structures.json: %v", err)
+	}
 
-	data, err := os.ReadFile(configPath)
+	data, err := os.ReadFile(configPath) // #nosec G304 - Path validated against directory traversal
 	if err != nil {
 		t.Fatalf("Failed to load mailbox structures config: %v", err)
 	}
@@ -118,9 +161,12 @@ func LoadTestConfig(t *testing.T) []byte {
 	t.Helper()
 
 	fixturesDir := GetFixturesDir()
-	configPath := filepath.Join(fixturesDir, "test-config.yaml")
+	configPath, err := validateFixturePath(fixturesDir, "test-config.yaml")
+	if err != nil {
+		t.Fatalf("Invalid fixture path for test-config.yaml: %v", err)
+	}
 
-	data, err := os.ReadFile(configPath)
+	data, err := os.ReadFile(configPath) // #nosec G304 - Path validated against directory traversal
 	if err != nil {
 		t.Fatalf("Failed to load test config: %v", err)
 	}
