@@ -4,18 +4,23 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"raven/internal/db"
 	"raven/internal/delivery/config"
 	"raven/internal/delivery/lmtp"
+	"raven/internal/sasl"
 	"raven/internal/server"
 )
 
@@ -548,4 +553,249 @@ func (c *LMTPClient) readUntilStatus() ([]string, error) {
 func isTLSConn(conn net.Conn) bool {
 	_, ok := conn.(*tls.Conn)
 	return ok
+}
+
+// SASL testing support structures and functions
+
+// SASLClient represents a SASL client connection for testing
+type SASLClient struct {
+	conn   net.Conn
+	reader *bufio.Reader
+	closed bool
+	mu     sync.Mutex
+}
+
+// ConnectSASL creates a new SASL client connection to the specified Unix socket
+func ConnectSASL(t *testing.T, socketPath string) *SASLClient {
+	t.Helper()
+
+	conn, err := net.Dial("unix", socketPath)
+	if err != nil {
+		t.Fatalf("Failed to connect to SASL socket %s: %v", socketPath, err)
+	}
+
+	return &SASLClient{
+		conn:   conn,
+		reader: bufio.NewReader(conn),
+		closed: false,
+	}
+}
+
+// SendCommand sends a command to the SASL server
+func (c *SASLClient) SendCommand(command string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
+		return
+	}
+
+	_, err := c.conn.Write([]byte(command + "\n"))
+	if err != nil {
+		// Connection might be closed, ignore error
+	}
+}
+
+// ReadResponse reads a single response line from the SASL server
+func (c *SASLClient) ReadResponse() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
+		return ""
+	}
+
+	line, err := c.reader.ReadString('\n')
+	if err != nil {
+		return ""
+	}
+
+	return strings.TrimRight(line, "\r\n")
+}
+
+// ReadMultipleResponses reads multiple response lines until DONE or timeout
+func (c *SASLClient) ReadMultipleResponses() []string {
+	var responses []string
+	timeout := time.After(2 * time.Second)
+
+	for {
+		select {
+		case <-timeout:
+			return responses
+		default:
+			response := c.ReadResponse()
+			if response == "" {
+				return responses
+			}
+			responses = append(responses, response)
+			if strings.HasPrefix(response, "DONE") {
+				return responses
+			}
+		}
+	}
+}
+
+// Close closes the SASL client connection
+func (c *SASLClient) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
+		return nil
+	}
+
+	c.closed = true
+	if c.conn != nil {
+		return c.conn.Close()
+	}
+	return nil
+}
+
+// Mock authentication server helpers
+
+// MockAuthServer represents a mock authentication server for testing
+type MockAuthServer struct {
+	*httptest.Server
+	Requests []MockAuthRequest
+	mu       sync.Mutex
+}
+
+// MockAuthRequest captures details of an authentication request
+type MockAuthRequest struct {
+	Email    string
+	Password string
+	Headers  http.Header
+	Time     time.Time
+}
+
+// SetupMockAuthServer creates a mock authentication server that accepts any credentials
+func SetupMockAuthServer(t *testing.T) *MockAuthServer {
+	return SetupMockAuthServerWithResponse(t, http.StatusOK, `{"status":"ok"}`)
+}
+
+// SetupMockAuthServerWithResponse creates a mock auth server with custom response
+func SetupMockAuthServerWithResponse(t *testing.T, statusCode int, response string) *MockAuthServer {
+	mock := &MockAuthServer{
+		Requests: make([]MockAuthRequest, 0),
+	}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Parse request body
+		if r.Body != nil {
+			bodyBytes, err := io.ReadAll(r.Body)
+			if err == nil {
+				var authReq map[string]string
+				if json.Unmarshal(bodyBytes, &authReq) == nil {
+					mock.mu.Lock()
+					mock.Requests = append(mock.Requests, MockAuthRequest{
+						Email:    authReq["email"],
+						Password: authReq["password"],
+						Headers:  r.Header.Clone(),
+						Time:     time.Now(),
+					})
+					mock.mu.Unlock()
+				}
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(statusCode)
+		_, _ = w.Write([]byte(response))
+	})
+
+	// Create TLS server for more realistic testing
+	mock.Server = httptest.NewTLSServer(handler)
+
+	t.Logf("Mock auth server started at: %s", mock.Server.URL)
+	return mock
+}
+
+// GetRequests returns captured authentication requests
+func (m *MockAuthServer) GetRequests() []MockAuthRequest {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	requests := make([]MockAuthRequest, len(m.Requests))
+	copy(requests, m.Requests)
+	return requests
+}
+
+// GetLastRequest returns the most recent authentication request
+func (m *MockAuthServer) GetLastRequest() *MockAuthRequest {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if len(m.Requests) == 0 {
+		return nil
+	}
+
+	return &m.Requests[len(m.Requests)-1]
+}
+
+// ClearRequests clears the captured requests
+func (m *MockAuthServer) ClearRequests() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.Requests = m.Requests[:0]
+}
+
+// Test socket helpers
+
+// GetTestSocketPath generates a unique socket path for testing
+func GetTestSocketPath(t *testing.T, testName string) string {
+	t.Helper()
+
+	// Use /tmp with test name and random suffix to avoid conflicts
+	socketPath := filepath.Join("/tmp", fmt.Sprintf("raven-%s-%d.sock", testName, time.Now().UnixNano()))
+
+	// Ensure cleanup
+	t.Cleanup(func() {
+		_ = os.Remove(socketPath)
+	})
+
+	return socketPath
+}
+
+// WaitForUnixSocket waits for a Unix socket to be available
+func WaitForUnixSocket(t *testing.T, socketPath string, timeout time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(socketPath); err == nil {
+			// Socket exists, try to connect to verify it's ready
+			conn, err := net.Dial("unix", socketPath)
+			if err == nil {
+				_ = conn.Close()
+				return
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	t.Fatalf("Unix socket %s not available within %v", socketPath, timeout)
+}
+
+// SASL test utilities
+
+// CreateSASLTestServer creates a SASL server for testing with mock auth backend
+func CreateSASLTestServer(t *testing.T, domain string) (*sasl.Server, *MockAuthServer, string, func()) {
+	t.Helper()
+
+	// Setup mock auth server
+	mockAuth := SetupMockAuthServer(t)
+
+	// Create socket path
+	socketPath := GetTestSocketPath(t, "sasl-test")
+
+	// Create SASL server
+	server := sasl.NewServer(socketPath, mockAuth.URL+"/auth", domain)
+
+	cleanup := func() {
+		_ = server.Shutdown()
+		mockAuth.Close()
+	}
+
+	return server, mockAuth, socketPath, cleanup
 }
