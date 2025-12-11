@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"raven/internal/db"
-	"raven/test/integration/helpers"
+	"raven/test/helpers"
 )
 
 // TestDBManagerToSharedDB_SuccessFlow tests database manager with real file system

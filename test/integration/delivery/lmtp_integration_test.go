@@ -8,7 +8,7 @@ import (
 	"raven/internal/db"
 	"raven/internal/delivery/config"
 	"raven/internal/delivery/lmtp"
-	"raven/test/integration/helpers"
+	"raven/test/helpers"
 )
 
 // LMTP integration: 6 scenarios focusing on cross-module behavior

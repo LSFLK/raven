@@ -21,7 +21,7 @@ func NewDockerTestEnvironment(t *testing.T) *DockerTestEnvironment {
 	t.Helper()
 
 	return &DockerTestEnvironment{
-		ComposeFile: "../docker-compose.yml",
+		ComposeFile: "../integration/docker-compose.yml",
 		ProjectName: fmt.Sprintf("raven-test-%d", time.Now().Unix()),
 		Services:    []string{"raven-imap", "raven-lmtp"},
 	}
@@ -178,16 +178,57 @@ func (d *DockerTestEnvironment) checkServicesHealthy(t *testing.T) bool {
 	return true
 }
 
-// StartFullEnvironment starts the complete test environment with all services
+// StartFullEnvironment starts the full integrated environment
 func (d *DockerTestEnvironment) StartFullEnvironment(t *testing.T) {
-	d.Services = []string{"raven-full"}
-	d.Start(t)
+	t.Helper()
+
+	// Check if Docker is available
+	if !d.isDockerAvailable(t) {
+		t.Skip("Docker not available, skipping e2e test")
+	}
+
+	// Start full service
+	cmd := exec.Command("docker-compose",
+		"-f", d.ComposeFile,
+		"-p", d.ProjectName,
+		"up", "-d", "raven-full",
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Failed to start full Docker environment: %v\nOutput: %s", err, output)
+	}
+
+	// Wait for services to be healthy
+	d.waitForHealthy(t)
+	t.Logf("Full Docker environment started with project name: %s", d.ProjectName)
 }
 
-// StartSeparateServices starts IMAP and LMTP as separate services
+// StartSeparateServices starts individual services separately
 func (d *DockerTestEnvironment) StartSeparateServices(t *testing.T) {
-	d.Services = []string{"raven-imap", "raven-lmtp"}
-	d.Start(t)
+	t.Helper()
+
+	// Check if Docker is available
+	if !d.isDockerAvailable(t) {
+		t.Skip("Docker not available, skipping integration test")
+	}
+
+	// Start separate services
+	cmd := exec.Command("docker-compose",
+		"-f", d.ComposeFile,
+		"-p", d.ProjectName,
+		"up", "-d",
+	)
+	cmd.Args = append(cmd.Args, d.Services...)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Failed to start separate Docker services: %v\nOutput: %s", err, output)
+	}
+
+	// Wait for services to be healthy
+	d.waitForHealthy(t)
+	t.Logf("Separate Docker services started with project name: %s", d.ProjectName)
 }
 
 // Logs gets the logs from a specific service

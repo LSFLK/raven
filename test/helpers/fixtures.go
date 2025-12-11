@@ -13,8 +13,8 @@ func GetFixturesDir() string {
 	// Get the current file's directory
 	_, filename, _, _ := runtime.Caller(0)
 	helpersDir := filepath.Dir(filename)
-	integrationDir := filepath.Dir(helpersDir)
-	fixturesDir := filepath.Join(integrationDir, "fixtures")
+	testDir := filepath.Dir(helpersDir)
+	fixturesDir := filepath.Join(testDir, "fixtures")
 	return fixturesDir
 }
 
