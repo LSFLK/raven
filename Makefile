@@ -46,7 +46,7 @@
 #   make test-commands     - Run all command tests
 #   make help              - Show all available targets
 
-.PHONY: test test-db test-db-init test-db-domain test-db-user test-db-mailbox test-db-message test-db-blob test-db-role test-db-manager test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-uid test-commands test-delivery test-parser test-parser-coverage test-sasl test-conf test-utils test-response test-storage test-models test-middleware test-selection test-core-server test-verbose test-coverage test-race clean
+.PHONY: test test-integration test-integration-db test-integration-server test-integration-delivery test-integration-sasl test-e2e test-integration-coverage test-integration-race test-db test-db-init test-db-domain test-db-user test-db-mailbox test-db-message test-db-blob test-db-role test-db-manager test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-uid test-commands test-delivery test-parser test-parser-coverage test-sasl test-conf test-utils test-response test-storage test-models test-middleware test-selection test-core-server test-verbose test-coverage test-race clean
 
 # Build delivery service
 build-delivery:
@@ -87,6 +87,50 @@ test-response:
 # Test delivery storage
 test-storage:
 	go test -v ./internal/delivery/storage/...
+
+# ============================================================================
+# Integration Tests - Cross-Module Testing
+# ============================================================================
+
+# Run all integration tests
+test-integration:
+	@echo "Running all integration tests..."
+	@go test -v ./test/integration/...
+
+# Run database integration tests
+test-integration-db:
+	@echo "Running database integration tests..."
+	@go test -v ./test/integration/db/...
+
+# Run IMAP server integration tests
+test-integration-server:
+	@echo "Running IMAP server integration tests..."
+	@go test -v ./test/integration/server/...
+
+# Run LMTP delivery integration tests
+test-integration-delivery:
+	@echo "Running LMTP delivery integration tests..."
+	@go test -v ./test/integration/delivery/...
+
+# Run SASL authentication integration tests
+test-integration-sasl:
+	@echo "Running SASL authentication integration tests..."
+	@go test -v ./test/integration/sasl/...
+
+# Run end-to-end tests
+test-e2e:
+	@echo "Running end-to-end tests..."
+	@go test -v ./test/e2e/...
+
+# Run all integration tests with coverage
+test-integration-coverage:
+	@echo "Running integration tests with coverage..."
+	@go test -v -cover ./test/integration/...
+
+# Run integration tests with race detection
+test-integration-race:
+	@echo "Running integration tests with race detection..."
+	@go test -v -race ./test/integration/...
 
 # ============================================================================
 # Database Tests
@@ -452,6 +496,14 @@ help:
 	@echo ""
 	@echo "Testing:"
 	@echo "  test                   - Run all tests"
+	@echo "  test-integration       - Run all integration tests"
+	@echo "  test-integration-db    - Run database integration tests"
+	@echo "  test-integration-server - Run IMAP server integration tests"
+	@echo "  test-integration-delivery - Run LMTP delivery integration tests"
+	@echo "  test-integration-sasl  - Run SASL authentication integration tests"
+	@echo "  test-e2e               - Run end-to-end tests"
+	@echo "  test-integration-coverage - Run integration tests with coverage"
+	@echo "  test-integration-race  - Run integration tests with race detection"
 	@echo "  test-db                - Run all database tests"
 	@echo "  test-db-coverage       - Run database tests with coverage"
 	@echo "  test-db-init           - Run database initialization tests"
