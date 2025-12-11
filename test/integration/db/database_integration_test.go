@@ -339,7 +339,12 @@ func TestDBManagerToSharedDB_Recovery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to reopen database manager: %v", err)
 	}
-	defer dbManager2.Close()
+	defer func(dbManager2 *db.DBManager) {
+		err := dbManager2.Close()
+		if err != nil {
+
+		}
+	}(dbManager2)
 
 	// Verify we can access the same data
 	userDB2, err := dbManager2.GetUserDB(testData.UserID)

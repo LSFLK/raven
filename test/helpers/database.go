@@ -160,28 +160,6 @@ func CreateTestUser(t *testing.T, dbManager *db.DBManager, email string) TestDat
 	}
 }
 
-// GetUserMessages retrieves all message IDs for a user's INBOX
-func GetUserMessages(t *testing.T, dbManager *db.DBManager, userID int64) []int64 {
-	t.Helper()
-
-	userDB, err := dbManager.GetUserDB(userID)
-	if err != nil {
-		t.Fatalf("Failed to get user database: %v", err)
-	}
-
-	mailboxID, err := db.GetMailboxByNamePerUser(userDB, userID, "INBOX")
-	if err != nil {
-		t.Fatalf("Failed to get INBOX mailbox: %v", err)
-	}
-
-	messages, err := db.GetMessagesByMailboxPerUser(userDB, mailboxID)
-	if err != nil {
-		t.Fatalf("Failed to get messages: %v", err)
-	}
-
-	return messages
-}
-
 // CreateTestMailbox creates a mailbox for a user
 func CreateTestMailbox(t *testing.T, dbManager *db.DBManager, userID int64, mailboxName string) int64 {
 	t.Helper()

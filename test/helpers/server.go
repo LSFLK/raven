@@ -20,7 +20,6 @@ import (
 	"raven/internal/db"
 	"raven/internal/delivery/config"
 	"raven/internal/delivery/lmtp"
-	"raven/internal/sasl"
 	"raven/internal/server"
 )
 
@@ -775,27 +774,4 @@ func WaitForUnixSocket(t *testing.T, socketPath string, timeout time.Duration) {
 	}
 
 	t.Fatalf("Unix socket %s not available within %v", socketPath, timeout)
-}
-
-// SASL test utilities
-
-// CreateSASLTestServer creates a SASL server for testing with mock auth backend
-func CreateSASLTestServer(t *testing.T, domain string) (*sasl.Server, *MockAuthServer, string, func()) {
-	t.Helper()
-
-	// Setup mock auth server
-	mockAuth := SetupMockAuthServer(t)
-
-	// Create socket path
-	socketPath := GetTestSocketPath(t, "sasl-test")
-
-	// Create SASL server
-	server := sasl.NewServer(socketPath, mockAuth.URL+"/auth", domain)
-
-	cleanup := func() {
-		_ = server.Shutdown()
-		mockAuth.Close()
-	}
-
-	return server, mockAuth, socketPath, cleanup
 }
