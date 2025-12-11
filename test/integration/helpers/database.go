@@ -1,10 +1,12 @@
 package helpers
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"raven/internal/db"
 )
@@ -227,4 +229,22 @@ func parseEmail(email string) (username, domain string) {
 		}
 	}
 	return "", ""
+}
+
+// CreateTestMessage creates a simple message in the given user's database and returns its ID.
+func CreateTestMessage(t *testing.T, userDB *sql.DB, raw string) int64 {
+	t.Helper()
+	msgID, err := db.CreateMessage(userDB, raw, "", "", time.Now(), int64(len(raw)))
+	if err != nil {
+		t.Fatalf("Failed to create test message: %v", err)
+	}
+	return msgID
+}
+
+// LinkMessageToMailbox links an existing message to a mailbox, assigning next UID and flags.
+func LinkMessageToMailbox(t *testing.T, userDB *sql.DB, messageID, mailboxID int64) {
+	t.Helper()
+	if err := db.AddMessageToMailboxPerUser(userDB, messageID, mailboxID, "", time.Now()); err != nil {
+		t.Fatalf("Failed to link message %d to mailbox %d: %v", messageID, mailboxID, err)
+	}
 }
