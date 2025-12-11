@@ -1,0 +1,12 @@
+From: alice@example.com
+To: bob@example.com
+Subject: Test Email
+Date: Mon, 10 Dec 2025 10:00:00 +0000
+Message-ID: <test123@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+This is a simple test email message.
+
+It has multiple lines.
+And some simple content for testing.

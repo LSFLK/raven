@@ -1,0 +1,41 @@
+From: alice@example.com
+To: bob@example.com
+Subject: HTML Email Test
+Date: Mon, 10 Dec 2025 10:30:00 +0000
+Message-ID: <html-test@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="----=_Part_001"
+
+------=_Part_001
+Content-Type: text/plain; charset=utf-8
+
+This is the plain text version of the email.
+
+It contains simple text content for clients that don't support HTML.
+
+Best regards,
+Alice
+
+------=_Part_001
+Content-Type: text/html; charset=utf-8
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Email</title>
+</head>
+<body>
+    <h1>HTML Email Test</h1>
+    <p>This is the <strong>HTML version</strong> of the email.</p>
+    <p>It contains <em>formatted content</em> with:</p>
+    <ul>
+        <li>Bold text</li>
+        <li>Italic text</li>
+        <li>Lists</li>
+    </ul>
+    <p>Best regards,<br>
+    <a href="mailto:alice@example.com">Alice</a></p>
+</body>
+</html>
+
+------=_Part_001--

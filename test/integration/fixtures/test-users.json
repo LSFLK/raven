@@ -1,0 +1,54 @@
+{
+  "domains": [
+    {
+      "name": "example.com",
+      "users": [
+        {
+          "username": "alice",
+          "email": "alice@example.com",
+          "password": "password123",
+          "mailboxes": ["INBOX", "Sent", "Drafts", "Trash"]
+        },
+        {
+          "username": "bob",
+          "email": "bob@example.com",
+          "password": "password456",
+          "mailboxes": ["INBOX", "Sent", "Archive"]
+        }
+      ]
+    },
+    {
+      "name": "test.org",
+      "users": [
+        {
+          "username": "user1",
+          "email": "user1@test.org",
+          "password": "testpass",
+          "mailboxes": ["INBOX"]
+        },
+        {
+          "username": "admin",
+          "email": "admin@test.org",
+          "password": "adminpass",
+          "mailboxes": ["INBOX", "Sent", "Admin", "Reports"]
+        }
+      ]
+    }
+  ],
+  "test_scenarios": {
+    "basic_auth": {
+      "valid_users": ["alice@example.com", "bob@example.com"],
+      "invalid_users": ["nonexistent@example.com", "fake@nowhere.com"]
+    },
+    "mailbox_operations": {
+      "user": "alice@example.com",
+      "test_mailboxes": ["TestFolder", "Sub/Folder", "Archive/2024"]
+    },
+    "message_delivery": {
+      "from": "alice@example.com",
+      "to": ["bob@example.com", "user1@test.org"],
+      "cc": ["admin@test.org"]
+    }
+  }
+}
+

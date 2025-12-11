@@ -1,0 +1,26 @@
+From: system@example.com
+To: alice@example.com, bob@example.com
+Cc: admin@test.org
+Bcc: monitor@example.com
+Subject: Multiple Recipients Test Email
+Date: Mon, 10 Dec 2025 11:00:00 +0000
+Message-ID: <multi-recipients@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+This is a test email sent to multiple recipients.
+
+To: alice@example.com, bob@example.com
+Cc: admin@test.org
+Bcc: monitor@example.com (hidden recipient)
+
+This email is useful for testing:
+- Multiple recipient handling
+- Cc and Bcc processing
+- Message delivery to multiple mailboxes
+- LMTP multi-recipient scenarios
+
+The message content is simple but the recipient list is complex.
+
+--
+System Notification Service
