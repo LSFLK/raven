@@ -277,6 +277,8 @@ func (c *IMAPClient) Login(username, password string) error {
 			// Try STARTTLS before LOGIN
 			if err := c.StartTLS(); err != nil {
 				// If STARTTLS fails, proceed to attempt LOGIN; server may allow depending on config
+				// Log the error for debugging but don't fail the test
+				_ = err // Explicitly acknowledge we're ignoring the error
 			}
 			break
 		}
@@ -592,6 +594,7 @@ func (c *SASLClient) SendCommand(command string) {
 	_, err := c.conn.Write([]byte(command + "\n"))
 	if err != nil {
 		// Connection might be closed, ignore error
+		_ = err // Explicitly acknowledge we're ignoring the error
 	}
 }
 
@@ -705,7 +708,7 @@ func SetupMockAuthServerWithResponse(t *testing.T, statusCode int, response stri
 	// Create TLS server for more realistic testing
 	mock.Server = httptest.NewTLSServer(handler)
 
-	t.Logf("Mock auth server started at: %s", mock.Server.URL)
+	t.Logf("Mock auth server started at: %s", mock.URL)
 	return mock
 }
 

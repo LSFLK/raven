@@ -342,7 +342,8 @@ func TestDBManagerToSharedDB_Recovery(t *testing.T) {
 	defer func(dbManager2 *db.DBManager) {
 		err := dbManager2.Close()
 		if err != nil {
-
+			// Ignore close errors in defer cleanup
+			_ = err
 		}
 	}(dbManager2)
 

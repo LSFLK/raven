@@ -80,9 +80,10 @@ func (d *DockerTestEnvironment) GetServiceURL(service string, port int) string {
 	case "raven-lmtp":
 		return fmt.Sprintf("127.0.0.1:%d", 10024)
 	case "raven-full":
-		if port == 143 {
+		switch port {
+		case 143:
 			return "127.0.0.1:10143"
-		} else if port == 24 {
+		case 24:
 			return "127.0.0.1:10024"
 		}
 	}
