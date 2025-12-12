@@ -1,97 +1,56 @@
-# Test Directory Structure
+# Test Directory
 
-This directory contains all tests for the Raven email server, organized according to Go best practices.
+This directory contains integration and end-to-end tests used to validate the Raven mail server. The tests are written in Go and use real components where possible (SQLite for persistence, real LMTP/IMAP sockets). Docker is not required for the default e2e harness — tests start local servers on ephemeral ports.
 
-## Directory Structure
+## Layout (high level)
 
-```
-test/
-├── helpers/              # Shared utilities for all tests
-│   ├── database.go      # Database setup and teardown utilities
-│   ├── docker.go        # Docker environment management
-│   ├── fixtures.go      # Test data loading utilities
-│   └── server.go        # Server setup utilities (IMAP, LMTP)
-│
-├── integration/         # Integration tests (cross-module behavior)
-│   ├── db/              # Database integration tests
-│   ├── delivery/        # LMTP delivery integration tests  
-│   ├── sasl/            # SASL authentication integration tests
-│   ├── server/          # IMAP server integration tests
-│   ├── docker-compose.yml    # Docker services for integration tests
-│   └── verify-infrastructure.sh
-│
-├── e2e/                 # End-to-end system tests
-│   └── e2e_test.go      # Full workflow tests with Docker
-│
-├── fixtures/            # Shared test data
-│   ├── *.eml            # Test email files
-│   ├── *.json           # Configuration fixtures
-│   └── *.yaml           # YAML configuration files
-│
-└── README.md            # This file
-```
+- `test/helpers/` - shared helpers for tests (database setup, server helpers, LMTP/IMAP clients, fixtures)
+- `test/integration/` - focused integration tests per component
+- `test/e2e/` - end-to-end tests (LMTP → DB → IMAP flow)
+- `test/fixtures/` - sample emails and JSON/YAML fixtures
 
-## Test Categories
+## Quick commands
 
-### Unit Tests
-- Located within individual packages alongside source code
-- Test individual functions and methods in isolation
-- Run with: `go test ./internal/...`
-
-### Integration Tests (`test/integration/`)
-- Test interactions between modules and components
-- Use real databases, mock external services
-- Test specific components like DB, LMTP, SASL, IMAP
-- Run with: `go test ./test/integration/...`
-
-### End-to-End Tests (`test/e2e/`)
-- Test complete workflows with real services running in Docker
-- Validate full email pipeline from delivery to retrieval
-- Run with: `go test ./test/e2e/...`
-
-## Shared Utilities (`test/helpers/`)
-
-The helpers package provides common utilities used across all test types:
-
-- **Database helpers**: Setup/teardown test databases, create test users
-- **Docker helpers**: Manage containerized test environments  
-- **Fixture helpers**: Load test emails and configuration data
-- **Server helpers**: Start/stop test IMAP and LMTP servers
-
-## Usage Examples
-
-### Running Tests
+- Run all unit/integration tests in repository:
 
 ```bash
-# Run all tests (short mode, skips Docker tests)
-go test ./test/... -v -short
+go test ./... -v
+```
 
-# Run integration tests only
+- Run integration tests only:
+
+```bash
 go test ./test/integration/... -v
+```
 
-# Run end-to-end tests (requires Docker)
+- Run the end-to-end suite (starts local IMAP/LMTP servers, uses temporary DBs):
+
+```bash
+make test-e2e
+# or
 go test ./test/e2e/... -v
-
-# Run specific component tests
-go test ./test/integration/db/... -v
 ```
 
-### Using Helpers in Tests
+- Run a single e2e test by name:
 
-```go
-import "raven/test/helpers"
-
-func TestExample(t *testing.T) {
-    // Setup test database
-    dbManager := helpers.SetupTestDatabase(t)
-    defer helpers.TeardownTestDatabase(t, dbManager)
-    
-    // Load test fixtures
-    email := helpers.LoadSimpleEmail(t)
-    users := helpers.LoadTestUsers(t)
-    
-    // Start test servers
-    imapServer := helpers.StartTestIMAPServer(t, dbManager.DBManager)
-    defer imapServer.Stop(t)
-}
+```bash
+go test ./test/e2e -run TestE2E_LMTP_To_IMAP_ReceiveEmail -v
 ```
+
+## Helpers overview
+
+Key helpers available in `test/helpers` (examples):
+- `SetupTestDatabase(t)` / `TeardownTestDatabase(t, db)` - create and remove a temp SQLite DB manager
+- `StartTestIMAPServer(t, dbManager)` - start an IMAP server on a random port (supports STARTTLS in tests)
+- `StartTestLMTPServer(t, dbManager)` - start an LMTP server on a random port
+- `ConnectIMAP(t, addr)` / `ConnectLMTP(t, addr)` - thin protocol clients used by tests
+- `CreateTestUser(t, dbManager, email)` - convenience to create test domain/user and return ids
+- `BuildSimpleEmail(sender, recipient, subj, body)` - builds a minimal RFC-1123-style message
+
+These helpers are the authoritative source of how tests are wired together; prefer reading the helper code for exact behavior.
+
+## Best practices for working with tests
+- Tests create temporary databases under `os.MkdirTemp()` and clean them up with `TeardownTestDatabase`.
+- Tests start servers on `127.0.0.1:0` (ephemeral ports) and read back the listener address.
+- IMAP tests currently use STARTTLS (test client will upgrade the connection); the test helper sets up self-signed certs and the client uses `InsecureSkipVerify=true` for the test harness only.
+- Keep tests deterministic: prefer `env.WaitDelivery()` helper or short, bounded waits over long sleeps.

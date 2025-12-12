@@ -1,4 +1,4 @@
-name: Unit, Integration Tests
+name: CI Tests
 
 permissions:
   contents: read
@@ -204,3 +204,43 @@ jobs:
           echo "All integration tests completed!"
           echo "========================================="
 
+  # ============================================================================
+  # End-to-End Tests - Makefile Target
+  # ============================================================================
+  e2e_make:
+    name: E2E (Makefile) Tests
+    runs-on: ubuntu-latest
+    needs: integration-tests
+    timeout-minutes: 40
+    env:
+      RAVEN_E2E_CONFIG: test/e2e/config/test.yaml
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.25'
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ${{ env.GOMODCACHE }}
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - name: Install dependencies
+        run: go mod download
+      - name: Run E2E (Makefile)
+        run: |
+          # Use the project's Makefile target to run the e2e suite
+          make test-e2e
+      - name: Upload e2e artifacts (Makefile)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts-make
+          path: |
+            coverage_e2e.out
+            coverage_e2e.html
+            test/e2e/*.log

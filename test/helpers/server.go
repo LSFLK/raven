@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -350,9 +351,28 @@ func (c *IMAPClient) Fetch(sequence, items string) ([]string, error) {
 
 	// Filter FETCH responses
 	var fetches []string
-	for _, line := range responses {
+	for i := 0; i < len(responses); i++ {
+		line := responses[i]
 		if strings.HasPrefix(line, "* ") && strings.Contains(line, "FETCH") {
-			fetches = append(fetches, line)
+			// Start building a multi-line fetch block. Some servers return a literal
+			// size (e.g. {27}) on the FETCH line followed by the message body on the
+			// next line(s). Collect subsequent non-tagged lines as part of this fetch
+			// until another top-level "* " response or the tagged response appears.
+			builder := line
+			j := i + 1
+			for j < len(responses) {
+				next := responses[j]
+				// Stop collecting when we encounter another top-level response starting with "* "
+				// or a tagged response (starts with 'A' followed by digits and a space).
+				if strings.HasPrefix(next, "* ") || (len(next) > 0 && next[0] == 'A' && len(next) > 1 && next[1] >= '0' && next[1] <= '9') {
+					break
+				}
+				builder += "\n" + next
+				j++
+			}
+			fetches = append(fetches, builder)
+			// advance i to skip consumed lines
+			i = j - 1
 		}
 	}
 
@@ -787,4 +807,39 @@ func WaitForUnixSocket(t *testing.T, socketPath string, timeout time.Duration) {
 	}
 
 	t.Fatalf("Unix socket %s not available within %v", socketPath, timeout)
+}
+
+// IsOKResponse checks if a response line indicates success
+func IsOKResponse(response string) bool {
+	return strings.Contains(response, " OK ")
+}
+
+// ExtractMessageCount extracts the message count from INBOX SELECT responses
+func ExtractMessageCount(responses []string) int {
+	for _, response := range responses {
+		if strings.Contains(response, " EXISTS") {
+			parts := strings.Fields(response)
+			if len(parts) >= 2 {
+				if count, err := strconv.Atoi(parts[1]); err == nil {
+					return count
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// BuildSimpleEmail creates a simple test email message
+func BuildSimpleEmail(sender, recipient, subject, body string) string {
+	timestamp := time.Now().Format(time.RFC1123Z)
+
+	return fmt.Sprintf(`From: %s
+To: %s
+Subject: %s
+Date: %s
+Message-ID: <%d@e2e.test>
+Content-Type: text/plain; charset=UTF-8
+
+%s
+`, sender, recipient, subject, timestamp, time.Now().UnixNano(), body)
 }

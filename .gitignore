@@ -1,2 +1,5 @@
 # Ignore the trunk directory
 .trunk
+
+# Ignore .idea directory
+.idea/
