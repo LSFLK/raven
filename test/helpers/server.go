@@ -351,9 +351,28 @@ func (c *IMAPClient) Fetch(sequence, items string) ([]string, error) {
 
 	// Filter FETCH responses
 	var fetches []string
-	for _, line := range responses {
+	for i := 0; i < len(responses); i++ {
+		line := responses[i]
 		if strings.HasPrefix(line, "* ") && strings.Contains(line, "FETCH") {
-			fetches = append(fetches, line)
+			// Start building a multi-line fetch block. Some servers return a literal
+			// size (e.g. {27}) on the FETCH line followed by the message body on the
+			// next line(s). Collect subsequent non-tagged lines as part of this fetch
+			// until another top-level "* " response or the tagged response appears.
+			builder := line
+			j := i + 1
+			for j < len(responses) {
+				next := responses[j]
+				// Stop collecting when we encounter another top-level response starting with "* "
+				// or a tagged response (starts with 'A' followed by digits and a space).
+				if strings.HasPrefix(next, "* ") || (len(next) > 0 && next[0] == 'A' && len(next) > 1 && next[1] >= '0' && next[1] <= '9') {
+					break
+				}
+				builder += "\n" + next
+				j++
+			}
+			fetches = append(fetches, builder)
+			// advance i to skip consumed lines
+			i = j - 1
 		}
 	}
 
