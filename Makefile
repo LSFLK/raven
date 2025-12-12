@@ -46,7 +46,7 @@
 #   make test-commands     - Run all command tests
 #   make help              - Show all available targets
 
-.PHONY: test test-integration test-integration-db test-integration-server test-integration-delivery test-integration-sasl test-e2e test-integration-coverage test-integration-race test-db test-db-init test-db-domain test-db-user test-db-mailbox test-db-message test-db-blob test-db-role test-db-manager test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-uid test-commands test-delivery test-parser test-parser-coverage test-sasl test-conf test-utils test-response test-storage test-models test-middleware test-selection test-core-server test-verbose test-coverage test-race clean
+.PHONY: test test-integration test-integration-db test-integration-server test-integration-delivery test-integration-sasl test-e2e test-e2e-delivery test-e2e-imap test-e2e-auth test-e2e-concurrency test-e2e-persistence test-e2e-coverage test-e2e-minimal test-integration-coverage test-integration-race test-db test-db-init test-db-domain test-db-user test-db-mailbox test-db-message test-db-blob test-db-role test-db-manager test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-uid test-commands test-delivery test-parser test-parser-coverage test-sasl test-conf test-utils test-response test-storage test-models test-middleware test-selection test-core-server test-verbose test-coverage test-race clean
 
 # Build delivery service
 build-delivery:
@@ -117,10 +117,47 @@ test-integration-sasl:
 	@echo "Running SASL authentication integration tests..."
 	@go test -v ./test/integration/sasl/...
 
-# Run end-to-end tests
+# Run end-to-end tests (LMTP → DB → IMAP flow)
 test-e2e:
-	@echo "Running end-to-end tests..."
+	@echo "Running end-to-end tests (LMTP→DB→IMAP)..."
 	@go test -v ./test/e2e/...
+
+# Run core delivery flow test (most important)
+test-e2e-delivery:
+	@echo "Running E2E delivery tests..."
+	@go test -v ./test/e2e -run "TestE2E_LMTP"
+
+# Run IMAP-specific e2e tests
+test-e2e-imap:
+	@echo "Running IMAP e2e tests..."
+	@go test -v ./test/e2e -run "TestE2E_IMAP"
+
+# Run authentication e2e tests
+test-e2e-auth:
+	@echo "Running authentication e2e tests..."
+	@go test -v ./test/e2e -run "TestE2E_SASL"
+
+# Run concurrency e2e tests
+test-e2e-concurrency:
+	@echo "Running concurrency e2e tests..."
+	@go test -v ./test/e2e -run "TestE2E_Concurrent"
+
+# Run persistence e2e tests
+test-e2e-persistence:
+	@echo "Running persistence e2e tests..."
+	@go test -v ./test/e2e -run "TestE2E_ServerRestart"
+
+# Run all e2e tests with coverage
+test-e2e-coverage:
+	@echo "Running e2e tests with coverage..."
+	@go test -v -cover -coverprofile=coverage_e2e.out ./test/e2e/...
+	@go tool cover -html=coverage_e2e.out -o coverage_e2e.html
+	@echo "Coverage report: coverage_e2e.html"
+
+# Run minimal E2E suite (6 essential tests)
+test-e2e-minimal:
+	@echo "Running minimal E2E suite (6 essential tests)..."
+	@go test -v ./test/e2e -run "TestE2E_LMTP_To_IMAP_ReceiveEmail|TestE2E_SASL_Authentication|TestE2E_IMAP_UID|TestE2E_Concurrent|TestE2E_ServerRestart"
 
 # Run all integration tests with coverage
 test-integration-coverage:
@@ -501,7 +538,14 @@ help:
 	@echo "  test-integration-server - Run IMAP server integration tests"
 	@echo "  test-integration-delivery - Run LMTP delivery integration tests"
 	@echo "  test-integration-sasl  - Run SASL authentication integration tests"
-	@echo "  test-e2e               - Run end-to-end tests"
+	@echo "  test-e2e               - Run end-to-end tests (LMTP→DB→IMAP)"
+	@echo "  test-e2e-delivery      - Run delivery E2E tests"
+	@echo "  test-e2e-imap          - Run IMAP E2E tests"
+	@echo "  test-e2e-auth          - Run authentication E2E tests"
+	@echo "  test-e2e-concurrency   - Run concurrency E2E tests"
+	@echo "  test-e2e-persistence   - Run persistence E2E tests"
+	@echo "  test-e2e-coverage      - Run E2E tests with coverage"
+	@echo "  test-e2e-minimal       - Run minimal E2E suite (6 essential tests)"
 	@echo "  test-integration-coverage - Run integration tests with coverage"
 	@echo "  test-integration-race  - Run integration tests with race detection"
 	@echo "  test-db                - Run all database tests"

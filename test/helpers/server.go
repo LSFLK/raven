@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -787,4 +788,39 @@ func WaitForUnixSocket(t *testing.T, socketPath string, timeout time.Duration) {
 	}
 
 	t.Fatalf("Unix socket %s not available within %v", socketPath, timeout)
+}
+
+// IsOKResponse checks if a response line indicates success
+func IsOKResponse(response string) bool {
+	return strings.Contains(response, " OK ")
+}
+
+// ExtractMessageCount extracts the message count from INBOX SELECT responses
+func ExtractMessageCount(responses []string) int {
+	for _, response := range responses {
+		if strings.Contains(response, " EXISTS") {
+			parts := strings.Fields(response)
+			if len(parts) >= 2 {
+				if count, err := strconv.Atoi(parts[1]); err == nil {
+					return count
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// BuildSimpleEmail creates a simple test email message
+func BuildSimpleEmail(sender, recipient, subject, body string) string {
+	timestamp := time.Now().Format(time.RFC1123Z)
+
+	return fmt.Sprintf(`From: %s
+To: %s
+Subject: %s
+Date: %s
+Message-ID: <%d@e2e.test>
+Content-Type: text/plain; charset=UTF-8
+
+%s
+`, sender, recipient, subject, timestamp, time.Now().UnixNano(), body)
 }

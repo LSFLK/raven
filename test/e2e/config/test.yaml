@@ -1,0 +1,61 @@
+# E2E Test Configuration
+# This is a dedicated test configuration that ensures safe defaults for e2e testing
+# NEVER use production configuration in e2e tests
+
+# Server Configuration
+imap:
+  # Port will be auto-assigned during tests
+  listen_address: "127.0.0.1:0"
+  tls_enabled: false  # Skip TLS complexity in e2e tests
+  max_connections: 10
+  timeout: "30s"
+  idle_timeout: "60s"
+
+lmtp:
+  # Port will be auto-assigned during tests
+  listen_address: "127.0.0.1:0"
+  max_connections: 10
+  timeout: "60s"
+
+sasl:
+  # Port will be auto-assigned during tests
+  listen_address: "127.0.0.1:0"
+  mechanisms: ["PLAIN", "LOGIN"]
+  timeout: "30s"
+
+# Database Configuration for E2E Tests
+database:
+  # Always use temporary paths in tests
+  driver: "sqlite"
+  path: ""  # Will be set to t.TempDir() at runtime
+  connection_pool_size: 5
+  max_idle_connections: 2
+  max_open_connections: 10
+
+# Test Domain Configuration
+domains:
+  - name: "e2e.test"
+    enabled: true
+    max_users: 100
+    default_quota: "10MB"  # Small quota for faster tests
+
+# Logging Configuration for E2E Tests
+logging:
+  level: "debug"
+  format: "json"
+  output: "stderr"
+  enable_caller: true
+
+# Test Mode Flags
+test_mode:
+  enabled: true
+  skip_authentication: false  # Use real auth in e2e tests
+  disable_external_calls: true
+  fast_timeouts: true
+  temp_data_cleanup: true
+
+# Health Check Configuration
+health:
+  check_interval: "1s"
+  timeout: "5s"
+  retries: 30

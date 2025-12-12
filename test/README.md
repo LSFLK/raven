@@ -8,7 +8,6 @@ This directory contains all tests for the Raven email server, organized accordin
 test/
 ├── helpers/              # Shared utilities for all tests
 │   ├── database.go      # Database setup and teardown utilities
-│   ├── docker.go        # Docker environment management
 │   ├── fixtures.go      # Test data loading utilities
 │   └── server.go        # Server setup utilities (IMAP, LMTP)
 │
@@ -17,7 +16,6 @@ test/
 │   ├── delivery/        # LMTP delivery integration tests  
 │   ├── sasl/            # SASL authentication integration tests
 │   ├── server/          # IMAP server integration tests
-│   ├── docker-compose.yml    # Docker services for integration tests
 │   └── verify-infrastructure.sh
 │
 ├── e2e/                 # End-to-end system tests
@@ -45,9 +43,18 @@ test/
 - Run with: `go test ./test/integration/...`
 
 ### End-to-End Tests (`test/e2e/`)
-- Test complete workflows with real services running in Docker
-- Validate full email pipeline from delivery to retrieval
-- Run with: `go test ./test/e2e/...`
+- **Enterprise-grade testing** following industry best practices
+- Test complete workflows with **real services** (no Docker simulation)
+- **Fresh isolated environment** for each test with temporary databases
+- **Arrange → Act → Assert** pattern with proper resource cleanup
+- **Health checks and retry logic** instead of sleep-based waits
+- **Dedicated test configuration** separate from production configs
+- Run with: `make test-e2e` or `go test ./test/e2e/...`
+
+#### E2E Test Categories:
+- **IMAP Tests**: `make test-e2e-imap` - Protocol connectivity, authentication, session lifecycle
+- **Delivery Tests**: `make test-e2e-delivery` - Email delivery simulation and roundtrip testing
+- **Coverage**: `make test-e2e-coverage` - E2E tests with coverage analysis
 
 ## Shared Utilities (`test/helpers/`)
 
