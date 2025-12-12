@@ -1,334 +1,58 @@
-# E2E Test Suite - Industry Best Practices for Mail Servers
+# E2E Test Suite
 
-## Overview
+This directory contains end-to-end tests that exercise the full LMTP → DB → IMAP pipeline using the test helpers under `test/helpers`.
 
-This E2E test suite validates the complete **LMTP → Database → IMAP → SASL** message flow, following the same patterns used by professional mail servers like Dovecot, Courier, and OpenSMTPD.
+## Tests included
 
-## Architecture Under Test
+Files and primary tests:
 
-```
-[ LMTP Server ] → [ Raven DB ] → [ IMAP Server ] → [ Client ]
-                  ↑
-                SASL
-```
+- `lmtp_imap_delivery_e2e_test.go` - TestE2E_LMTP_To_IMAP_ReceiveEmail (core delivery round-trip)
+- `lmtp_delivery_advanced_e2e_test.go` - multiple recipients, large messages, invalid deliveries
+- `imap_auth_e2e_test.go` - TestE2E_SASL_Authentication (SASL/LOGIN auth behavior)
+- `imap_operations_e2e_test.go` - flags and read state tests
+- `mailbox_state_e2e_test.go` - UID/UIDVALIDITY and mailbox sequence tests
+- `concurrency_e2e_test.go` - concurrent delivery and fetch validations
+- `persistence_e2e_test.go` - server restart + persistence tests
 
-## What E2E Tests Validate
+## Running E2E tests
 
-✅ **Mail arrives through LMTP** - Message parsing and acceptance  
-✅ **Mail is stored in the database correctly** - Persistence layer  
-✅ **IMAP exposes the mail to clients** - Retrieval protocol  
-✅ **SASL authentication gates access** - Security layer  
-✅ **Mailbox state remains consistent** - UID/UIDVALIDITY/Flags  
+From repository root you can use the Makefile targets which invoke the correct `go test` commands and patterns:
 
-## Test Suite Structure
-
-### 📁 Files
-
-```
-test/e2e/
-├── helpers/
-│   └── env.go                          # E2E environment orchestration
-├── lmtp_imap_delivery_e2e_test.go     # Core delivery flow (MOST IMPORTANT)
-├── lmtp_delivery_advanced_e2e_test.go # Multi-recipient, large messages, invalid input
-├── imap_auth_e2e_test.go              # SASL authentication
-├── imap_operations_e2e_test.go        # Flags and read state
-├── mailbox_state_e2e_test.go          # UID/UIDVALIDITY/EXPUNGE
-├── concurrency_e2e_test.go            # Concurrent delivery + fetch
-└── persistence_e2e_test.go            # Server restart persistence
-```
-
-### 🧪 Test Categories
-
-#### 1️⃣ **Core Delivery Flow** (MOST CRITICAL)
-**Test**: `TestE2E_LMTP_To_IMAP_ReceiveEmail`
-
-Validates the complete end-to-end pipeline:
-- Start LMTP + IMAP + DB
-- Create user
-- Deliver message via LMTP
-- Authenticate via IMAP
-- SELECT INBOX
-- FETCH message
-- Assert headers + body + flags
-
-**What it validates**:
-- ✔ LMTP parsing
-- ✔ Delivery storage
-- ✔ IMAP exposure
-- ✔ SASL auth integration point
-- ✔ Database consistency
-
-#### 2️⃣ **Multiple Recipients**
-**Test**: `TestE2E_LMTP_Delivery_MultipleRecipients`
-
-- Deliver same message to multiple users
-- Verify each user sees message in INBOX
-- No duplicate message IDs
-- No cross-user leakage
-
-#### 3️⃣ **UID/UIDVALIDITY Correctness**
-**Test**: `TestE2E_IMAP_UID_Sequence_AndUIDValidity`
-
-- Deliver multiple emails
-- Verify UID sequence incrementing
-- Delete and EXPUNGE
-- Assert UIDs remain stable
-- Validate UIDVALIDITY consistency
-
-#### 4️⃣ **Authentication Flow**
-**Test**: `TestE2E_SASL_Authentication`
-
-- Wrong password handling
-- Correct password success
-- IMAP + LMTP authorization consistency
-
-#### 5️⃣ **IMAP Flag Operations**
-**Test**: `TestE2E_IMAP_Flags_And_ReadState`
-
-After LMTP delivery:
-- Mark message as \Seen
-- Mark message as \Flagged
-- Verify DB reflects state changes
-- Validates DB ↔ IMAP sync
-
-#### 6️⃣ **Concurrent Operations**
-**Test**: `TestE2E_ConcurrentDeliveryAndFetch`
-
-- Spawn goroutines delivering mail via LMTP
-- Simultaneously open IMAP sessions reading mail
-- Ensure no deadlocks
-- Ensure no inconsistent reads
-- Ensure no duplicate inserts
-
-#### 7️⃣ **Large Message Handling**
-**Test**: `TestE2E_LMTP_LargeMessageDelivery`
-
-- Deliver ~1MB email
-- Ensure IMAP FETCH returns correct size
-- Validates storage layer handles large writes
-
-#### 8️⃣ **Invalid Input Handling**
-**Test**: `TestE2E_LMTP_InvalidInput`
-
-Feed LMTP server:
-- Missing MAIL FROM / RCPT TO
-- Invalid DOT termination
-- Nonexistent recipients
-
-Expected: Server returns 4xx/5xx and nothing is stored
-
-#### 9️⃣ **Server Restart Persistence**
-**Test**: `TestE2E_ServerRestart_Persistence`
-
-- Deliver mail
-- Stop servers
-- Restart servers
-- IMAP must still see the mail
-- Validates database persistence
-
-## Running Tests
-
-### All E2E Tests
 ```bash
+# Run entire e2e suite
 make test-e2e
-```
 
-### By Category
-```bash
-make test-e2e-delivery      # Delivery tests
-make test-e2e-imap          # IMAP tests
-make test-e2e-auth          # Authentication tests
-make test-e2e-concurrency   # Concurrency tests
-make test-e2e-persistence   # Persistence tests
-```
+# Run the core delivery tests (fast)
+make test-e2e-delivery
 
-### Minimal Suite (6 Essential Tests - 90% Coverage)
-```bash
+# Run IMAP-specific e2e tests
+make test-e2e-imap
+
+# Run authentication e2e tests
+make test-e2e-auth
+
+# Run concurrency-focused e2e tests
+make test-e2e-concurrency
+
+# Run persistence-focused e2e tests
+make test-e2e-persistence
+
+# Minimal essential set
 make test-e2e-minimal
 ```
 
-Runs:
-1. TestE2E_LMTP_To_IMAP_ReceiveEmail
-2. TestE2E_SASL_Authentication
-3. TestE2E_IMAP_UID_Sequence_AndUIDValidity
-4. TestE2E_ConcurrentDeliveryAndFetch
-5. TestE2E_ServerRestart_Persistence
-6. TestE2E_LMTP_LargeMessageDelivery
+Or call `go test` directly:
 
-### With Coverage
 ```bash
-make test-e2e-coverage
-# Generates coverage_e2e.html
+# single test by name (most useful when iterating)
+go test ./test/e2e -run TestE2E_LMTP_To_IMAP_ReceiveEmail -v
 ```
 
-### Individual Tests
-```bash
-go test -v ./test/e2e -run TestE2E_LMTP_To_IMAP_ReceiveEmail
-go test -v ./test/e2e -run TestE2E_IMAP_Flags_And_ReadState
-```
+## Environment and config
 
-## Best Practices Implemented
+The e2e tests use a small test config under `test/e2e/config/test.yaml` which is loaded by the test harness. It uses ephemeral ports and a temporary SQLite path (set by the test code). TLS is used for IMAP STARTTLS support in tests (self-signed certs generated by the helper), and the test IMAP client accepts the test cert.
 
-### ✅ Real Dependencies (No Mocking)
-- Real SQLite database with schema
-- Real LMTP server on network socket
-- Real IMAP server with TLS support
-- Real SASL authentication flow
-- Real network protocols (TCP)
-
-### ✅ Test Isolation
-- Fresh database per test via `t.TempDir()`
-- Fresh LMTP + IMAP servers with random ports
-- Complete cleanup with `defer`
-- No test interdependencies
-
-### ✅ Deterministic Behavior
-- Small bounded waits (300ms for delivery pipeline)
-- Health checks for server readiness
-- Proper error handling and reporting
-- No flaky sleep-based synchronization
-
-### ✅ Comprehensive Validation
-- Message headers verification
-- Body content verification
-- Flag state verification
-- UID/sequence number verification
-- Database persistence verification
-- Concurrency safety verification
-
-## Environment Architecture
-
-### `test/e2e/helpers/env.go`
-
-The `Env` struct orchestrates the complete E2E environment:
-
-```go
-type Env struct {
-    DB        *helpers.TestDBManager  // Fresh SQLite database
-    IMAP      *helpers.TestIMAPServer // IMAP server on random port
-    LMTPAddr  string                  // LMTP server address
-    LMTPStop  func()                  // LMTP cleanup function
-}
-```
-
-**Methods**:
-- `Start(t)` - Starts DB + LMTP + IMAP servers
-- `Stop()` - Stops servers (keeps DB)
-- `Teardown()` - Removes database files
-- `WaitDelivery()` - Small wait for delivery pipeline (300ms)
-
-## Test Execution Flow
-
-### Typical Test Pattern (Arrange-Act-Assert)
-
-```go
-func TestE2E_ExampleFlow(t *testing.T) {
-    // Arrange
-    env := &helpers.Env{}
-    env.Start(t)
-    defer env.Stop()
-    defer env.Teardown()
-    
-    helpers.CreateTestUser(t, env.DB.DBManager, "user@example.com")
-    
-    // Act
-    // 1. Deliver via LMTP
-    lc := helpers.ConnectLMTP(t, env.LMTPAddr)
-    defer lc.Close()
-    lc.LHLO("mx")
-    lc.MAILFROM("sender@ext.com")
-    lc.RCPTTO("user@example.com")
-    lc.DATA([]byte(emailMessage))
-    
-    env.WaitDelivery()
-    
-    // 2. Retrieve via IMAP
-    ic := helpers.ConnectIMAP(t, env.IMAP.Address)
-    defer ic.Close()
-    ic.Login("user@example.com", "password123")
-    ic.Select("INBOX")
-    responses := ic.Fetch("1", "ENVELOPE")
-    
-    // Assert
-    // Verify message was delivered correctly
-    assertMessagePresent(t, responses)
-}
-```
-
-## Integration with Existing Helpers
-
-Reuses battle-tested helpers from `test/helpers/`:
-- `StartTestIMAPServer()` - IMAP server setup
-- `StartTestLMTPServer()` - LMTP server setup
-- `SetupTestDatabase()` - Database initialization
-- `CreateTestUser()` - User creation
-- `BuildSimpleEmail()` - Email message builder
-- `ConnectIMAP()` - IMAP client
-- `ConnectLMTP()` - LMTP client
-
-## Why This Matters
-
-### Industry Standard Pattern
-This test structure follows the same patterns used by:
-- **Dovecot** - Leading IMAP/POP3 server
-- **Courier** - Mail server suite
-- **OpenSMTPD** - Secure mail transfer agent
-
-### Real-World Validation
-- Tests validate actual message flow through all layers
-- Catches integration bugs that unit tests miss
-- Validates database schema correctness
-- Ensures protocol compliance (RFC compliance)
-- Verifies concurrent access safety
-
-### Production Confidence
-- If E2E tests pass, the complete mail pipeline works
-- No mocks means real component interaction
-- Database persistence validated
-- Network protocol correctness verified
-- Authentication flow validated
-
-## Future Enhancements
-
-### Planned Tests
-- Mailbox creation and MOVE operations
-- Multiple mailbox management
-- APPEND command validation
-- SEARCH command correctness
-- IDLE/NOTIFY support
-- Quota enforcement
-
-### Planned Improvements
-- UID/UIDVALIDITY response parsing helpers
-- FLAGS response parsing helpers
-- ENVELOPE response parsing helpers
-- Body structure validation
-- MIME multipart handling validation
-
-## Troubleshooting
-
-### Tests Fail with "Connection Refused"
-- Servers didn't start properly
-- Check `WaitDelivery()` timing
-- Increase timeout if on slow hardware
-
-### Tests Fail with "Message Not Found"
-- LMTP delivery didn't complete
-- Check delivery logs
-- Verify user exists in database
-- Check LMTP allowed_domains configuration
-
-### Tests Fail with Authentication Errors
-- SASL integration point may need adjustment
-- Check auth server mock configuration
-- Verify user credentials
-
-## Success Criteria
-
-✅ All 9 E2E tests pass  
-✅ No flaky tests (deterministic behavior)  
-✅ Tests complete in < 30 seconds  
-✅ No resource leaks (all connections closed)  
-✅ Database files cleaned up  
-
-**Status**: Complete implementation following industry best practices
+## Helpful tips
+- When a test fails, check logs printed by the relevant helper (LMTP/IMAP delivery logs are printed to stderr).  The e2e harness prints the ephemeral ports in the test log to help reproduce the failing run.
+- Use `env.WaitDelivery()` (in the e2e helper) to wait deterministically for the delivery pipeline instead of arbitrary long sleeps.
+- Tests are intended to be deterministic: if you see flakiness, increase local timeouts temporarily and inspect logs.

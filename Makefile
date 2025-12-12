@@ -159,43 +159,6 @@ test-e2e-minimal:
 	@echo "Running minimal E2E suite (6 essential tests)..."
 	@go test -v ./test/e2e -run "TestE2E_LMTP_To_IMAP_ReceiveEmail|TestE2E_SASL_Authentication|TestE2E_IMAP_UID|TestE2E_Concurrent|TestE2E_ServerRestart"
 
-# Run all integration tests with coverage
-test-integration-coverage:
-	@echo "Running integration tests with coverage..."
-	@go test -v -cover ./test/integration/...
-
-# Run integration tests with race detection
-test-integration-race:
-	@echo "Running integration tests with race detection..."
-	@go test -v -race ./test/integration/...
-
-# ============================================================================
-# Database Tests
-# ============================================================================
-
-# Run all database tests
-test-db:
-	go test -v ./internal/db/...
-
-# Run database tests with coverage
-test-db-coverage:
-	go test -v -cover ./internal/db/...
-
-# Run database initialization tests
-test-db-init:
-	go test -v ./internal/db -run "TestInitDB|TestNewDBManager"
-
-# Run domain management tests
-test-db-domain:
-	go test -v ./internal/db -run "TestCreateDomain|TestGetDomainByName|TestGetOrCreateDomain"
-
-# Run user management tests
-test-db-user:
-	go test -v ./internal/db -run "TestCreateUser|TestGetUser|TestUserExists"
-
-# Run mailbox operations tests
-test-db-mailbox:
-	go test -v ./internal/db -run "TestCreateMailbox|TestGetMailbox|TestDeleteMailbox|TestRenameMailbox|TestMailboxExists"
 
 # Run message management tests
 test-db-message:
@@ -538,14 +501,11 @@ help:
 	@echo "  test-integration-server - Run IMAP server integration tests"
 	@echo "  test-integration-delivery - Run LMTP delivery integration tests"
 	@echo "  test-integration-sasl  - Run SASL authentication integration tests"
-	@echo "  test-e2e               - Run end-to-end tests (LMTP→DB→IMAP)"
-	@echo "  test-e2e-delivery      - Run delivery E2E tests"
-	@echo "  test-e2e-imap          - Run IMAP E2E tests"
-	@echo "  test-e2e-auth          - Run authentication E2E tests"
-	@echo "  test-e2e-concurrency   - Run concurrency E2E tests"
-	@echo "  test-e2e-persistence   - Run persistence E2E tests"
-	@echo "  test-e2e-coverage      - Run E2E tests with coverage"
-	@echo "  test-e2e-minimal       - Run minimal E2E suite (6 essential tests)"
+	@echo "  test-e2e               - Run end-to-end tests"
+	@echo "  test-e2e-imap          - Run IMAP e2e tests specifically"
+	@echo "  test-e2e-delivery      - Run delivery e2e tests specifically"
+	@echo "  test-e2e-coverage      - Run e2e tests with coverage"
+	@echo "  test-e2e-race          - Run e2e tests with race detection"
 	@echo "  test-integration-coverage - Run integration tests with coverage"
 	@echo "  test-integration-race  - Run integration tests with race detection"
 	@echo "  test-db                - Run all database tests"
@@ -578,14 +538,14 @@ help:
 	@echo "  test-check             - Run CHECK command tests only"
 	@echo "  test-close             - Run CLOSE command tests only"
 	@echo "  test-expunge           - Run EXPUNGE command tests only"
-	@echo "  test-logout            - Run LOGOUT command tests only"
-	@echo "  test-append            - Run APPEND command tests only"
-	@echo "  test-authenticate      - Run AUTHENTICATE command tests only"
-	@echo "  test-auth-coverage     - Run auth tests with coverage report"
-	@echo "  test-login             - Run LOGIN command tests only"
-	@echo "  test-starttls          - Run STARTTLS command tests only"
-	@echo "  test-select            - Run SELECT command tests only"
-	@echo "  test-examine           - Run EXAMINE command tests only"
+	@echo "  test-e2e               - Run end-to-end tests (LMTP→DB→IMAP)"
+	@echo "  test-e2e-delivery      - Run delivery E2E tests"
+	@echo "  test-e2e-imap          - Run IMAP E2E tests"
+	@echo "  test-e2e-auth          - Run authentication E2E tests"
+	@echo "  test-e2e-concurrency   - Run concurrency E2E tests"
+	@echo "  test-e2e-persistence   - Run persistence E2E tests"
+	@echo "  test-e2e-coverage      - Run E2E tests with coverage"
+	@echo "  test-e2e-minimal       - Run minimal E2E suite (6 essential tests)"
 	@echo "  test-create            - Run CREATE command tests only"
 	@echo "  test-list              - Run LIST command tests only"
 	@echo "  test-list-extended     - Run LIST extended tests (RFC3501, wildcards, hierarchy, etc.)"
