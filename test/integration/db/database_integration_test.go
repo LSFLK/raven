@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"raven/internal/db"
-	"raven/test/integration/helpers"
+	"raven/test/helpers"
 )
 
 // TestDBManagerToSharedDB_SuccessFlow tests database manager with real file system
@@ -339,7 +339,13 @@ func TestDBManagerToSharedDB_Recovery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to reopen database manager: %v", err)
 	}
-	defer dbManager2.Close()
+	defer func(dbManager2 *db.DBManager) {
+		err := dbManager2.Close()
+		if err != nil {
+			// Ignore close errors in defer cleanup
+			_ = err
+		}
+	}(dbManager2)
 
 	// Verify we can access the same data
 	userDB2, err := dbManager2.GetUserDB(testData.UserID)

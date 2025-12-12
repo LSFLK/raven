@@ -8,7 +8,7 @@ import (
 	"raven/internal/db"
 	"raven/internal/delivery/config"
 	"raven/internal/delivery/lmtp"
-	"raven/test/integration/helpers"
+	"raven/test/helpers"
 )
 
 // LMTP integration: 6 scenarios focusing on cross-module behavior
@@ -239,7 +239,7 @@ func TestLMTP_DataConsistency(t *testing.T) {
 	t.Log("✓ Flag consistency verified successfully")
 }
 
-// TestLMTP_ShutdownRecovery ensures server can shutdown and restart cleanly
+// TestLMTP_ShutdownRecovery ensures server can shut down and restart cleanly
 func TestLMTP_ShutdownRecovery(t *testing.T) {
 	dbm := helpers.SetupTestDatabase(t)
 	defer helpers.TeardownTestDatabase(t, dbm)

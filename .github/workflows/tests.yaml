@@ -1,4 +1,4 @@
-name: Unit Tests
+name: Unit, Integration Tests
 
 permissions:
   contents: read
@@ -146,3 +146,61 @@ jobs:
           echo "========================================="
           echo "All unit tests completed!"
           echo "========================================="
+
+  # ============================================================================
+  # Integration Tests - Cross-Module Testing
+  # ============================================================================
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests  # Run integration tests after unit tests pass
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+
+      - name: Install dependencies
+        run: make deps
+
+      # Database Integration Tests
+      - name: Test Database Integration
+        run: |
+          echo "::group::Database Integration Tests"
+          make test-integration-db
+          echo "::endgroup::"
+
+      # IMAP Server Integration Tests
+      - name: Test IMAP Server Integration
+        run: |
+          echo "::group::IMAP Server Integration Tests"
+          make test-integration-server
+          echo "::endgroup::"
+
+      # LMTP Delivery Integration Tests
+      - name: Test LMTP Delivery Integration
+        run: |
+          echo "::group::LMTP Delivery Integration Tests"
+          make test-integration-delivery
+          echo "::endgroup::"
+
+      # SASL Authentication Integration Tests
+      - name: Test SASL Authentication Integration
+        run: |
+          echo "::group::SASL Authentication Integration Tests"
+          make test-integration-sasl
+          echo "::endgroup::"
+
+      # Integration Test Summary
+      - name: Integration Test Summary
+        if: always()
+        run: |
+          echo "========================================="
+          echo "All integration tests completed!"
+          echo "========================================="
+

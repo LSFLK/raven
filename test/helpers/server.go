@@ -20,7 +20,6 @@ import (
 	"raven/internal/db"
 	"raven/internal/delivery/config"
 	"raven/internal/delivery/lmtp"
-	"raven/internal/sasl"
 	"raven/internal/server"
 )
 
@@ -62,6 +61,7 @@ func StartTestIMAPServer(t *testing.T, dbManager *db.DBManager) *TestIMAPServer 
 
 	// Create TLS config for auth server using the same test certs
 	authTLSConfig := &tls.Config{
+		MinVersion: tls.VersionTLS12, // Set minimum TLS version to 1.2 for security
 		Certificates: []tls.Certificate{{
 			Certificate: [][]byte{},
 			PrivateKey:  nil,
@@ -75,9 +75,13 @@ func StartTestIMAPServer(t *testing.T, dbManager *db.DBManager) *TestIMAPServer 
 	authTLSConfig.Certificates = []tls.Certificate{authCert}
 
 	authSrv := &http.Server{
-		Addr:      "127.0.0.1:0",
-		Handler:   authMux,
-		TLSConfig: authTLSConfig,
+		Addr:              "127.0.0.1:0",
+		Handler:           authMux,
+		TLSConfig:         authTLSConfig,
+		ReadHeaderTimeout: 10 * time.Second, // Prevent Slowloris attacks
+		ReadTimeout:       30 * time.Second, // Limit read time
+		WriteTimeout:      30 * time.Second, // Limit write time
+		IdleTimeout:       60 * time.Second, // Close idle connections
 	}
 
 	// Listen on random port for auth server
@@ -93,10 +97,10 @@ func StartTestIMAPServer(t *testing.T, dbManager *db.DBManager) *TestIMAPServer 
 
 	// Write temporary config pointing to stub auth server
 	cfgDir := filepath.Join("config")
-	_ = os.MkdirAll(cfgDir, 0o755)
+	_ = os.MkdirAll(cfgDir, 0o750) // More restrictive directory permissions
 	cfgPath := filepath.Join(cfgDir, "raven.yaml")
 	cfgContent := []byte("domain: localhost\nauth_server_url: " + authURL + "\n")
-	if err := os.WriteFile(cfgPath, cfgContent, 0o644); err != nil {
+	if err := os.WriteFile(cfgPath, cfgContent, 0o600); err != nil { // More restrictive file permissions
 		t.Fatalf("Failed to write test config: %v", err)
 	}
 
@@ -221,7 +225,12 @@ func (c *IMAPClient) StartTLS() error {
 	}
 
 	// Wrap existing connection with TLS
-	tlsConn := tls.Client(c.conn, &tls.Config{InsecureSkipVerify: true})
+	tlsConfig := &tls.Config{
+		MinVersion:         tls.VersionTLS12, // Set minimum TLS version
+		InsecureSkipVerify: true,             // #nosec G402 - Only for test environment, NOT for production
+		ServerName:         "localhost",      // Set expected server name
+	}
+	tlsConn := tls.Client(c.conn, tlsConfig)
 	if err := tlsConn.Handshake(); err != nil {
 		return fmt.Errorf("TLS handshake failed: %v", err)
 	}
@@ -278,6 +287,8 @@ func (c *IMAPClient) Login(username, password string) error {
 			// Try STARTTLS before LOGIN
 			if err := c.StartTLS(); err != nil {
 				// If STARTTLS fails, proceed to attempt LOGIN; server may allow depending on config
+				// Log the error for debugging but don't fail the test
+				_ = err // Explicitly acknowledge we're ignoring the error
 			}
 			break
 		}
@@ -593,6 +604,7 @@ func (c *SASLClient) SendCommand(command string) {
 	_, err := c.conn.Write([]byte(command + "\n"))
 	if err != nil {
 		// Connection might be closed, ignore error
+		_ = err // Explicitly acknowledge we're ignoring the error
 	}
 }
 
@@ -706,7 +718,7 @@ func SetupMockAuthServerWithResponse(t *testing.T, statusCode int, response stri
 	// Create TLS server for more realistic testing
 	mock.Server = httptest.NewTLSServer(handler)
 
-	t.Logf("Mock auth server started at: %s", mock.Server.URL)
+	t.Logf("Mock auth server started at: %s", mock.URL)
 	return mock
 }
 
@@ -775,27 +787,4 @@ func WaitForUnixSocket(t *testing.T, socketPath string, timeout time.Duration) {
 	}
 
 	t.Fatalf("Unix socket %s not available within %v", socketPath, timeout)
-}
-
-// SASL test utilities
-
-// CreateSASLTestServer creates a SASL server for testing with mock auth backend
-func CreateSASLTestServer(t *testing.T, domain string) (*sasl.Server, *MockAuthServer, string, func()) {
-	t.Helper()
-
-	// Setup mock auth server
-	mockAuth := SetupMockAuthServer(t)
-
-	// Create socket path
-	socketPath := GetTestSocketPath(t, "sasl-test")
-
-	// Create SASL server
-	server := sasl.NewServer(socketPath, mockAuth.URL+"/auth", domain)
-
-	cleanup := func() {
-		_ = server.Shutdown()
-		mockAuth.Close()
-	}
-
-	return server, mockAuth, socketPath, cleanup
 }

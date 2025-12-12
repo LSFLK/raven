@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"raven/test/integration/helpers"
+	"raven/test/helpers"
 )
 
 // TestIMAPServerToClient_SuccessFlow tests basic IMAP server connection

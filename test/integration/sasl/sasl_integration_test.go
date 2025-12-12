@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"raven/internal/sasl"
-	"raven/test/integration/helpers"
+	"raven/test/helpers"
 )
 
 // TestSASLAuthenticationFlow tests the complete SASL authentication flow
