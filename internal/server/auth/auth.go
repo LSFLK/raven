@@ -324,6 +324,19 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 			return
 		}
 
+		// Check if user's password has been initialized (user must change admin-provisioned password)
+		initialized, err := db.IsPasswordInitialized(deps.GetDBManager().GetSharedDB(), userID)
+		if err != nil {
+			log.Printf("Failed to read password_initialized for user %d: %v", userID, err)
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Server error", tag))
+			return
+		}
+		if !initialized {
+			// Reject login — instruct user that they must initialize their password first
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Password must be initialized. Please set your password before logging in.", tag))
+			return
+		}
+
 		state.Authenticated = true
 		state.Username = actualUsername
 		state.UserID = userID

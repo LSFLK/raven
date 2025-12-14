@@ -100,8 +100,8 @@ func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder s
 		log.Printf("Delivering to role mailbox: %s (ID: %d)", recipient, roleMailboxID)
 	} else {
 		// Not a role mailbox - deliver to regular user mailbox
-		// Get or create user
-		userID, err := db.GetOrCreateUser(sharedDB, username, domainID)
+		// Get or create user (ensure password_initialized = true for delivery-created users)
+		userID, err := db.GetOrCreateUserInitialized(sharedDB, username, domainID)
 		if err != nil {
 			return fmt.Errorf("failed to get/create user: %w", err)
 		}
