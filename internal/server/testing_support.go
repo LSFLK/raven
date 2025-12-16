@@ -46,7 +46,7 @@ func NewMockConn() *MockConn {
 func (m *MockConn) Read(b []byte) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	if m.readPos >= len(m.readBuffer) {
 		return 0, net.ErrClosed
 	}
@@ -58,7 +58,7 @@ func (m *MockConn) Read(b []byte) (int, error) {
 func (m *MockConn) Write(b []byte) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.writeBuffer = append(m.writeBuffer, b...)
 	return len(b), nil
 }
@@ -66,7 +66,7 @@ func (m *MockConn) Write(b []byte) (int, error) {
 func (m *MockConn) Close() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.closed = true
 	return nil
 }
@@ -80,21 +80,21 @@ func (m *MockConn) SetWriteDeadline(t time.Time) error { return nil }
 func (m *MockConn) GetWrittenData() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	return string(m.writeBuffer)
 }
 
 func (m *MockConn) ClearWriteBuffer() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.writeBuffer = m.writeBuffer[:0]
 }
 
 func (m *MockConn) AddReadData(data string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.readBuffer = append(m.readBuffer, []byte(data)...)
 }
 
@@ -102,7 +102,7 @@ func (m *MockConn) AddReadData(data string) {
 func (m *MockConn) Reset() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.readBuffer = m.readBuffer[:0]
 	m.writeBuffer = m.writeBuffer[:0]
 	m.readPos = 0
@@ -206,7 +206,7 @@ func CreateTestUser(t *testing.T, database interface{}, username string) (userID
 	// Handle both *sql.DB (old tests with shared DB) and *db.DBManager (new per-user DB architecture)
 	var sharedDB *sql.DB
 	var dbManager *db.DBManager
-	
+
 	switch v := database.(type) {
 	case *sql.DB:
 		sharedDB = v
@@ -231,7 +231,12 @@ func CreateTestUser(t *testing.T, database interface{}, username string) (userID
 	}
 
 	// Create user in shared database
-	userID, err = db.GetOrCreateUser(sharedDB, username, domainID)
+	// If we have a DBManager (newer flow), create the user with password initialized
+	if dbManager != nil {
+		userID, err = db.GetOrCreateUserInitialized(sharedDB, username, domainID)
+	} else {
+		userID, err = db.GetOrCreateUser(sharedDB, username, domainID)
+	}
 	if err != nil {
 		t.Fatalf("Failed to create user %s: %v", username, err)
 	}
@@ -276,7 +281,7 @@ func InsertTestMail(t *testing.T, database interface{}, username, subject, sende
 	var sharedDB *sql.DB
 	var userDB *sql.DB
 	var dbManager *db.DBManager
-	
+
 	switch v := database.(type) {
 	case *sql.DB:
 		sharedDB = v
@@ -372,14 +377,14 @@ func InsertTestMail(t *testing.T, database interface{}, username, subject, sende
 
 // TestConn is a bidirectional pipe connection for testing
 type TestConn struct {
-	reader       *io.PipeReader
-	writer       *io.PipeWriter
-	localReader  *io.PipeReader
-	localWriter  *io.PipeWriter
-	closed       bool
-	mu           sync.Mutex
-	isTLS        bool
-	readTimeout  bool
+	reader      *io.PipeReader
+	writer      *io.PipeWriter
+	localReader *io.PipeReader
+	localWriter *io.PipeWriter
+	closed      bool
+	mu          sync.Mutex
+	isTLS       bool
+	readTimeout bool
 }
 
 // NewTestConn creates a new bidirectional test connection
@@ -594,7 +599,7 @@ func CreateMailbox(t *testing.T, database interface{}, username, mailboxName str
 	// Handle both *sql.DB and *db.DBManager
 	var sharedDB *sql.DB
 	var dbManager *db.DBManager
-	
+
 	switch v := database.(type) {
 	case *sql.DB:
 		sharedDB = v
@@ -604,7 +609,7 @@ func CreateMailbox(t *testing.T, database interface{}, username, mailboxName str
 	default:
 		t.Fatalf("CreateMailbox: unsupported database type: %T", database)
 	}
-	
+
 	domain := "localhost"
 	if strings.Contains(username, "@") {
 		parts := strings.Split(username, "@")
@@ -683,7 +688,7 @@ func SubscribeToMailbox(t *testing.T, database interface{}, username, mailboxNam
 	} else {
 		err = db.SubscribeToMailbox(userDB, userID, mailboxName)
 	}
-	
+
 	if err != nil {
 		t.Fatalf("Failed to subscribe to mailbox %s for user %s: %v", mailboxName, username, err)
 	}
@@ -715,7 +720,7 @@ func GetUserID(t *testing.T, database *sql.DB, username string) int64 {
 func SetupAuthenticatedState(t *testing.T, server *TestInterface, username string) *models.ClientState {
 	dbManager := server.GetDBManager().(*db.DBManager)
 	sharedDB := dbManager.GetSharedDB()
-	
+
 	// Parse username and domain
 	domain := "localhost"
 	if strings.Contains(username, "@") {
@@ -754,7 +759,7 @@ func GetDBManager(t *testing.T, srv interface{}) *db.DBManager {
 	type dbManagerGetter interface {
 		GetDBManager() interface{}
 	}
-	
+
 	if getter, ok := srv.(dbManagerGetter); ok {
 		return getter.GetDBManager().(*db.DBManager)
 	}
@@ -784,7 +789,7 @@ func GetDatabaseFromServer(srv interface{}) *db.DBManager {
 	type dbGetter interface {
 		GetDB() interface{}
 	}
-	
+
 	if getter, ok := srv.(dbGetter); ok {
 		if dbMgr, ok := getter.GetDB().(*db.DBManager); ok {
 			return dbMgr
