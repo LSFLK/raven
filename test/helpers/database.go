@@ -92,6 +92,11 @@ func SeedTestData(t *testing.T, dbManager *db.DBManager) TestData {
 		t.Fatalf("Failed to create test user: %v", err)
 	}
 
+	// Ensure password is initialized for test users so integration/login flows succeed
+	if err := db.SetPasswordInitialized(sharedDB, userID, true); err != nil {
+		t.Fatalf("Failed to set password_initialized for test user: %v", err)
+	}
+
 	// Get user database
 	userDB, err := dbManager.GetUserDB(userID)
 	if err != nil {
@@ -132,8 +137,8 @@ func CreateTestUser(t *testing.T, dbManager *db.DBManager, email string) TestDat
 		t.Fatalf("Failed to create/get domain %s: %v", domain, err)
 	}
 
-	// Create or get user
-	userID, err := db.GetOrCreateUser(sharedDB, username, domainID)
+	// Create or get user — use GetOrCreateUserInitialized so the user is marked initialized
+	userID, err := db.GetOrCreateUserInitialized(sharedDB, username, domainID)
 	if err != nil {
 		t.Fatalf("Failed to create/get user %s: %v", username, err)
 	}

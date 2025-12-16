@@ -59,7 +59,11 @@ func (s *IMAPServer) EnsureUserAndMailboxes(username string, domain string) (int
 	}
 
 	// Get or create user
-	userID, err := db.GetOrCreateUser(sharedDB, username, domainID)
+	// Use GetOrCreateUserInitialized so that users created as part of automated flows
+	// (for example, login via external auth or delivery-created users) are marked
+	// as having initialized their password. Admin-provisioned users created via
+	// CreateUser() will remain password_initialized = false by default.
+	userID, err := db.GetOrCreateUserInitialized(sharedDB, username, domainID)
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to get/create user: %v", err)
 	}
