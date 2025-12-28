@@ -7,6 +7,16 @@
 ![Security Scan](https://img.shields.io/github/actions/workflow/status/LSFLK/raven/linters.yaml?label=security)
 ![Last Commit](https://img.shields.io/github/last-commit/LSFLK/raven)
 
+<p align="center">
+  •   <a href="#why-raven">Why Raven?</a> •
+  <a href="#architecture">Architecture</a> •
+  <a href="#getting-started">Getting Started</a> •
+  <a href="#contributing">Contributing</a> •
+  <a href="#license">License</a> •
+</p>
+
+## Why Raven?
+
 Raven was built to overcome the limitations of traditional Mail Delivery Agents with outdated and complex architectures. 
 Instead of relying on legacy file-based storage, Raven adopts a per-user SQLite database model and separates attachments 
 into a dedicated storage system. This design significantly improves performance, scalability, backup reliability, and 
@@ -34,7 +44,7 @@ Raven consists of three services:
 
 All services use a **multi-database SQLite architecture** for efficient data isolation and scalability.
 
-## Quick Start
+## Getting Started
 
 ### Option 1: Pull from GitHub Container Registry (Recommended)
 
@@ -80,7 +90,7 @@ Connect using any IMAP client to start managing your emails.
 
 ---
 
-## 📂 Required Volume Mounts
+### 📂 Required Volume Mounts
 
 | Volume | Path | Description |
 |--------|------|-------------|
@@ -91,7 +101,7 @@ Connect using any IMAP client to start managing your emails.
 
 ---
 
-## 🔐 Certificate Requirements
+### 🔐 Certificate Requirements
 
 Your `/certs` directory must contain:
 - `fullchain.pem` - Full certificate chain
@@ -99,7 +109,7 @@ Your `/certs` directory must contain:
 
 These certificates are required for secure connections on port 993 and STARTTLS functionality.
 
-## ⚙️ Configuration File
+### ⚙️ Configuration File
 
 Raven requires a configuration file named `raven.yaml` located in `/etc/raven` inside the Docker container.
 
@@ -109,15 +119,23 @@ domain: <domain name>
 auth_server_url: <auth url>
 ```
 
-## Fields
+### Fields
 
 | Key | Description |
 |-----|-------------|
 | `domain` | The mail domain used in the mail system. |
 | `auth_server_url` | The authentication API endpoint used to validate user credentials. |
 
-## Delivery Service (`delivery.yaml`)
+### Delivery Service (`delivery.yaml`)
 
 The delivery service requires a separate configuration file named `delivery.yaml`.
 You can see the [example delivery.yaml](../config/delivery.yaml) for reference.
+
+## Contributing
+
+Thank you for wanting to contribute to our project. Please see [CONTRIBUTING.md](https://github.com/LSFLK/raven/blob/main/docs/CONTRIBUTING.md) for more details.
+
+## License
+
+Distributed under the Apache 2.0 License. See [LICENSE](https://github.com/LSFLK/raven/blob/main/LICENSE) for more information.
 
