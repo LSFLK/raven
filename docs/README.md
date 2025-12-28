@@ -1,6 +1,17 @@
-# Raven Mail Server
+# Raven
 
-A lightweight IMAP, LMTP and SASL mail server implementation in Go with SQLite storage.
+**_A lightweight Mail Delivery Agent written in Go, providing IMAP, LMTP, and SASL support with SQLite-based storage._**
+
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
+![CI](https://img.shields.io/github/actions/workflow/status/LSFLK/raven/release.yaml)
+![Security Scan](https://img.shields.io/github/actions/workflow/status/LSFLK/raven/linters.yaml?label=security)
+![Last Commit](https://img.shields.io/github/last-commit/LSFLK/raven)
+
+Raven was built to overcome the limitations of traditional Mail Delivery Agents with outdated and complex architectures. 
+Instead of relying on legacy file-based storage, Raven adopts a per-user SQLite database model and separates attachments 
+into a dedicated storage system. This design significantly improves performance, scalability, backup reliability, and 
+long-term maintainability—making Raven a modern, efficient solution for email delivery and management. With more modern 
+email features on the way, stay tuned for updates!!!
 
 ## Architecture
 
@@ -109,3 +120,4 @@ auth_server_url: <auth url>
 
 The delivery service requires a separate configuration file named `delivery.yaml`.
 You can see the [example delivery.yaml](../config/delivery.yaml) for reference.
+
