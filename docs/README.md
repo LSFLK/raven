@@ -1,4 +1,6 @@
-# Raven
+<h1 align="center">Raven - Mail Delivery Agent</h1>
+
+![img.png](images/logo.png)
 
 **_A lightweight Mail Delivery Agent written in Go, providing IMAP, LMTP, and SASL support with SQLite-based storage._**
 
