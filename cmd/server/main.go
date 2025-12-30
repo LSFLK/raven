@@ -14,7 +14,7 @@ const SERVER_IP_SSL = "0.0.0.0:993"
 
 func main() {
 	// Command-line flags
-	dbPath := flag.String("db", "data", "Path to database directory")
+	dbPath := flag.String("db", "/app/data/databases", "Path to database directory")
 	flag.Parse()
 
 	log.Println("Starting SQLite IMAP server (no-auth mode)...")
