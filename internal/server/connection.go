@@ -17,11 +17,6 @@ import (
 	"raven/internal/server/uid"
 )
 
-// HandleClient handles IMAP client connections (exported for auth package)
-func HandleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
-	handleClient(s, conn, state)
-}
-
 func handleClient(s *IMAPServer, conn net.Conn, state *models.ClientState) {
 	// Use buffered reader to properly handle command lines and literal data
 	reader := bufio.NewReader(conn)
@@ -139,8 +134,8 @@ func (s *IMAPServer) sanitizeResponseForLogging(response string) string {
 	// Check for FETCH responses that contain message bodies
 	// This includes BODY[], BODY[HEADER], BODY[TEXT], RFC822, etc.
 	if strings.Contains(response, "FETCH (") &&
-	   (strings.Contains(response, "BODY") ||
-	    strings.Contains(response, "RFC822")) {
+		(strings.Contains(response, "BODY") ||
+			strings.Contains(response, "RFC822")) {
 
 		// Find the literal string marker {number}
 		idx := strings.Index(response, "{")
