@@ -17,7 +17,7 @@ func main() {
 	dbPath := flag.String("db", "/app/data/databases", "Path to database directory")
 	flag.Parse()
 
-	log.Println("Starting SQLite IMAP server (no-auth mode)...")
+	log.Println("Starting Raven SQLite IMAP server...")
 
 	// Initialize database manager
 	dbManager, err := db.NewDBManager(*dbPath)
@@ -46,13 +46,10 @@ func main() {
 			}
 		}()
 
-		log.Printf("SQLite IMAP server running on %s", SERVER_IP)
+		log.Printf("Raven SQLite IMAP server running on %s", SERVER_IP)
 		log.Println("Configure your email client with:")
 		log.Println("  Server: localhost (or container IP)")
 		log.Println("  Port: 143")
-		log.Println("  Security: None")
-		log.Println("  Username: anything")
-		log.Println("  Password: anything")
 
 		for {
 			conn, err := ln.Accept()
@@ -77,13 +74,11 @@ func main() {
 		}
 	}()
 
-	log.Printf("SQLite IMAPS server running on %s", SERVER_IP_SSL)
+	log.Printf("Raven SQLite IMAPS server running on %s", SERVER_IP_SSL)
 	log.Println("Configure your email client with:")
 	log.Println("  Server: localhost (or container IP)")
 	log.Println("  Port: 993")
 	log.Println("  Security: SSL/TLS")
-	log.Println("  Username: anything")
-	log.Println("  Password: anything")
 
 	for {
 		conn, err := lnSSL.Accept()
