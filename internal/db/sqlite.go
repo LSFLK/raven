@@ -286,17 +286,6 @@ func createMessagePartsTable(db *sql.DB) error {
 		return err
 	}
 
-	// Migration: Add content_id column if it doesn't exist (for existing databases)
-	// Check if column exists
-	var columnExists bool
-	row := db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('message_parts') WHERE name='content_id'")
-	if err := row.Scan(&columnExists); err == nil && !columnExists {
-		_, err = db.Exec("ALTER TABLE message_parts ADD COLUMN content_id TEXT")
-		if err != nil {
-			return fmt.Errorf("failed to add content_id column: %v", err)
-		}
-	}
-
 	return nil
 }
 
