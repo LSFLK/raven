@@ -12,11 +12,11 @@ import (
 
 // DBManager manages database connections for shared and per-user databases
 type DBManager struct {
-	basePath      string
-	sharedDB      *sql.DB
-	userDBCache   map[int64]*sql.DB
-	roleDBCache   map[int64]*sql.DB
-	cacheMutex    sync.RWMutex
+	basePath    string
+	sharedDB    *sql.DB
+	userDBCache map[int64]*sql.DB
+	roleDBCache map[int64]*sql.DB
+	cacheMutex  sync.RWMutex
 }
 
 // NewDBManager creates a new database manager
@@ -187,7 +187,7 @@ func (m *DBManager) initSharedDB() error {
 		return fmt.Errorf("failed to create user_role_assignments table: %v", err)
 	}
 
-	// Create indexes for shared tables
+	// Create shared database indexes
 	if err := createSharedIndexes(db); err != nil {
 		_ = db.Close()
 		return fmt.Errorf("failed to create shared indexes: %v", err)
@@ -244,7 +244,7 @@ func (m *DBManager) initUserDB(db *sql.DB, userID int64) error {
 		return fmt.Errorf("failed to create outbound_queue table: %v", err)
 	}
 
-	// Create indexes for user tables
+	// Create user database indexes
 	if err := createUserIndexes(db); err != nil {
 		return fmt.Errorf("failed to create user indexes: %v", err)
 	}
@@ -298,79 +298,4 @@ func (m *DBManager) Close() error {
 	}
 
 	return lastErr
-}
-
-// createDefaultMailboxes creates default mailboxes for a new user
-func createDefaultMailboxes(db *sql.DB, userID int64) error {
-	defaultMailboxes := []struct {
-		name        string
-		specialUse  string
-	}{
-		{"INBOX", "\\Inbox"},
-		{"Sent", "\\Sent"},
-		{"Drafts", "\\Drafts"},
-		{"Trash", "\\Trash"},
-		{"Spam", "\\Junk"},
-	}
-
-	for _, mbx := range defaultMailboxes {
-		_, err := CreateMailboxPerUser(db, userID, mbx.name, mbx.specialUse)
-		if err != nil {
-			return fmt.Errorf("failed to create mailbox %s: %v", mbx.name, err)
-		}
-	}
-
-	return nil
-}
-
-// createSharedIndexes creates indexes for shared database tables
-func createSharedIndexes(db *sql.DB) error {
-	indexes := []string{
-		"CREATE INDEX IF NOT EXISTS idx_users_username_domain ON users(username, domain_id)",
-		"CREATE INDEX IF NOT EXISTS idx_users_domain ON users(domain_id)",
-		"CREATE INDEX IF NOT EXISTS idx_role_mailboxes_domain ON role_mailboxes(domain_id)",
-		"CREATE INDEX IF NOT EXISTS idx_role_mailboxes_email ON role_mailboxes(email)",
-		"CREATE INDEX IF NOT EXISTS idx_role_assignments_user ON user_role_assignments(user_id)",
-		"CREATE INDEX IF NOT EXISTS idx_role_assignments_role ON user_role_assignments(role_mailbox_id)",
-		"CREATE INDEX IF NOT EXISTS idx_role_assignments_active ON user_role_assignments(is_active)",
-	}
-
-	for _, idx := range indexes {
-		if _, err := db.Exec(idx); err != nil {
-			return fmt.Errorf("failed to create index: %v", err)
-		}
-	}
-
-	return nil
-}
-
-// createUserIndexes creates indexes for per-user database tables
-func createUserIndexes(db *sql.DB) error {
-	indexes := []string{
-		"CREATE INDEX IF NOT EXISTS idx_mailboxes_user ON mailboxes(user_id)",
-		"CREATE INDEX IF NOT EXISTS idx_mailboxes_parent ON mailboxes(parent_id)",
-		"CREATE INDEX IF NOT EXISTS idx_messages_date ON messages(date)",
-		"CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id)",
-		"CREATE INDEX IF NOT EXISTS idx_addresses_message ON addresses(message_id)",
-		"CREATE INDEX IF NOT EXISTS idx_addresses_email ON addresses(email)",
-		"CREATE INDEX IF NOT EXISTS idx_message_parts_message ON message_parts(message_id)",
-		"CREATE INDEX IF NOT EXISTS idx_message_parts_blob ON message_parts(blob_id)",
-		"CREATE INDEX IF NOT EXISTS idx_message_mailbox_mailbox ON message_mailbox(mailbox_id)",
-		"CREATE INDEX IF NOT EXISTS idx_message_mailbox_message ON message_mailbox(message_id)",
-		"CREATE INDEX IF NOT EXISTS idx_message_mailbox_uid ON message_mailbox(mailbox_id, uid)",
-		"CREATE INDEX IF NOT EXISTS idx_message_headers_message ON message_headers(message_id)",
-		"CREATE INDEX IF NOT EXISTS idx_blobs_hash ON blobs(sha256_hash)",
-		"CREATE INDEX IF NOT EXISTS idx_deliveries_message ON deliveries(message_id)",
-		"CREATE INDEX IF NOT EXISTS idx_deliveries_status ON deliveries(status)",
-		"CREATE INDEX IF NOT EXISTS idx_outbound_status ON outbound_queue(status, next_retry_at)",
-		"CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id)",
-	}
-
-	for _, idx := range indexes {
-		if _, err := db.Exec(idx); err != nil {
-			return fmt.Errorf("failed to create index: %v", err)
-		}
-	}
-
-	return nil
 }

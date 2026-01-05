@@ -17,7 +17,7 @@ func main() {
 	configPath := flag.String("config", "/etc/raven/delivery.yaml", "Path to configuration file")
 	unixSocket := flag.String("socket", "/var/run/raven/lmtp.sock", "Path to UNIX socket")
 	tcpAddr := flag.String("tcp", "", "TCP address to bind (e.g., 127.0.0.1:24 or :24)")
-	dbPath := flag.String("db", "data", "Path to database directory")
+	dbPath := flag.String("db", "/app/data/databases", "Path to database directory")
 	flag.Parse()
 
 	log.Println("Starting Raven Delivery Service (LMTP)...")
