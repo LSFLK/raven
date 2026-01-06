@@ -14,6 +14,7 @@ import (
 func main() {
 	// Command-line flags
 	socketPath := flag.String("socket", "/var/spool/postfix/private/auth", "Path to UNIX socket")
+	tcpAddr := flag.String("tcp", ":12345", "TCP address to bind (e.g., 127.0.0.1:12345 or :12345)")
 	configPath := flag.String("config", "/etc/raven/raven.yaml", "Path to configuration file")
 	flag.Parse()
 
@@ -37,12 +38,13 @@ func main() {
 
 	log.Printf("Configuration loaded:")
 	log.Printf("  Socket path: %s", *socketPath)
+	log.Printf("  TCP address: %s", *tcpAddr)
 	log.Printf("  Config path: %s", *configPath)
 	log.Printf("  Domain: %s", cfg.Domain)
 	log.Printf("  Auth URL: %s", cfg.AuthServerURL)
 
 	// Create SASL server
-	server := sasl.NewServer(*socketPath, cfg.AuthServerURL, cfg.Domain)
+	server := sasl.NewServer(*socketPath, *tcpAddr, cfg.AuthServerURL, cfg.Domain)
 
 	// Setup graceful shutdown
 	sigChan := make(chan os.Signal, 1)

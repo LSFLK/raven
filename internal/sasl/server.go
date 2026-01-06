@@ -2,6 +2,7 @@ package sasl
 
 import (
 	"bufio"
+	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
@@ -16,20 +17,23 @@ import (
 
 // Server represents a SASL authentication server
 type Server struct {
-	socketPath    string
-	authURL       string
-	domain        string
-	listener      net.Listener
-	listenerMu    sync.RWMutex
-	wg            sync.WaitGroup
-	shutdown      chan struct{}
-	shutdownOnce  sync.Once
+	socketPath   string
+	tcpAddr      string
+	authURL      string
+	domain       string
+	unixListener net.Listener
+	tcpListener  net.Listener
+	mu           sync.Mutex
+	wg           sync.WaitGroup
+	shutdown     chan struct{}
+	shutdownOnce sync.Once
 }
 
 // NewServer creates a new SASL authentication server
-func NewServer(socketPath, authURL, domain string) *Server {
+func NewServer(socketPath, tcpAddr, authURL, domain string) *Server {
 	return &Server{
 		socketPath: socketPath,
+		tcpAddr:    tcpAddr,
 		authURL:    authURL,
 		domain:     domain,
 		shutdown:   make(chan struct{}),
@@ -38,6 +42,30 @@ func NewServer(socketPath, authURL, domain string) *Server {
 
 // Start starts the SASL server
 func (s *Server) Start() error {
+	log.Println("Starting SASL server...")
+
+	// Start UNIX socket listener if configured
+	if s.socketPath != "" {
+		if err := s.startUnixListener(); err != nil {
+			return fmt.Errorf("failed to start UNIX listener: %w", err)
+		}
+	}
+
+	// Start TCP listener if configured
+	if s.tcpAddr != "" {
+		if err := s.startTCPListener(); err != nil {
+			return fmt.Errorf("failed to start TCP listener: %w", err)
+		}
+	}
+
+	// Wait for all connections to finish
+	s.wg.Wait()
+	log.Println("All connections closed")
+	return nil
+}
+
+// startUnixListener starts listening on a UNIX socket
+func (s *Server) startUnixListener() error {
 	// Remove existing socket file if it exists
 	if err := os.RemoveAll(s.socketPath); err != nil {
 		return fmt.Errorf("failed to remove existing socket: %v", err)
@@ -48,9 +76,10 @@ func (s *Server) Start() error {
 	if err != nil {
 		return fmt.Errorf("failed to create Unix socket: %v", err)
 	}
-	s.listenerMu.Lock()
-	s.listener = listener
-	s.listenerMu.Unlock()
+
+	s.mu.Lock()
+	s.unixListener = listener
+	s.mu.Unlock()
 
 	// Set socket permissions (0666 so Postfix can access it)
 	// #nosec G302 -- Unix socket needs world read/write for Postfix access
@@ -63,11 +92,48 @@ func (s *Server) Start() error {
 	log.Printf("Using authentication URL: %s", s.authURL)
 	log.Printf("Domain: %s", s.domain)
 
-	// Accept connections
+	s.wg.Add(1)
+	go s.acceptConnections(listener, "unix")
+
+	return nil
+}
+
+// startTCPListener starts listening on a TCP address
+func (s *Server) startTCPListener() error {
+	// Configure TCP listener with keep-alive
+	lc := net.ListenConfig{
+		KeepAlive: 30 * time.Second, // Send keep-alive probes every 30 seconds
+		Control:   nil,
+	}
+
+	listener, err := lc.Listen(context.Background(), "tcp", s.tcpAddr)
+	if err != nil {
+		return fmt.Errorf("failed to create TCP listener: %v", err)
+	}
+
+	s.mu.Lock()
+	s.tcpListener = listener
+	s.mu.Unlock()
+
+	log.Printf("SASL server listening on TCP: %s (with keep-alive enabled)", s.tcpAddr)
+	log.Printf("Using authentication URL: %s", s.authURL)
+	log.Printf("Domain: %s", s.domain)
+
+	s.wg.Add(1)
+	go s.acceptConnections(listener, "tcp")
+
+	return nil
+}
+
+// acceptConnections accepts incoming connections
+func (s *Server) acceptConnections(listener net.Listener, listenerType string) {
+	defer s.wg.Done()
+
 	for {
 		select {
 		case <-s.shutdown:
-			return nil
+			log.Printf("Stopping %s listener...", listenerType)
+			return
 		default:
 		}
 
@@ -75,12 +141,14 @@ func (s *Server) Start() error {
 		if err != nil {
 			select {
 			case <-s.shutdown:
-				return nil
+				return
 			default:
-				log.Printf("Accept error: %v", err)
+				log.Printf("Accept error on %s listener: %v", listenerType, err)
 				continue
 			}
 		}
+
+		log.Printf("New %s connection from: %s", listenerType, conn.RemoteAddr())
 
 		s.wg.Add(1)
 		go s.handleConnection(conn)
@@ -91,15 +159,43 @@ func (s *Server) Start() error {
 func (s *Server) Shutdown() error {
 	var err error
 	s.shutdownOnce.Do(func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		log.Println("Shutting down SASL server...")
+
+		// Signal shutdown
 		close(s.shutdown)
-		s.listenerMu.RLock()
-		listener := s.listener
-		s.listenerMu.RUnlock()
-		if listener != nil {
-			err = listener.Close()
+
+		// Close listeners
+		var errs []error
+
+		if s.unixListener != nil {
+			if closeErr := s.unixListener.Close(); closeErr != nil {
+				errs = append(errs, fmt.Errorf("error closing Unix listener: %w", closeErr))
+			}
+			// Clean up socket file
+			if s.socketPath != "" {
+				_ = os.Remove(s.socketPath)
+			}
 		}
+
+		if s.tcpListener != nil {
+			if closeErr := s.tcpListener.Close(); closeErr != nil {
+				errs = append(errs, fmt.Errorf("error closing TCP listener: %w", closeErr))
+			}
+		}
+
+		// Wait for all connections to finish (outside of lock)
+		s.mu.Unlock()
 		s.wg.Wait()
-		_ = os.Remove(s.socketPath)
+		s.mu.Lock()
+
+		if len(errs) > 0 {
+			err = fmt.Errorf("shutdown errors: %v", errs)
+		}
+
+		log.Println("SASL server shutdown complete")
 	})
 	return err
 }

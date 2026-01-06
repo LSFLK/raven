@@ -48,9 +48,9 @@ RUN mkdir -p /app/data /var/run/raven /etc/raven /var/spool/postfix/private && \
 RUN echo '#!/bin/sh' > /app/start.sh && \
     echo 'echo "Starting Raven services..."' >> /app/start.sh && \
     echo 'echo "Starting SASL authentication service..."' >> /app/start.sh && \
-    echo './raven-sasl -socket /var/spool/postfix/private/auth -config /etc/raven/raven.yaml &' >> /app/start.sh && \
+    echo './raven-sasl -tcp :12345 -config /etc/raven/raven.yaml &' >> /app/start.sh && \
     echo 'SASL_PID=$!' >> /app/start.sh && \
-    echo 'echo "SASL service started with PID: $SASL_PID"' >> /app/start.sh && \
+    echo 'echo "SASL service started with PID: $SASL_PID (TCP :12345)"' >> /app/start.sh && \
     echo 'sleep 1' >> /app/start.sh && \
     echo 'echo "Starting IMAP server..."' >> /app/start.sh && \
     echo './imap-server -db ${DB_PATH:-/app/data/databases} &' >> /app/start.sh && \
@@ -64,7 +64,7 @@ RUN echo '#!/bin/sh' > /app/start.sh && \
     echo 'echo ""' >> /app/start.sh && \
     echo 'echo "==================================="' >> /app/start.sh && \
     echo 'echo "All Raven services started:"' >> /app/start.sh && \
-    echo 'echo "  SASL Auth: PID $SASL_PID"' >> /app/start.sh && \
+    echo 'echo "  SASL Auth: PID $SASL_PID (TCP :12345)"' >> /app/start.sh && \
     echo 'echo "  IMAP:      PID $IMAP_PID"' >> /app/start.sh && \
     echo 'echo "  LMTP:      PID $DELIVERY_PID"' >> /app/start.sh && \
     echo 'echo "  DB Path:   ${DB_PATH:-/app/data/databases}"' >> /app/start.sh && \
@@ -79,15 +79,15 @@ USER ravenuser
 # Expose ports for services
 # IMAP: 143 (plaintext), 993 (TLS)
 # LMTP: 24
-# SASL: Uses Unix socket (no port needed)
-EXPOSE 143 993 24
+# SASL: 12345 (TCP)
+EXPOSE 143 993 24 12345
 
 # Set environment variables - use directory path for DBManager
 ENV DB_PATH=/app/data/databases
 
-# Health check - check IMAP and LMTP services (SASL uses Unix socket)
+# Health check - check IMAP, LMTP, and SASL services
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD nc -z localhost 143 && nc -z localhost 24 || exit 1
+    CMD nc -z localhost 143 && nc -z localhost 24 && nc -z localhost 12345 || exit 1
 
 # Start all services
 ENTRYPOINT ["/app/start.sh"]
