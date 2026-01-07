@@ -77,7 +77,7 @@ cd raven
 docker build -t raven .
 docker run -d --rm \
   --name raven \
-  -p 143:143 -p 993:993 -p 24:24 \
+  -p 143:143 -p 993:993 -p 24:24 -p 12345:12345 \
   -v $(pwd)/config:/etc/raven \
   -v $(pwd)/data:/app/data \
   -v $(pwd)/certs:/certs \
@@ -89,6 +89,7 @@ The server will start and listen on:
 - **Port 143** - IMAP
 - **Port 993** - IMAPS
 - **Port 24**  - LMTP
+- **Port 12345** - SASL (TCP)
 
 Connect using any IMAP client to start managing your emails.
 
