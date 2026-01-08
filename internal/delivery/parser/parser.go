@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"raven/internal/blobstorage"
 	"raven/internal/db"
 )
 
@@ -434,6 +435,11 @@ func storeAddresses(database *sql.DB, messageID int64, addressType string, addre
 
 // StoreMessagePerUser stores a message in a per-user database
 func StoreMessagePerUser(database *sql.DB, parsed *ParsedMessage) (int64, error) {
+	return StoreMessagePerUserWithS3(database, parsed, nil)
+}
+
+// StoreMessagePerUserWithS3 stores a message in a per-user database with optional S3 blob storage
+func StoreMessagePerUserWithS3(database *sql.DB, parsed *ParsedMessage, s3Storage *blobstorage.S3BlobStorage) (int64, error) {
 	// Create message record
 	messageID, err := db.CreateMessage(database, parsed.Subject, parsed.InReplyTo, parsed.References, parsed.Date, parsed.SizeBytes)
 	if err != nil {
@@ -469,11 +475,35 @@ func StoreMessagePerUser(database *sql.DB, parsed *ParsedMessage) (int64, error)
 
 		// Store large content or attachments in blobs
 		if len(part.TextContent) > 1024 || part.Filename != "" {
-			id, err := db.StoreBlob(database, part.TextContent)
-			if err == nil {
-				blobID = sql.NullInt64{Valid: true, Int64: id}
-				// Clear text content since it's in blob
-				part.TextContent = ""
+			var id int64
+
+			// Use S3 storage if available and enabled
+			if s3Storage != nil && s3Storage.IsEnabled() {
+				s3BlobID, err := s3Storage.Store(part.TextContent)
+				if err == nil {
+					id, err = db.StoreBlobS3(database, part.TextContent, s3BlobID)
+					if err == nil {
+						blobID = sql.NullInt64{Valid: true, Int64: id}
+						// Clear text content since it's in S3
+						part.TextContent = ""
+						fmt.Printf("Stored attachment in S3: %s (blob_id: %d, s3_id: %s)\n", part.Filename, id, s3BlobID)
+					}
+				} else {
+					fmt.Printf("Failed to store in S3, falling back to local: %v\n", err)
+					// Fall back to local storage
+					id, err = db.StoreBlob(database, part.TextContent)
+					if err == nil {
+						blobID = sql.NullInt64{Valid: true, Int64: id}
+						part.TextContent = ""
+					}
+				}
+			} else {
+				// Use local SQLite storage
+				id, err = db.StoreBlob(database, part.TextContent)
+				if err == nil {
+					blobID = sql.NullInt64{Valid: true, Int64: id}
+					part.TextContent = ""
+				}
 			}
 		}
 
@@ -502,6 +532,11 @@ func StoreMessagePerUser(database *sql.DB, parsed *ParsedMessage) (int64, error)
 
 // ReconstructMessage reconstructs the raw message from database parts
 func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
+	return ReconstructMessageWithS3(database, messageID, nil)
+}
+
+// ReconstructMessageWithS3 reconstructs the raw message from database parts with S3 support
+func ReconstructMessageWithS3(database *sql.DB, messageID int64, s3Storage *blobstorage.S3BlobStorage) (string, error) {
 	// Get message parts
 	parts, err := db.GetMessageParts(database, messageID)
 	if err != nil {
@@ -627,11 +662,18 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 
 		buf.WriteString("\r\n")
 
-		// Get content from blob or text_content
+		// Get content from blob or text_content (with S3 support)
 		if blobID, ok := part["blob_id"].(int64); ok {
 			content, err := db.GetBlob(database, blobID)
-			if err == nil {
+			if err == nil && content != "" {
 				buf.WriteString(content)
+			} else if s3Storage != nil && s3Storage.IsEnabled() {
+				// Try to get from S3 storage
+				if s3BlobID, storageType, err := db.GetBlobS3BlobID(database, blobID); err == nil && storageType == "s3" && s3BlobID != "" {
+					if content, err := s3Storage.Retrieve(s3BlobID); err == nil {
+						buf.WriteString(content)
+					}
+				}
 			}
 		} else if textContent, ok := part["text_content"].(string); ok {
 			buf.WriteString(textContent)
@@ -720,31 +762,31 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 				// Plain text version
 				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryAlt))
 				writePartHeaders(&buf, plainPart)
-				writePartContent(&buf, database, plainPart)
+				writePartContentWithS3(&buf, database, plainPart, s3Storage)
 
 				// HTML version
 				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryAlt))
 				writePartHeaders(&buf, htmlPart)
-				writePartContent(&buf, database, htmlPart)
+				writePartContentWithS3(&buf, database, htmlPart, s3Storage)
 
 				buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryAlt))
 			} else if hasHTML {
 				// HTML only
 				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryMixed))
 				writePartHeaders(&buf, htmlPart)
-				writePartContent(&buf, database, htmlPart)
+				writePartContentWithS3(&buf, database, htmlPart, s3Storage)
 			} else if hasPlain {
 				// Plain text only
 				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryMixed))
 				writePartHeaders(&buf, plainPart)
-				writePartContent(&buf, database, plainPart)
+				writePartContentWithS3(&buf, database, plainPart, s3Storage)
 			}
 
 			// Attachments
 			for _, attachment := range attachments {
 				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryMixed))
 				writePartHeaders(&buf, attachment)
-				writePartContent(&buf, database, attachment)
+				writePartContentWithS3(&buf, database, attachment, s3Storage)
 			}
 
 			buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryMixed))
@@ -757,18 +799,18 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 			// Plain text version
 			buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryAlt))
 			writePartHeaders(&buf, plainPart)
-			writePartContent(&buf, database, plainPart)
+			writePartContentWithS3(&buf, database, plainPart, s3Storage)
 
 			// HTML version
 			buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryAlt))
 			writePartHeaders(&buf, htmlPart)
-			writePartContent(&buf, database, htmlPart)
+			writePartContentWithS3(&buf, database, htmlPart, s3Storage)
 
 			buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryAlt))
 		} else if len(textParts) == 1 {
 			// Single text part, no multipart needed
 			writePartHeaders(&buf, textParts[0])
-			writePartContent(&buf, database, textParts[0])
+			writePartContentWithS3(&buf, database, textParts[0], s3Storage)
 		} else {
 			// Fallback: multipart/mixed for all parts
 			buf.WriteString("MIME-Version: 1.0\r\n")
@@ -778,7 +820,7 @@ func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
 			for _, part := range parts {
 				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryMixed))
 				writePartHeaders(&buf, part)
-				writePartContent(&buf, database, part)
+				writePartContentWithS3(&buf, database, part, s3Storage)
 			}
 
 			buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryMixed))
@@ -844,13 +886,23 @@ func writePartHeaders(buf *bytes.Buffer, part map[string]interface{}) {
 	buf.WriteString("\r\n")
 }
 
-// writePartContent writes the content of a message part
-func writePartContent(buf *bytes.Buffer, database *sql.DB, part map[string]interface{}) {
+// writePartContentWithS3 writes the content of a message part with S3 support
+func writePartContentWithS3(buf *bytes.Buffer, database *sql.DB, part map[string]interface{}, s3Storage *blobstorage.S3BlobStorage) {
 	// Get content from blob or text_content
 	var content string
 	if blobID, ok := part["blob_id"].(int64); ok {
-		if c, err := db.GetBlob(database, blobID); err == nil {
+		// First try to get from local storage
+		if c, err := db.GetBlob(database, blobID); err == nil && c != "" {
 			content = c
+		} else if s3Storage != nil && s3Storage.IsEnabled() {
+			// Try to get from S3 storage
+			if s3BlobID, storageType, err := db.GetBlobS3BlobID(database, blobID); err == nil && storageType == "s3" && s3BlobID != "" {
+				if c, err := s3Storage.Retrieve(s3BlobID); err == nil {
+					content = c
+				} else {
+					fmt.Printf("Failed to retrieve blob from S3: %v\n", err)
+				}
+			}
 		}
 	} else if textContent, ok := part["text_content"].(string); ok {
 		content = textContent
