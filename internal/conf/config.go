@@ -1,14 +1,16 @@
 package conf
 
 import (
+	"gopkg.in/yaml.v2"
 	"os"
 	"path/filepath"
-	"gopkg.in/yaml.v2"
+	"raven/internal/blobstorage"
 )
 
 type Config struct {
-	Domain        string `yaml:"domain"`
-	AuthServerURL string `yaml:"auth_server_url"`
+	Domain        string             `yaml:"domain"`
+	AuthServerURL string             `yaml:"auth_server_url"`
+	BlobStorage   blobstorage.Config `yaml:"blob_storage"`
 }
 
 func LoadConfig() (*Config, error) {

@@ -5,6 +5,8 @@ import (
 	"log"
 	"net"
 
+	"raven/internal/blobstorage"
+	"raven/internal/conf"
 	"raven/internal/db"
 	"raven/internal/server"
 )
@@ -15,6 +17,7 @@ const SERVER_IP_SSL = "0.0.0.0:993"
 func main() {
 	// Command-line flags
 	dbPath := flag.String("db", "/app/data/databases", "Path to database directory")
+	configPath := flag.String("config", "/etc/raven/raven.yaml", "Path to configuration file")
 	flag.Parse()
 
 	log.Println("Starting Raven SQLite IMAP server...")
@@ -32,7 +35,28 @@ func main() {
 
 	log.Printf("Database manager initialized: %s", *dbPath)
 
-	imapServer := server.NewIMAPServer(dbManager)
+	// Try to load configuration for S3 blob storage
+	var s3Storage *blobstorage.S3BlobStorage
+	cfg, err := conf.LoadConfig()
+	if err != nil {
+		log.Printf("Warning: Failed to load config from %s: %v", *configPath, err)
+		log.Println("S3 blob storage will be disabled")
+	} else if cfg.BlobStorage.Enabled {
+		log.Println("Initializing S3 blob storage...")
+		s3Storage, err = blobstorage.NewS3BlobStorage(cfg.BlobStorage)
+		if err != nil {
+			log.Printf("Warning: Failed to initialize S3 blob storage: %v", err)
+			log.Println("Falling back to local SQLite storage")
+			s3Storage = nil
+		} else {
+			log.Printf("S3 blob storage initialized: %s (bucket: %s)", cfg.BlobStorage.Endpoint, cfg.BlobStorage.Bucket)
+		}
+	} else {
+		log.Println("S3 blob storage is disabled in config, using local SQLite storage")
+	}
+
+	// Create IMAP server with S3 storage support
+	imapServer := server.NewIMAPServerWithS3(dbManager, s3Storage)
 
 	// Start plain IMAP (143)
 	go func() {

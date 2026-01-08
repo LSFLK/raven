@@ -6,24 +6,26 @@ import (
 	"path/filepath"
 
 	"gopkg.in/yaml.v2"
+	"raven/internal/blobstorage"
 )
 
 // Config holds the delivery service configuration
 type Config struct {
-	LMTP     LMTPConfig     `yaml:"lmtp"`
-	Database DatabaseConfig `yaml:"database"`
-	Delivery DeliveryConfig `yaml:"delivery"`
-	Logging  LoggingConfig  `yaml:"logging"`
+	LMTP        LMTPConfig         `yaml:"lmtp"`
+	Database    DatabaseConfig     `yaml:"database"`
+	Delivery    DeliveryConfig     `yaml:"delivery"`
+	Logging     LoggingConfig      `yaml:"logging"`
+	BlobStorage blobstorage.Config `yaml:"blob_storage"`
 }
 
 // LMTPConfig holds LMTP server configuration
 type LMTPConfig struct {
-	UnixSocket  string `yaml:"unix_socket"`
-	TCPAddress  string `yaml:"tcp_address"`
-	MaxSize     int64  `yaml:"max_size"`      // Maximum message size in bytes
-	Timeout     int    `yaml:"timeout"`       // Connection timeout in seconds
-	Hostname    string `yaml:"hostname"`      // Server hostname for LHLO
-	MaxRecipients int  `yaml:"max_recipients"` // Maximum recipients per transaction
+	UnixSocket    string `yaml:"unix_socket"`
+	TCPAddress    string `yaml:"tcp_address"`
+	MaxSize       int64  `yaml:"max_size"`       // Maximum message size in bytes
+	Timeout       int    `yaml:"timeout"`        // Connection timeout in seconds
+	Hostname      string `yaml:"hostname"`       // Server hostname for LHLO
+	MaxRecipients int    `yaml:"max_recipients"` // Maximum recipients per transaction
 }
 
 // DatabaseConfig holds database configuration
@@ -33,11 +35,11 @@ type DatabaseConfig struct {
 
 // DeliveryConfig holds delivery-specific configuration
 type DeliveryConfig struct {
-	DefaultFolder    string   `yaml:"default_folder"`     // Default delivery folder (usually INBOX)
-	QuotaEnabled     bool     `yaml:"quota_enabled"`      // Enable quota checking
-	QuotaLimit       int64    `yaml:"quota_limit"`        // Quota limit in bytes
-	AllowedDomains   []string `yaml:"allowed_domains"`    // List of allowed recipient domains
-	RejectUnknownUser bool    `yaml:"reject_unknown_user"` // Reject messages for unknown users
+	DefaultFolder     string   `yaml:"default_folder"`      // Default delivery folder (usually INBOX)
+	QuotaEnabled      bool     `yaml:"quota_enabled"`       // Enable quota checking
+	QuotaLimit        int64    `yaml:"quota_limit"`         // Quota limit in bytes
+	AllowedDomains    []string `yaml:"allowed_domains"`     // List of allowed recipient domains
+	RejectUnknownUser bool     `yaml:"reject_unknown_user"` // Reject messages for unknown users
 }
 
 // LoggingConfig holds logging configuration
