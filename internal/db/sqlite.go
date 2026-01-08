@@ -167,6 +167,8 @@ func createBlobsTable(db *sql.DB) error {
 		sha256_hash TEXT NOT NULL UNIQUE,
 		size_bytes INTEGER NOT NULL,
 		content TEXT,
+		s3_blob_id TEXT,
+		storage_type TEXT DEFAULT 'local',
 		reference_count INTEGER DEFAULT 0,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
@@ -769,10 +771,10 @@ func StoreBlob(db *sql.DB, content string) (int64, error) {
 		return blobID, err
 	}
 
-	// Create new blob
+	// Create new blob (local storage)
 	result, err := db.Exec(`
-		INSERT INTO blobs (sha256_hash, size_bytes, content, reference_count)
-		VALUES (?, ?, ?, ?)
+		INSERT INTO blobs (sha256_hash, size_bytes, content, storage_type, reference_count)
+		VALUES (?, ?, ?, 'local', ?)
 	`, hashStr, len(content), content, 1)
 	if err != nil {
 		return 0, err
@@ -781,10 +783,63 @@ func StoreBlob(db *sql.DB, content string) (int64, error) {
 	return result.LastInsertId()
 }
 
+// StoreBlobS3 stores a blob reference with S3 blob ID
+func StoreBlobS3(db *sql.DB, content string, s3BlobID string) (int64, error) {
+	// Calculate SHA256 hash
+	hash := sha256.Sum256([]byte(content))
+	hashStr := hex.EncodeToString(hash[:])
+
+	// Check if blob already exists
+	var blobID int64
+	err := db.QueryRow("SELECT id FROM blobs WHERE sha256_hash = ?", hashStr).Scan(&blobID)
+	if err == nil {
+		// Blob exists, increment reference count
+		_, err = db.Exec("UPDATE blobs SET reference_count = reference_count + 1 WHERE id = ?", blobID)
+		return blobID, err
+	}
+
+	// Create new blob (S3 storage)
+	result, err := db.Exec(`
+		INSERT INTO blobs (sha256_hash, size_bytes, s3_blob_id, storage_type, reference_count)
+		VALUES (?, ?, ?, 's3', ?)
+	`, hashStr, len(content), s3BlobID, 1)
+	if err != nil {
+		return 0, err
+	}
+
+	return result.LastInsertId()
+}
+
 func GetBlob(db *sql.DB, blobID int64) (string, error) {
-	var content string
-	err := db.QueryRow("SELECT content FROM blobs WHERE id = ?", blobID).Scan(&content)
-	return content, err
+	var content sql.NullString
+	var storageType string
+	err := db.QueryRow("SELECT content, storage_type FROM blobs WHERE id = ?", blobID).Scan(&content, &storageType)
+	if err != nil {
+		return "", err
+	}
+
+	if storageType == "local" && content.Valid {
+		return content.String, nil
+	}
+
+	// For S3 storage, return empty string - caller should use GetBlobS3BlobID
+	return "", nil
+}
+
+// GetBlobS3BlobID retrieves the S3 blob ID for a given blob
+func GetBlobS3BlobID(db *sql.DB, blobID int64) (string, string, error) {
+	var s3BlobID sql.NullString
+	var storageType string
+	err := db.QueryRow("SELECT s3_blob_id, storage_type FROM blobs WHERE id = ?", blobID).Scan(&s3BlobID, &storageType)
+	if err != nil {
+		return "", "", err
+	}
+
+	if storageType == "s3" && s3BlobID.Valid {
+		return s3BlobID.String, storageType, nil
+	}
+
+	return "", storageType, nil
 }
 
 func DecrementBlobReference(db *sql.DB, blobID int64) error {
