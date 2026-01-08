@@ -6,6 +6,7 @@ import (
 	"net"
 	"strings"
 
+	"raven/internal/blobstorage"
 	"raven/internal/conf"
 	"raven/internal/db"
 	"raven/internal/models"
@@ -16,6 +17,7 @@ type IMAPServer struct {
 	dbManager *db.DBManager
 	certPath  string
 	keyPath   string
+	s3Storage *blobstorage.S3BlobStorage
 }
 
 func NewIMAPServer(dbManager *db.DBManager) *IMAPServer {
@@ -23,7 +25,28 @@ func NewIMAPServer(dbManager *db.DBManager) *IMAPServer {
 		dbManager: dbManager,
 		certPath:  "/certs/fullchain.pem",
 		keyPath:   "/certs/privkey.pem",
+		s3Storage: nil,
 	}
+}
+
+// NewIMAPServerWithS3 creates a new IMAP server with S3 blob storage support
+func NewIMAPServerWithS3(dbManager *db.DBManager, s3Storage *blobstorage.S3BlobStorage) *IMAPServer {
+	return &IMAPServer{
+		dbManager: dbManager,
+		certPath:  "/certs/fullchain.pem",
+		keyPath:   "/certs/privkey.pem",
+		s3Storage: s3Storage,
+	}
+}
+
+// SetS3Storage sets the S3 blob storage (useful for adding storage after creation)
+func (s *IMAPServer) SetS3Storage(s3Storage *blobstorage.S3BlobStorage) {
+	s.s3Storage = s3Storage
+}
+
+// GetS3Storage returns the S3 blob storage
+func (s *IMAPServer) GetS3Storage() *blobstorage.S3BlobStorage {
+	return s.s3Storage
 }
 
 // SetTLSCertificates sets custom TLS certificate paths (useful for testing)

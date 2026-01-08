@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"raven/internal/blobstorage"
 	"raven/internal/db"
 	"raven/internal/delivery/parser"
 	"raven/internal/models"
@@ -23,6 +24,7 @@ type ServerDeps interface {
 	GetSelectedDB(state *models.ClientState) (*sql.DB, int64, error)
 	GetSharedDB() *sql.DB
 	GetDBManager() *db.DBManager
+	GetS3Storage() *blobstorage.S3BlobStorage
 }
 
 // ===== SEARCH =====
@@ -1291,8 +1293,9 @@ func HandleAppendWithReader(deps ServerDeps, reader io.Reader, conn net.Conn, ta
 		return
 	}
 
-	// Store message in database
-	messageID, err := parser.StoreMessagePerUser(userDB, parsed)
+	// Store message in database with S3 support
+	s3Storage := deps.GetS3Storage()
+	messageID, err := parser.StoreMessagePerUserWithS3(userDB, parsed, s3Storage)
 	if err != nil {
 		log.Printf("Failed to store message: %v", err)
 		deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to save message", tag))
@@ -1445,8 +1448,9 @@ func HandleAppend(deps ServerDeps, conn net.Conn, tag string, parts []string, fu
 		return
 	}
 
-	// Store message in database
-	messageID, err := parser.StoreMessagePerUser(userDB, parsed)
+	// Store message in database with S3 support
+	s3Storage := deps.GetS3Storage()
+	messageID, err := parser.StoreMessagePerUserWithS3(userDB, parsed, s3Storage)
 	if err != nil {
 		log.Printf("Failed to store message: %v", err)
 		deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to save message", tag))
