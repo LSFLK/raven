@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"raven/internal/blobstorage"
 	"raven/internal/db"
 	"raven/internal/delivery/config"
 	"raven/internal/delivery/lmtp"
@@ -54,8 +55,21 @@ func main() {
 
 	log.Printf("Database manager initialized: %s", cfg.Database.Path)
 
-	// Create LMTP server
-	server := lmtp.NewServer(dbManager, cfg)
+	// Initialize S3 blob storage if enabled
+	var s3Storage *blobstorage.S3BlobStorage
+	if cfg.BlobStorage.Enabled {
+		log.Println("Initializing S3 blob storage...")
+		s3Storage, err = blobstorage.NewS3BlobStorage(cfg.BlobStorage)
+		if err != nil {
+			log.Fatalf("Failed to initialize S3 blob storage: %v", err)
+		}
+		log.Printf("S3 blob storage initialized: %s (bucket: %s)", cfg.BlobStorage.Endpoint, cfg.BlobStorage.Bucket)
+	} else {
+		log.Println("S3 blob storage is disabled, using local SQLite storage")
+	}
+
+	// Create LMTP server with S3 storage
+	server := lmtp.NewServerWithS3(dbManager, cfg, s3Storage)
 
 	// Setup graceful shutdown
 	sigChan := make(chan os.Signal, 1)

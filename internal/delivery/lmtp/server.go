@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"raven/internal/blobstorage"
 	"raven/internal/db"
 	"raven/internal/delivery/config"
 	"raven/internal/delivery/storage"
@@ -19,6 +20,7 @@ type Server struct {
 	dbManager    *db.DBManager
 	config       *config.Config
 	storage      *storage.Storage
+	s3Storage    *blobstorage.S3BlobStorage
 	unixListener net.Listener
 	tcpListener  net.Listener
 	wg           sync.WaitGroup
@@ -32,6 +34,18 @@ func NewServer(dbManager *db.DBManager, cfg *config.Config) *Server {
 		dbManager: dbManager,
 		config:    cfg,
 		storage:   storage.NewStorage(dbManager),
+		s3Storage: nil,
+		shutdown:  make(chan struct{}),
+	}
+}
+
+// NewServerWithS3 creates a new LMTP server with S3 blob storage
+func NewServerWithS3(dbManager *db.DBManager, cfg *config.Config, s3Storage *blobstorage.S3BlobStorage) *Server {
+	return &Server{
+		dbManager: dbManager,
+		config:    cfg,
+		storage:   storage.NewStorageWithS3(dbManager, s3Storage),
+		s3Storage: s3Storage,
 		shutdown:  make(chan struct{}),
 	}
 }

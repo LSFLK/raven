@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"raven/internal/blobstorage"
 	"raven/internal/db"
 	"raven/internal/models"
 )
@@ -15,6 +16,7 @@ import (
 type ServerDeps interface {
 	SendResponse(conn net.Conn, response string)
 	GetUserDB(userID int64) (*sql.DB, error)
+	GetS3Storage() *blobstorage.S3BlobStorage
 }
 
 // ===== NOOP =====

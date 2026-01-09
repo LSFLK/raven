@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"raven/internal/blobstorage"
 	"raven/internal/db"
 	"raven/internal/delivery/parser"
 )
@@ -46,12 +47,22 @@ func determineTargetFolder(headers map[string]string, defaultFolder string) stri
 // Storage handles message storage operations
 type Storage struct {
 	dbManager *db.DBManager
+	s3Storage *blobstorage.S3BlobStorage
 }
 
 // NewStorage creates a new storage handler
 func NewStorage(dbManager *db.DBManager) *Storage {
 	return &Storage{
 		dbManager: dbManager,
+		s3Storage: nil,
+	}
+}
+
+// NewStorageWithS3 creates a new storage handler with S3 blob storage
+func NewStorageWithS3(dbManager *db.DBManager, s3Storage *blobstorage.S3BlobStorage) *Storage {
+	return &Storage{
+		dbManager: dbManager,
+		s3Storage: s3Storage,
 	}
 }
 
@@ -135,8 +146,8 @@ func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder s
 		return fmt.Errorf("failed to parse message: %w", err)
 	}
 
-	// Store the message in the target database (user or role mailbox)
-	messageID, err := parser.StoreMessagePerUser(targetDB, parsed)
+	// Store the message in the target database (user or role mailbox) with S3 support
+	messageID, err := parser.StoreMessagePerUserWithS3(targetDB, parsed, s.s3Storage)
 	if err != nil {
 		return fmt.Errorf("failed to store message: %w", err)
 	}

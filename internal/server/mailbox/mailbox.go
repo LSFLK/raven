@@ -6,6 +6,7 @@ import (
 	"net"
 	"strings"
 
+	"raven/internal/blobstorage"
 	"raven/internal/db"
 	"raven/internal/models"
 	"raven/internal/server/utils"
@@ -17,6 +18,7 @@ type ServerDeps interface {
 	GetUserDB(userID int64) (*sql.DB, error)
 	GetSharedDB() *sql.DB
 	GetDBManager() *db.DBManager
+	GetS3Storage() *blobstorage.S3BlobStorage
 }
 
 // ===== LIST =====

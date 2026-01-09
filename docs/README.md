@@ -27,6 +27,15 @@ into a dedicated storage system. This design significantly improves performance,
 long-term maintainability—making Raven a modern, efficient solution for email delivery and management. With more modern 
 email features on the way, stay tuned for updates!!!
 
+### Key Features
+- **Modern Architecture:** Per-user SQLite databases for efficient data isolation
+- **S3 Blob Storage:** Store email attachments in S3-compatible storage (SeaweedFS)
+- **Identity Provider Integration:** Separate user management (Eg: [Thunder](https://github.com/asgardeo/thunder))
+- **High Performance:** Deduplication, efficient indexing, and scalable storage
+- **Easy Deployment:** Simple configuration, containerized deployment
+- **Full IMAP Support:** Complete IMAP4rev2 implementation with extensions
+- **Secure:** TLS/SSL support, external authentication integration
+
 ## Architecture
 
 Raven consists of three services:
@@ -60,7 +69,6 @@ docker run -d --rm \
   -v $(pwd)/config:/etc/raven \
   -v $(pwd)/data:/app/data \
   -v $(pwd)/certs:/certs \
-  -v $(pwd)/delivery.yaml:/app/delivery.yaml \
   ghcr.io/lsflk/raven:latest
 ```
 
@@ -81,7 +89,6 @@ docker run -d --rm \
   -v $(pwd)/config:/etc/raven \
   -v $(pwd)/data:/app/data \
   -v $(pwd)/certs:/certs \
-  -v $(pwd)/delivery.yaml:/app/delivery.yaml \
   raven
 ```
 
@@ -97,12 +104,12 @@ Connect using any IMAP client to start managing your emails.
 
 ### 📂 Required Volume Mounts
 
-| Volume | Path | Description |
-|--------|------|-------------|
-| **Configuration** | `-v $(pwd)/config:/etc/raven` | Configuration directory containing `raven.yaml` |
-| **Data** | `-v $(pwd)/data:/app/data` | Data directory for SQLite databases (`shared.db`, `user_db_*.db`, `role_db_*.db`) and mail storage |
-| **Certificates** | `-v $(pwd)/certs:/certs` | TLS/SSL certificates directory containing `fullchain.pem` and `privkey.pem` for IMAPS and STARTTLS |
-| **Delivery** | `-v $(pwd)/delivery.yaml:/app/delivery.yaml` | Delivery service configuration file |
+| Volume                      | Path                                  | Description                                                                                        |
+|-----------------------------|---------------------------------------|----------------------------------------------------------------------------------------------------|
+| **Configuration(IMAP)**     | `-v $(pwd)/config:/etc/raven`         | Configuration directory containing `raven.yaml`                                                    |
+| **Data**                    | `-v $(pwd)/data:/app/data`            | Data directory for SQLite databases (`shared.db`, `user_db_*.db`, `role_db_*.db`) and mail storage |
+| **Certificates**            | `-v $(pwd)/certs:/certs`              | TLS/SSL certificates directory containing `fullchain.pem` and `privkey.pem` for IMAPS and STARTTLS |
+| **Configuration(Delivery)** | `-v $(pwd)/config:/etc/raven` | Delivery service configuration file `delivery.yaml`                                                 |
 
 ---
 
@@ -114,27 +121,16 @@ Your `/certs` directory must contain:
 
 These certificates are required for secure connections on port 993 and STARTTLS functionality.
 
-### ⚙️ Configuration File
+### ⚙️ IMAP Configuration File (`raven.yaml`)
 
-Raven requires a configuration file named `raven.yaml` located in `/etc/raven` inside the Docker container.
+Raven requires a configuration file named `raven.yaml` located in `/etc/raven` inside the Docker container for IMAP server. 
+You can see an [example raven.yaml](../config/raven.yaml) for your reference. Update the `raven.yaml` file according to your config.
 
-### Example
-```yaml
-domain: <domain name>
-auth_server_url: <auth url>
-```
 
-### Fields
+### Delivery Service Configuration File (`delivery.yaml`)
 
-| Key | Description |
-|-----|-------------|
-| `domain` | The mail domain used in the mail system. |
-| `auth_server_url` | The authentication API endpoint used to validate user credentials. |
-
-### Delivery Service (`delivery.yaml`)
-
-The delivery service requires a separate configuration file named `delivery.yaml`.
-You can see the [example delivery.yaml](../config/delivery.yaml) for reference.
+The delivery service requires a separate configuration file named `delivery.yaml` and should reside inside the `/etc/raven` folder of the Docker container.
+You can see the [example delivery.yaml](../config/delivery.yaml) for reference. Update the `delivery.yaml` file according to your config.
 
 ## Contributing
 

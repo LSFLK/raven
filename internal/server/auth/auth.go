@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"raven/internal/blobstorage"
 	"raven/internal/conf"
 	"raven/internal/db"
 	"raven/internal/models"
@@ -24,6 +25,7 @@ type ServerDeps interface {
 	GetDBManager() *db.DBManager
 	GetCertPath() string
 	GetKeyPath() string
+	GetS3Storage() *blobstorage.S3BlobStorage
 }
 
 // ClientHandler is a function type for handling client connections

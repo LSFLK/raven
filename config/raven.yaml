@@ -1,0 +1,15 @@
+# Raven IMAP Server Configuration Example
+
+domain: "example.com"
+auth_server_url: "http://auth-service:8080"
+
+# S3-Compatible Blob Storage Configuration
+blob_storage:
+  enabled: true
+  endpoint: "http://localhost:8333"  # SeaweedFS endpoint
+  region: "us-east-1"
+  bucket: "email-attachments"
+  access_key: "your-access-key"
+  secret_key: "your-secret-key"
+  timeout: 30  # seconds
+

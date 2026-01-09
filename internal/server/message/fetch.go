@@ -193,7 +193,9 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 	var rawMsgErr error
 	loadRawMsg := func() string {
 		if rawMsg == "" && rawMsgErr == nil {
-			rawMsg, rawMsgErr = parser.ReconstructMessage(targetDB, messageID)
+			// Use S3 storage if available
+			s3Storage := deps.GetS3Storage()
+			rawMsg, rawMsgErr = parser.ReconstructMessageWithS3(targetDB, messageID, s3Storage)
 			if rawMsgErr != nil {
 				return ""
 			}
@@ -338,8 +340,19 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 						} else {
 							// Part body only - for non-multipart parts
 							if blobID, ok := target["blob_id"].(int64); ok {
-								if content, err := db.GetBlob(targetDB, blobID); err == nil {
+								// Try local storage first
+								if content, err := db.GetBlob(targetDB, blobID); err == nil && content != "" {
 									payload = content
+								} else {
+									// Try S3 storage
+									s3Storage := deps.GetS3Storage()
+									if s3Storage != nil && s3Storage.IsEnabled() {
+										if s3BlobID, storageType, err := db.GetBlobS3BlobID(targetDB, blobID); err == nil && storageType == "s3" && s3BlobID != "" {
+											if content, err := s3Storage.Retrieve(s3BlobID); err == nil {
+												payload = content
+											}
+										}
+									}
 								}
 							} else if textContent, ok := target["text_content"].(string); ok {
 								payload = textContent
