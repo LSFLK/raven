@@ -13,7 +13,11 @@ func TestBlobDeduplicationAcrossEncodings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("Failed to close database: %v", err)
+		}
+	}()
 
 	// Sample binary content (simulating an image/attachment)
 	originalContent := []byte("This is a test attachment with some binary data: \x00\x01\x02\xFF\xFE")
@@ -66,7 +70,11 @@ func TestBlobDeduplicationRawVsBase64(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("Failed to close database: %v", err)
+		}
+	}()
 
 	// Same content, different encodings
 	textContent := "Hello, World! This is a test."
@@ -90,7 +98,10 @@ func TestBlobDeduplicationRawVsBase64(t *testing.T) {
 	}
 
 	var refCount int
-	db.QueryRow("SELECT reference_count FROM blobs WHERE id = ?", id1).Scan(&refCount)
+	err = db.QueryRow("SELECT reference_count FROM blobs WHERE id = ?", id1).Scan(&refCount)
+	if err != nil {
+		t.Fatalf("Failed to query reference count: %v", err)
+	}
 
 	if refCount != 2 {
 		t.Errorf("Expected reference count 2, got %d", refCount)
@@ -106,7 +117,11 @@ func TestBlobDeduplicationWithLineBreaks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("Failed to close database: %v", err)
+		}
+	}()
 
 	originalContent := []byte("This is a longer test to simulate real attachments with multiple lines of base64 encoding that would typically be wrapped at 76 characters per line in email messages.")
 
@@ -128,7 +143,10 @@ func TestBlobDeduplicationWithLineBreaks(t *testing.T) {
 	}
 
 	var refCount int
-	db.QueryRow("SELECT reference_count FROM blobs WHERE id = ?", id1).Scan(&refCount)
+	err = db.QueryRow("SELECT reference_count FROM blobs WHERE id = ?", id1).Scan(&refCount)
+	if err != nil {
+		t.Fatalf("Failed to query reference count: %v", err)
+	}
 
 	if refCount != 3 {
 		t.Errorf("Expected reference count 3, got %d", refCount)
@@ -144,7 +162,11 @@ func TestBlobDeduplicationSentAndReceived(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("Failed to close database: %v", err)
+		}
+	}()
 
 	// Simulate an attachment (e.g., a small image or PDF)
 	attachmentData := []byte("Sample attachment content with binary data\x00\x01\x02\xFF")
@@ -176,14 +198,20 @@ func TestBlobDeduplicationSentAndReceived(t *testing.T) {
 
 	// Verify only one blob in database
 	var blobCount int
-	db.QueryRow("SELECT COUNT(*) FROM blobs").Scan(&blobCount)
+	err = db.QueryRow("SELECT COUNT(*) FROM blobs").Scan(&blobCount)
+	if err != nil {
+		t.Fatalf("Failed to query blob count: %v", err)
+	}
 	if blobCount != 1 {
 		t.Errorf("Expected 1 blob in database, got %d", blobCount)
 	}
 
 	// Verify reference count
 	var refCount int
-	db.QueryRow("SELECT reference_count FROM blobs WHERE id = ?", sentID).Scan(&refCount)
+	err = db.QueryRow("SELECT reference_count FROM blobs WHERE id = ?", sentID).Scan(&refCount)
+	if err != nil {
+		t.Fatalf("Failed to query reference count: %v", err)
+	}
 	if refCount != 2 {
 		t.Errorf("Expected reference count 2, got %d", refCount)
 	}
@@ -200,7 +228,11 @@ func TestBlobDeduplicationQuotedPrintable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("Failed to close database: %v", err)
+		}
+	}()
 
 	// Content that might be quoted-printable encoded
 	originalContent := "Hello! This is a test with special chars: café, naïve"
@@ -234,7 +266,11 @@ func TestBlobDeduplicationBackwardCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("Failed to close database: %v", err)
+		}
+	}()
 
 	content := "Test content for backward compatibility"
 
