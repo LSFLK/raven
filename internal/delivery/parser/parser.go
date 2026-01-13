@@ -391,7 +391,8 @@ func StoreMessageWithSharedDB(sharedDB *sql.DB, userDB *sql.DB, parsed *ParsedMe
 
 		// Store large content or attachments in blobs (in shared database for deduplication)
 		if len(part.TextContent) > 1024 || part.Filename != "" {
-			id, err := db.StoreBlob(sharedDB, part.TextContent)
+			// Use encoding-aware storage for proper deduplication
+			id, err := db.StoreBlobWithEncoding(sharedDB, part.TextContent, part.ContentTransferEncoding)
 			if err == nil {
 				blobID = sql.NullInt64{Valid: true, Int64: id}
 				// Clear text content since it's in blob
@@ -481,7 +482,8 @@ func StoreMessagePerUserWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, pars
 			if s3Storage != nil && s3Storage.IsEnabled() {
 				s3BlobID, err := s3Storage.Store(part.TextContent)
 				if err == nil {
-					id, err = db.StoreBlobS3(sharedDB, part.TextContent, s3BlobID)
+					// Use encoding-aware storage for proper deduplication
+					id, err = db.StoreBlobS3WithEncoding(sharedDB, part.TextContent, s3BlobID, part.ContentTransferEncoding)
 					if err == nil {
 						blobID = sql.NullInt64{Valid: true, Int64: id}
 						// Clear text content since it's in S3
@@ -490,16 +492,16 @@ func StoreMessagePerUserWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, pars
 					}
 				} else {
 					fmt.Printf("Failed to store in S3, falling back to local: %v\n", err)
-					// Fall back to local storage
-					id, err = db.StoreBlob(sharedDB, part.TextContent)
+					// Fall back to local storage with encoding-aware deduplication
+					id, err = db.StoreBlobWithEncoding(sharedDB, part.TextContent, part.ContentTransferEncoding)
 					if err == nil {
 						blobID = sql.NullInt64{Valid: true, Int64: id}
 						part.TextContent = ""
 					}
 				}
 			} else {
-				// Use local SQLite storage in shared database
-				id, err = db.StoreBlob(sharedDB, part.TextContent)
+				// Use local SQLite storage in shared database with encoding-aware deduplication
+				id, err = db.StoreBlobWithEncoding(sharedDB, part.TextContent, part.ContentTransferEncoding)
 				if err == nil {
 					blobID = sql.NullInt64{Valid: true, Int64: id}
 					part.TextContent = ""
