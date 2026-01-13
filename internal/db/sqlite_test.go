@@ -781,7 +781,7 @@ func TestStoreBlob(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	content := "test blob content"
-	blobID, err := StoreBlob(db, content)
+	blobID, err := StoreBlobWithEncoding(db, content, "")
 	if err != nil {
 		t.Fatalf("StoreBlob failed: %v", err)
 	}
@@ -811,12 +811,12 @@ func TestStoreBlob_Duplicate(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	content := "test blob content"
-	blobID1, err := StoreBlob(db, content)
+	blobID1, err := StoreBlobWithEncoding(db, content, "")
 	if err != nil {
 		t.Fatalf("First StoreBlob failed: %v", err)
 	}
 
-	blobID2, err := StoreBlob(db, content)
+	blobID2, err := StoreBlobWithEncoding(db, content, "")
 	if err != nil {
 		t.Fatalf("Second StoreBlob failed: %v", err)
 	}
@@ -841,7 +841,7 @@ func TestGetBlob(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	content := "test blob content"
-	blobID, _ := StoreBlob(db, content)
+	blobID, _ := StoreBlobWithEncoding(db, content, "")
 
 	retrievedContent, err := GetBlob(db, blobID)
 	if err != nil {
@@ -868,8 +868,8 @@ func TestDecrementBlobReference(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	content := "test blob content"
-	blobID, _ := StoreBlob(db, content)
-	_, _ = StoreBlob(db, content)
+	blobID, _ := StoreBlobWithEncoding(db, content, "")
+	_, _ = StoreBlobWithEncoding(db, content, "")
 
 	err := DecrementBlobReference(db, blobID)
 	if err != nil {
@@ -1154,7 +1154,7 @@ func TestAddMessagePart(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	messageID, _ := CreateMessage(db, "Test", "", "", time.Now(), 100)
-	blobID, _ := StoreBlob(db, "part content")
+	blobID, _ := StoreBlobWithEncoding(db, "part content", "")
 
 	partID, err := AddMessagePart(db, messageID, 1, sql.NullInt64{}, "text/plain", "", "7bit", "utf-8", "", "", sql.NullInt64{Int64: blobID, Valid: true}, "", 12)
 	if err != nil {
@@ -1189,7 +1189,7 @@ func TestGetMessageParts(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	messageID, _ := CreateMessage(db, "Test", "", "", time.Now(), 100)
-	blobID, _ := StoreBlob(db, "part content")
+	blobID, _ := StoreBlobWithEncoding(db, "part content", "")
 
 	_, _ = AddMessagePart(db, messageID, 1, sql.NullInt64{}, "text/plain", "", "7bit", "utf-8", "", "", sql.NullInt64{Int64: blobID, Valid: true}, "", 12)
 	_, _ = AddMessagePart(db, messageID, 2, sql.NullInt64{}, "text/html", "", "7bit", "utf-8", "", "", sql.NullInt64{}, "HTML content", 12)

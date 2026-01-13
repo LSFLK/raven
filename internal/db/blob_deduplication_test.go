@@ -239,7 +239,7 @@ func TestBlobDeduplicationBackwardCompatibility(t *testing.T) {
 	content := "Test content for backward compatibility"
 
 	// Old way (no encoding specified)
-	id1, err := StoreBlob(db, content)
+	id1, err := StoreBlobWithEncoding(db, content, "")
 	if err != nil {
 		t.Fatalf("Failed to store blob (old way): %v", err)
 	}

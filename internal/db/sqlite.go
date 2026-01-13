@@ -796,10 +796,6 @@ func decodeContentForHashing(content string, encoding string) ([]byte, error) {
 	}
 }
 
-func StoreBlob(db *sql.DB, content string) (int64, error) {
-	return StoreBlobWithEncoding(db, content, "")
-}
-
 // StoreBlobWithEncoding stores a blob with proper deduplication based on decoded content
 func StoreBlobWithEncoding(db *sql.DB, content string, encoding string) (int64, error) {
 	// Decode content before hashing to ensure same binary content produces same hash
@@ -834,11 +830,6 @@ func StoreBlobWithEncoding(db *sql.DB, content string, encoding string) (int64, 
 	}
 
 	return result.LastInsertId()
-}
-
-// StoreBlobS3 stores a blob reference with S3 blob ID
-func StoreBlobS3(db *sql.DB, content string, s3BlobID string) (int64, error) {
-	return StoreBlobS3WithEncoding(db, content, s3BlobID, "")
 }
 
 // StoreBlobS3WithEncoding stores a blob reference with S3 blob ID with proper deduplication based on decoded content
