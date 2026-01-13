@@ -193,9 +193,10 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 	var rawMsgErr error
 	loadRawMsg := func() string {
 		if rawMsg == "" && rawMsgErr == nil {
-			// Use S3 storage if available
+			// Use S3 storage if available and shared DB for blob access
+			sharedDB := deps.GetSharedDB()
 			s3Storage := deps.GetS3Storage()
-			rawMsg, rawMsgErr = parser.ReconstructMessageWithS3(targetDB, messageID, s3Storage)
+			rawMsg, rawMsgErr = parser.ReconstructMessageWithSharedDBAndS3(sharedDB, targetDB, messageID, s3Storage)
 			if rawMsgErr != nil {
 				return ""
 			}
@@ -340,14 +341,17 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 						} else {
 							// Part body only - for non-multipart parts
 							if blobID, ok := target["blob_id"].(int64); ok {
+								// Get shared database for blob retrieval (blobs are now in shared DB)
+								sharedDB := deps.GetSharedDB()
+
 								// Try local storage first
-								if content, err := db.GetBlob(targetDB, blobID); err == nil && content != "" {
+								if content, err := db.GetBlob(sharedDB, blobID); err == nil && content != "" {
 									payload = content
 								} else {
 									// Try S3 storage
 									s3Storage := deps.GetS3Storage()
 									if s3Storage != nil && s3Storage.IsEnabled() {
-										if s3BlobID, storageType, err := db.GetBlobS3BlobID(targetDB, blobID); err == nil && storageType == "s3" && s3BlobID != "" {
+										if s3BlobID, storageType, err := db.GetBlobS3BlobID(sharedDB, blobID); err == nil && storageType == "s3" && s3BlobID != "" {
 											if content, err := s3Storage.Retrieve(s3BlobID); err == nil {
 												payload = content
 											}

@@ -528,8 +528,11 @@ func matchesHeaderOrBody(msg messageInfo, field string, searchStr string, charse
 		return false
 	}
 
+	// Get shared database for blob access
+	sharedDB := deps.GetSharedDB()
+
 	// Reconstruct message to search in headers/body
-	rawMsg, err := parser.ReconstructMessage(userDB, msg.messageID)
+	rawMsg, err := parser.ReconstructMessageWithSharedDB(sharedDB, userDB, msg.messageID)
 	if err != nil {
 		return false
 	}
@@ -573,7 +576,10 @@ func matchesHeader(msg messageInfo, fieldName string, searchStr string, charset 
 		return false
 	}
 
-	rawMsg, err := parser.ReconstructMessage(userDB, msg.messageID)
+	// Get shared database for blob access
+	sharedDB := deps.GetSharedDB()
+
+	rawMsg, err := parser.ReconstructMessageWithSharedDB(sharedDB, userDB, msg.messageID)
 	if err != nil {
 		return false
 	}
@@ -647,7 +653,10 @@ func matchesSize(msg messageInfo, size int, larger bool, userID int64, deps Serv
 		return false
 	}
 
-	rawMsg, err := parser.ReconstructMessage(userDB, msg.messageID)
+	// Get shared database for blob access
+	sharedDB := deps.GetSharedDB()
+
+	rawMsg, err := parser.ReconstructMessageWithSharedDB(sharedDB, userDB, msg.messageID)
 	if err != nil {
 		return false
 	}
@@ -689,8 +698,11 @@ func matchesSentDate(msg messageInfo, dateStr string, comparison string, userID 
 		return false
 	}
 
+	// Get shared database for blob access
+	sharedDB := deps.GetSharedDB()
+
 	// Get Date: header from message
-	rawMsg, err := parser.ReconstructMessage(userDB, msg.messageID)
+	rawMsg, err := parser.ReconstructMessageWithSharedDB(sharedDB, userDB, msg.messageID)
 	if err != nil {
 		return false
 	}
@@ -1293,9 +1305,12 @@ func HandleAppendWithReader(deps ServerDeps, reader io.Reader, conn net.Conn, ta
 		return
 	}
 
-	// Store message in database with S3 support
+	// Get shared database for blob deduplication
+	sharedDB := deps.GetSharedDB()
+
+	// Store message in database with S3 support and shared blob deduplication
 	s3Storage := deps.GetS3Storage()
-	messageID, err := parser.StoreMessagePerUserWithS3(userDB, parsed, s3Storage)
+	messageID, err := parser.StoreMessagePerUserWithSharedDBAndS3(sharedDB, userDB, parsed, s3Storage)
 	if err != nil {
 		log.Printf("Failed to store message: %v", err)
 		deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to save message", tag))
@@ -1448,9 +1463,12 @@ func HandleAppend(deps ServerDeps, conn net.Conn, tag string, parts []string, fu
 		return
 	}
 
-	// Store message in database with S3 support
+	// Get shared database for blob deduplication
+	sharedDB := deps.GetSharedDB()
+
+	// Store message in database with S3 support and shared blob deduplication
 	s3Storage := deps.GetS3Storage()
-	messageID, err := parser.StoreMessagePerUserWithS3(userDB, parsed, s3Storage)
+	messageID, err := parser.StoreMessagePerUserWithSharedDBAndS3(sharedDB, userDB, parsed, s3Storage)
 	if err != nil {
 		log.Printf("Failed to store message: %v", err)
 		deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Failed to save message", tag))

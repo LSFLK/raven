@@ -187,6 +187,12 @@ func (m *DBManager) initSharedDB() error {
 		return fmt.Errorf("failed to create user_role_assignments table: %v", err)
 	}
 
+	// Create blobs table in shared database for deduplication across all users
+	if err := createBlobsTable(db); err != nil {
+		_ = db.Close()
+		return fmt.Errorf("failed to create blobs table: %v", err)
+	}
+
 	// Create shared database indexes
 	if err := createSharedIndexes(db); err != nil {
 		_ = db.Close()
@@ -200,10 +206,8 @@ func (m *DBManager) initSharedDB() error {
 // initUserDB initializes a per-user database
 func (m *DBManager) initUserDB(db *sql.DB, userID int64) error {
 	// Create user tables
-	if err := createBlobsTable(db); err != nil {
-		return fmt.Errorf("failed to create blobs table: %v", err)
-	}
-
+	// Note: blobs table is now in shared database for cross-user deduplication
+	
 	if err := createMailboxesTablePerUser(db); err != nil {
 		return fmt.Errorf("failed to create mailboxes table: %v", err)
 	}
@@ -224,7 +228,7 @@ func (m *DBManager) initUserDB(db *sql.DB, userID int64) error {
 		return fmt.Errorf("failed to create addresses table: %v", err)
 	}
 
-	if err := createMessagePartsTable(db); err != nil {
+	if err := createMessagePartsTablePerUser(db); err != nil {
 		return fmt.Errorf("failed to create message_parts table: %v", err)
 	}
 

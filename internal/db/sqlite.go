@@ -64,7 +64,7 @@ func InitDB(file string) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to create addresses table: %v", err)
 	}
 
-	if err = createMessagePartsTable(db); err != nil {
+	if err = createMessagePartsTablePerUser(db); err != nil {
 		return nil, fmt.Errorf("failed to create message_parts table: %v", err)
 	}
 
@@ -263,7 +263,9 @@ func createAddressesTable(db *sql.DB) error {
 	return err
 }
 
-func createMessagePartsTable(db *sql.DB) error {
+// createMessagePartsTablePerUser creates the message_parts table for per-user databases
+// without the foreign key to blobs (since blobs are in the shared database)
+func createMessagePartsTablePerUser(db *sql.DB) error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS message_parts (
 		id INTEGER PRIMARY KEY,
@@ -280,8 +282,7 @@ func createMessagePartsTable(db *sql.DB) error {
 		text_content TEXT,
 		size_bytes INTEGER NOT NULL,
 		FOREIGN KEY (message_id) REFERENCES messages(id),
-		FOREIGN KEY (parent_part_id) REFERENCES message_parts(id),
-		FOREIGN KEY (blob_id) REFERENCES blobs(id)
+		FOREIGN KEY (parent_part_id) REFERENCES message_parts(id)
 	);
 	`
 	if _, err := db.Exec(schema); err != nil {
@@ -386,7 +387,6 @@ func createIndexes(db *sql.DB) error {
 		"CREATE INDEX IF NOT EXISTS idx_message_mailbox_message ON message_mailbox(message_id)",
 		"CREATE INDEX IF NOT EXISTS idx_message_mailbox_uid ON message_mailbox(mailbox_id, uid)",
 		"CREATE INDEX IF NOT EXISTS idx_message_headers_message ON message_headers(message_id)",
-		"CREATE INDEX IF NOT EXISTS idx_blobs_hash ON blobs(sha256_hash)",
 		"CREATE INDEX IF NOT EXISTS idx_deliveries_message ON deliveries(message_id)",
 		"CREATE INDEX IF NOT EXISTS idx_deliveries_status ON deliveries(status)",
 		"CREATE INDEX IF NOT EXISTS idx_outbound_status ON outbound_queue(status, next_retry_at)",
@@ -1448,6 +1448,7 @@ func createSharedIndexes(db *sql.DB) error {
 		"CREATE INDEX IF NOT EXISTS idx_role_assignments_user ON user_role_assignments(user_id)",
 		"CREATE INDEX IF NOT EXISTS idx_role_assignments_role ON user_role_assignments(role_mailbox_id)",
 		"CREATE INDEX IF NOT EXISTS idx_role_assignments_active ON user_role_assignments(is_active)",
+		"CREATE INDEX IF NOT EXISTS idx_blobs_hash ON blobs(sha256_hash)",
 	}
 
 	for _, idx := range indexes {
@@ -1474,7 +1475,6 @@ func createUserIndexes(db *sql.DB) error {
 		"CREATE INDEX IF NOT EXISTS idx_message_mailbox_message ON message_mailbox(message_id)",
 		"CREATE INDEX IF NOT EXISTS idx_message_mailbox_uid ON message_mailbox(mailbox_id, uid)",
 		"CREATE INDEX IF NOT EXISTS idx_message_headers_message ON message_headers(message_id)",
-		"CREATE INDEX IF NOT EXISTS idx_blobs_hash ON blobs(sha256_hash)",
 		"CREATE INDEX IF NOT EXISTS idx_deliveries_message ON deliveries(message_id)",
 		"CREATE INDEX IF NOT EXISTS idx_deliveries_status ON deliveries(status)",
 		"CREATE INDEX IF NOT EXISTS idx_outbound_status ON outbound_queue(status, next_retry_at)",

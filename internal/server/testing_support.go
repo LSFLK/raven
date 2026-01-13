@@ -351,7 +351,8 @@ func InsertTestMail(t *testing.T, database interface{}, username, subject, sende
 
 	var messageID int64
 	if dbManager != nil {
-		messageID, err = parser.StoreMessagePerUser(userDB, parsed)
+		sharedDB := dbManager.GetSharedDB()
+		messageID, err = parser.StoreMessagePerUserWithSharedDB(sharedDB, userDB, parsed)
 		if err != nil {
 			t.Fatalf("Failed to store test message: %v", err)
 		}
@@ -361,7 +362,8 @@ func InsertTestMail(t *testing.T, database interface{}, username, subject, sende
 			t.Fatalf("Failed to add message to mailbox: %v", err)
 		}
 	} else {
-		messageID, err = parser.StoreMessage(userDB, parsed)
+		// Legacy monolithic database approach
+		messageID, err = parser.StoreMessageWithSharedDB(userDB, userDB, parsed)
 		if err != nil {
 			t.Fatalf("Failed to store test message: %v", err)
 		}

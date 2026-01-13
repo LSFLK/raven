@@ -354,34 +354,34 @@ func parseMultipart(body io.Reader, boundary string, depth int, parentPartID sql
 	return parts, nil
 }
 
-// StoreMessage stores a parsed message in the database
-func StoreMessage(database *sql.DB, parsed *ParsedMessage) (int64, error) {
-	// Create message record
-	messageID, err := db.CreateMessage(database, parsed.Subject, parsed.InReplyTo, parsed.References, parsed.Date, parsed.SizeBytes)
+// StoreMessageWithSharedDB stores a message with separate shared and user databases
+func StoreMessageWithSharedDB(sharedDB *sql.DB, userDB *sql.DB, parsed *ParsedMessage) (int64, error) {
+	// Create message record in user database
+	messageID, err := db.CreateMessage(userDB, parsed.Subject, parsed.InReplyTo, parsed.References, parsed.Date, parsed.SizeBytes)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create message: %v", err)
 	}
 
 	parsed.MessageID = messageID
 
-	// Store all headers
+	// Store all headers in user database
 	for _, header := range parsed.Headers {
-		if err := db.AddMessageHeader(database, messageID, header.Name, header.Value, header.Sequence); err != nil {
+		if err := db.AddMessageHeader(userDB, messageID, header.Name, header.Value, header.Sequence); err != nil {
 			return 0, fmt.Errorf("failed to store header %s: %v", header.Name, err)
 		}
 	}
 
-	// Store addresses
-	if err := storeAddresses(database, messageID, "from", parsed.From); err != nil {
+	// Store addresses in user database
+	if err := storeAddresses(userDB, messageID, "from", parsed.From); err != nil {
 		return 0, fmt.Errorf("failed to store from addresses: %v", err)
 	}
-	if err := storeAddresses(database, messageID, "to", parsed.To); err != nil {
+	if err := storeAddresses(userDB, messageID, "to", parsed.To); err != nil {
 		return 0, fmt.Errorf("failed to store to addresses: %v", err)
 	}
-	if err := storeAddresses(database, messageID, "cc", parsed.Cc); err != nil {
+	if err := storeAddresses(userDB, messageID, "cc", parsed.Cc); err != nil {
 		return 0, fmt.Errorf("failed to store cc addresses: %v", err)
 	}
-	if err := storeAddresses(database, messageID, "bcc", parsed.Bcc); err != nil {
+	if err := storeAddresses(userDB, messageID, "bcc", parsed.Bcc); err != nil {
 		return 0, fmt.Errorf("failed to store bcc addresses: %v", err)
 	}
 
@@ -389,9 +389,9 @@ func StoreMessage(database *sql.DB, parsed *ParsedMessage) (int64, error) {
 	for _, part := range parsed.Parts {
 		var blobID sql.NullInt64
 
-		// Store large content or attachments in blobs
+		// Store large content or attachments in blobs (in shared database for deduplication)
 		if len(part.TextContent) > 1024 || part.Filename != "" {
-			id, err := db.StoreBlob(database, part.TextContent)
+			id, err := db.StoreBlob(sharedDB, part.TextContent)
 			if err == nil {
 				blobID = sql.NullInt64{Valid: true, Int64: id}
 				// Clear text content since it's in blob
@@ -400,7 +400,7 @@ func StoreMessage(database *sql.DB, parsed *ParsedMessage) (int64, error) {
 		}
 
 		_, err := db.AddMessagePart(
-			database,
+			userDB,
 			messageID,
 			part.PartNumber,
 			part.ParentPartID,
@@ -433,39 +433,39 @@ func storeAddresses(database *sql.DB, messageID int64, addressType string, addre
 	return nil
 }
 
-// StoreMessagePerUser stores a message in a per-user database
-func StoreMessagePerUser(database *sql.DB, parsed *ParsedMessage) (int64, error) {
-	return StoreMessagePerUserWithS3(database, parsed, nil)
+// StoreMessagePerUserWithSharedDB stores a message with separate shared and user databases
+func StoreMessagePerUserWithSharedDB(sharedDB *sql.DB, userDB *sql.DB, parsed *ParsedMessage) (int64, error) {
+	return StoreMessagePerUserWithSharedDBAndS3(sharedDB, userDB, parsed, nil)
 }
 
-// StoreMessagePerUserWithS3 stores a message in a per-user database with optional S3 blob storage
-func StoreMessagePerUserWithS3(database *sql.DB, parsed *ParsedMessage, s3Storage *blobstorage.S3BlobStorage) (int64, error) {
-	// Create message record
-	messageID, err := db.CreateMessage(database, parsed.Subject, parsed.InReplyTo, parsed.References, parsed.Date, parsed.SizeBytes)
+// StoreMessagePerUserWithSharedDBAndS3 stores a message in a per-user database with optional S3 blob storage and shared blob deduplication
+func StoreMessagePerUserWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, parsed *ParsedMessage, s3Storage *blobstorage.S3BlobStorage) (int64, error) {
+	// Create message record in user database
+	messageID, err := db.CreateMessage(userDB, parsed.Subject, parsed.InReplyTo, parsed.References, parsed.Date, parsed.SizeBytes)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create message: %v", err)
 	}
 
 	parsed.MessageID = messageID
 
-	// Store all headers
+	// Store all headers in user database
 	for _, header := range parsed.Headers {
-		if err := db.AddMessageHeader(database, messageID, header.Name, header.Value, header.Sequence); err != nil {
+		if err := db.AddMessageHeader(userDB, messageID, header.Name, header.Value, header.Sequence); err != nil {
 			return 0, fmt.Errorf("failed to store header %s: %v", header.Name, err)
 		}
 	}
 
-	// Store addresses
-	if err := storeAddresses(database, messageID, "from", parsed.From); err != nil {
+	// Store addresses in user database
+	if err := storeAddresses(userDB, messageID, "from", parsed.From); err != nil {
 		return 0, fmt.Errorf("failed to store from addresses: %v", err)
 	}
-	if err := storeAddresses(database, messageID, "to", parsed.To); err != nil {
+	if err := storeAddresses(userDB, messageID, "to", parsed.To); err != nil {
 		return 0, fmt.Errorf("failed to store to addresses: %v", err)
 	}
-	if err := storeAddresses(database, messageID, "cc", parsed.Cc); err != nil {
+	if err := storeAddresses(userDB, messageID, "cc", parsed.Cc); err != nil {
 		return 0, fmt.Errorf("failed to store cc addresses: %v", err)
 	}
-	if err := storeAddresses(database, messageID, "bcc", parsed.Bcc); err != nil {
+	if err := storeAddresses(userDB, messageID, "bcc", parsed.Bcc); err != nil {
 		return 0, fmt.Errorf("failed to store bcc addresses: %v", err)
 	}
 
@@ -473,7 +473,7 @@ func StoreMessagePerUserWithS3(database *sql.DB, parsed *ParsedMessage, s3Storag
 	for _, part := range parsed.Parts {
 		var blobID sql.NullInt64
 
-		// Store large content or attachments in blobs
+		// Store large content or attachments in blobs (in shared database for cross-user deduplication)
 		if len(part.TextContent) > 1024 || part.Filename != "" {
 			var id int64
 
@@ -481,25 +481,25 @@ func StoreMessagePerUserWithS3(database *sql.DB, parsed *ParsedMessage, s3Storag
 			if s3Storage != nil && s3Storage.IsEnabled() {
 				s3BlobID, err := s3Storage.Store(part.TextContent)
 				if err == nil {
-					id, err = db.StoreBlobS3(database, part.TextContent, s3BlobID)
+					id, err = db.StoreBlobS3(sharedDB, part.TextContent, s3BlobID)
 					if err == nil {
 						blobID = sql.NullInt64{Valid: true, Int64: id}
 						// Clear text content since it's in S3
 						part.TextContent = ""
-						fmt.Printf("Stored attachment in S3: %s (blob_id: %d, s3_id: %s)\n", part.Filename, id, s3BlobID)
+						fmt.Printf("Stored attachment in S3 with shared deduplication: %s (blob_id: %d, s3_id: %s)\n", part.Filename, id, s3BlobID)
 					}
 				} else {
 					fmt.Printf("Failed to store in S3, falling back to local: %v\n", err)
 					// Fall back to local storage
-					id, err = db.StoreBlob(database, part.TextContent)
+					id, err = db.StoreBlob(sharedDB, part.TextContent)
 					if err == nil {
 						blobID = sql.NullInt64{Valid: true, Int64: id}
 						part.TextContent = ""
 					}
 				}
 			} else {
-				// Use local SQLite storage
-				id, err = db.StoreBlob(database, part.TextContent)
+				// Use local SQLite storage in shared database
+				id, err = db.StoreBlob(sharedDB, part.TextContent)
 				if err == nil {
 					blobID = sql.NullInt64{Valid: true, Int64: id}
 					part.TextContent = ""
@@ -508,7 +508,7 @@ func StoreMessagePerUserWithS3(database *sql.DB, parsed *ParsedMessage, s3Storag
 		}
 
 		_, err := db.AddMessagePart(
-			database,
+			userDB,
 			messageID,
 			part.PartNumber,
 			part.ParentPartID,
@@ -530,15 +530,15 @@ func StoreMessagePerUserWithS3(database *sql.DB, parsed *ParsedMessage, s3Storag
 	return messageID, nil
 }
 
-// ReconstructMessage reconstructs the raw message from database parts
-func ReconstructMessage(database *sql.DB, messageID int64) (string, error) {
-	return ReconstructMessageWithS3(database, messageID, nil)
+// ReconstructMessageWithSharedDB reconstructs the raw message with separate shared and user databases
+func ReconstructMessageWithSharedDB(sharedDB *sql.DB, userDB *sql.DB, messageID int64) (string, error) {
+	return ReconstructMessageWithSharedDBAndS3(sharedDB, userDB, messageID, nil)
 }
 
-// ReconstructMessageWithS3 reconstructs the raw message from database parts with S3 support
-func ReconstructMessageWithS3(database *sql.DB, messageID int64, s3Storage *blobstorage.S3BlobStorage) (string, error) {
-	// Get message parts
-	parts, err := db.GetMessageParts(database, messageID)
+// ReconstructMessageWithSharedDBAndS3 reconstructs the raw message from database parts with S3 support and shared blob storage
+func ReconstructMessageWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, messageID int64, s3Storage *blobstorage.S3BlobStorage) (string, error) {
+	// Get message parts from user database
+	parts, err := db.GetMessageParts(userDB, messageID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get message parts: %v", err)
 	}
@@ -547,8 +547,8 @@ func ReconstructMessageWithS3(database *sql.DB, messageID int64, s3Storage *blob
 		return "", fmt.Errorf("no message parts found")
 	}
 
-	// Get ALL stored headers
-	headers, err := db.GetMessageHeaders(database, messageID)
+	// Get ALL stored headers from user database
+	headers, err := db.GetMessageHeaders(userDB, messageID)
 	if err != nil {
 		// If we can't get headers, try to reconstruct from addresses and metadata
 		fmt.Printf("WARNING: Failed to get message headers for message %d: %v\n", messageID, err)
@@ -611,15 +611,15 @@ func ReconstructMessageWithS3(database *sql.DB, messageID int64, s3Storage *blob
 		// Fallback: Build minimal headers from addresses and metadata for old messages
 		fmt.Printf("WARNING: No stored headers found for message %d, using fallback\n", messageID)
 
-		// Get addresses
-		fromAddrs, _ := db.GetMessageAddresses(database, messageID, "from")
-		toAddrs, _ := db.GetMessageAddresses(database, messageID, "to")
-		ccAddrs, _ := db.GetMessageAddresses(database, messageID, "cc")
+		// Get addresses from user database
+		fromAddrs, _ := db.GetMessageAddresses(userDB, messageID, "from")
+		toAddrs, _ := db.GetMessageAddresses(userDB, messageID, "to")
+		ccAddrs, _ := db.GetMessageAddresses(userDB, messageID, "cc")
 
-		// Get message metadata
+		// Get message metadata from user database
 		var subject string
 		var date time.Time
-		err = database.QueryRow("SELECT subject, date FROM messages WHERE id = ?", messageID).Scan(&subject, &date)
+		err = userDB.QueryRow("SELECT subject, date FROM messages WHERE id = ?", messageID).Scan(&subject, &date)
 		if err != nil {
 			return "", fmt.Errorf("failed to get message metadata: %v", err)
 		}
@@ -662,14 +662,14 @@ func ReconstructMessageWithS3(database *sql.DB, messageID int64, s3Storage *blob
 
 		buf.WriteString("\r\n")
 
-		// Get content from blob or text_content (with S3 support)
+		// Get content from blob (in shared database) or text_content (with S3 support)
 		if blobID, ok := part["blob_id"].(int64); ok {
-			content, err := db.GetBlob(database, blobID)
+			content, err := db.GetBlob(sharedDB, blobID)
 			if err == nil && content != "" {
 				buf.WriteString(content)
 			} else if s3Storage != nil && s3Storage.IsEnabled() {
 				// Try to get from S3 storage
-				if s3BlobID, storageType, err := db.GetBlobS3BlobID(database, blobID); err == nil && storageType == "s3" && s3BlobID != "" {
+				if s3BlobID, storageType, err := db.GetBlobS3BlobID(sharedDB, blobID); err == nil && storageType == "s3" && s3BlobID != "" {
 					if content, err := s3Storage.Retrieve(s3BlobID); err == nil {
 						buf.WriteString(content)
 					}
@@ -762,31 +762,31 @@ func ReconstructMessageWithS3(database *sql.DB, messageID int64, s3Storage *blob
 				// Plain text version
 				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryAlt))
 				writePartHeaders(&buf, plainPart)
-				writePartContentWithS3(&buf, database, plainPart, s3Storage)
+				writePartContentWithS3(&buf, sharedDB, plainPart, s3Storage)
 
 				// HTML version
 				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryAlt))
 				writePartHeaders(&buf, htmlPart)
-				writePartContentWithS3(&buf, database, htmlPart, s3Storage)
+				writePartContentWithS3(&buf, sharedDB, htmlPart, s3Storage)
 
 				buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryAlt))
 			} else if hasHTML {
 				// HTML only
 				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryMixed))
 				writePartHeaders(&buf, htmlPart)
-				writePartContentWithS3(&buf, database, htmlPart, s3Storage)
+				writePartContentWithS3(&buf, sharedDB, htmlPart, s3Storage)
 			} else if hasPlain {
 				// Plain text only
 				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryMixed))
 				writePartHeaders(&buf, plainPart)
-				writePartContentWithS3(&buf, database, plainPart, s3Storage)
+				writePartContentWithS3(&buf, sharedDB, plainPart, s3Storage)
 			}
 
 			// Attachments
 			for _, attachment := range attachments {
 				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryMixed))
 				writePartHeaders(&buf, attachment)
-				writePartContentWithS3(&buf, database, attachment, s3Storage)
+				writePartContentWithS3(&buf, sharedDB, attachment, s3Storage)
 			}
 
 			buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryMixed))
@@ -799,18 +799,18 @@ func ReconstructMessageWithS3(database *sql.DB, messageID int64, s3Storage *blob
 			// Plain text version
 			buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryAlt))
 			writePartHeaders(&buf, plainPart)
-			writePartContentWithS3(&buf, database, plainPart, s3Storage)
+			writePartContentWithS3(&buf, sharedDB, plainPart, s3Storage)
 
 			// HTML version
 			buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryAlt))
 			writePartHeaders(&buf, htmlPart)
-			writePartContentWithS3(&buf, database, htmlPart, s3Storage)
+			writePartContentWithS3(&buf, sharedDB, htmlPart, s3Storage)
 
 			buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryAlt))
 		} else if len(textParts) == 1 {
 			// Single text part, no multipart needed
 			writePartHeaders(&buf, textParts[0])
-			writePartContentWithS3(&buf, database, textParts[0], s3Storage)
+			writePartContentWithS3(&buf, sharedDB, textParts[0], s3Storage)
 		} else {
 			// Fallback: multipart/mixed for all parts
 			buf.WriteString("MIME-Version: 1.0\r\n")
@@ -820,7 +820,7 @@ func ReconstructMessageWithS3(database *sql.DB, messageID int64, s3Storage *blob
 			for _, part := range parts {
 				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryMixed))
 				writePartHeaders(&buf, part)
-				writePartContentWithS3(&buf, database, part, s3Storage)
+				writePartContentWithS3(&buf, sharedDB, part, s3Storage)
 			}
 
 			buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryMixed))
@@ -887,16 +887,16 @@ func writePartHeaders(buf *bytes.Buffer, part map[string]interface{}) {
 }
 
 // writePartContentWithS3 writes the content of a message part with S3 support
-func writePartContentWithS3(buf *bytes.Buffer, database *sql.DB, part map[string]interface{}, s3Storage *blobstorage.S3BlobStorage) {
-	// Get content from blob or text_content
+func writePartContentWithS3(buf *bytes.Buffer, sharedDB *sql.DB, part map[string]interface{}, s3Storage *blobstorage.S3BlobStorage) {
+	// Get content from blob (in shared database) or text_content
 	var content string
 	if blobID, ok := part["blob_id"].(int64); ok {
-		// First try to get from local storage
-		if c, err := db.GetBlob(database, blobID); err == nil && c != "" {
+		// First try to get from local storage (in shared database)
+		if c, err := db.GetBlob(sharedDB, blobID); err == nil && c != "" {
 			content = c
 		} else if s3Storage != nil && s3Storage.IsEnabled() {
 			// Try to get from S3 storage
-			if s3BlobID, storageType, err := db.GetBlobS3BlobID(database, blobID); err == nil && storageType == "s3" && s3BlobID != "" {
+			if s3BlobID, storageType, err := db.GetBlobS3BlobID(sharedDB, blobID); err == nil && storageType == "s3" && s3BlobID != "" {
 				if c, err := s3Storage.Retrieve(s3BlobID); err == nil {
 					content = c
 				} else {
