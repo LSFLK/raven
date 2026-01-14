@@ -8,9 +8,10 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
 	"raven/internal/db"
 	"raven/internal/delivery/parser"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestParseMessage(t *testing.T) {
@@ -667,7 +668,7 @@ This is the message body.`
 		t.Fatalf("Failed to parse message: %v", err)
 	}
 
-	messageID, err := parser.StoreMessage(database, parsed)
+	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
 	if err != nil {
 		t.Fatalf("Failed to store message: %v", err)
 	}
@@ -742,7 +743,7 @@ Content-Type: text/html; charset=utf-8
 		t.Fatalf("Failed to parse message: %v", err)
 	}
 
-	messageID, err := parser.StoreMessage(database, parsed)
+	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
 	if err != nil {
 		t.Fatalf("Failed to store message: %v", err)
 	}
@@ -770,7 +771,7 @@ func TestStoreMessage_LargeContent(t *testing.T) {
 		t.Fatalf("Failed to parse message: %v", err)
 	}
 
-	messageID, err := parser.StoreMessage(database, parsed)
+	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
 	if err != nil {
 		t.Fatalf("Failed to store message: %v", err)
 	}
@@ -802,7 +803,7 @@ Message body for user.`
 		t.Fatalf("Failed to parse message: %v", err)
 	}
 
-	messageID, err := parser.StoreMessagePerUser(database, parsed)
+	messageID, err := parser.StoreMessagePerUserWithSharedDB(database, database, parsed)
 	if err != nil {
 		t.Fatalf("Failed to store message per user: %v", err)
 	}
@@ -839,12 +840,12 @@ Simple message body.`
 		t.Fatalf("Failed to parse message: %v", err)
 	}
 
-	messageID, err := parser.StoreMessage(database, parsed)
+	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
 	if err != nil {
 		t.Fatalf("Failed to store message: %v", err)
 	}
 
-	reconstructed, err := parser.ReconstructMessage(database, messageID)
+	reconstructed, err := parser.ReconstructMessageWithSharedDB(database, database, messageID)
 	if err != nil {
 		t.Fatalf("Failed to reconstruct message: %v", err)
 	}
@@ -887,12 +888,12 @@ Content-Type: text/html; charset=utf-8
 		t.Fatalf("Failed to parse message: %v", err)
 	}
 
-	messageID, err := parser.StoreMessage(database, parsed)
+	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
 	if err != nil {
 		t.Fatalf("Failed to store message: %v", err)
 	}
 
-	reconstructed, err := parser.ReconstructMessage(database, messageID)
+	reconstructed, err := parser.ReconstructMessageWithSharedDB(database, database, messageID)
 	if err != nil {
 		t.Fatalf("Failed to reconstruct message: %v", err)
 	}
@@ -936,12 +937,12 @@ Binary content
 		t.Fatalf("Failed to parse message: %v", err)
 	}
 
-	messageID, err := parser.StoreMessage(database, parsed)
+	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
 	if err != nil {
 		t.Fatalf("Failed to store message: %v", err)
 	}
 
-	reconstructed, err := parser.ReconstructMessage(database, messageID)
+	reconstructed, err := parser.ReconstructMessageWithSharedDB(database, database, messageID)
 	if err != nil {
 		t.Fatalf("Failed to reconstruct message: %v", err)
 	}
@@ -963,7 +964,7 @@ func TestReconstructMessage_NoPartsError(t *testing.T) {
 	database := setupTestDB(t)
 	defer func() { _ = database.Close() }()
 
-	_, err := parser.ReconstructMessage(database, 99999)
+	_, err := parser.ReconstructMessageWithSharedDB(database, database, 99999)
 	if err == nil {
 		t.Error("Expected error when reconstructing non-existent message")
 	}
@@ -996,7 +997,7 @@ Content-Disposition: attachment; filename="large.bin"
 		t.Fatalf("Failed to parse message: %v", err)
 	}
 
-	messageID, err := parser.StoreMessage(database, parsed)
+	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
 	if err != nil {
 		t.Fatalf("Failed to store message: %v", err)
 	}
@@ -1049,12 +1050,12 @@ Content-Type: text/html; charset=utf-8
 		t.Errorf("Expected InReplyTo '<previous@example.com>', got '%s'", parsed.InReplyTo)
 	}
 
-	messageID, err := parser.StoreMessage(database, parsed)
+	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
 	if err != nil {
 		t.Fatalf("Failed to store message: %v", err)
 	}
 
-	reconstructed, err := parser.ReconstructMessage(database, messageID)
+	reconstructed, err := parser.ReconstructMessageWithSharedDB(database, database, messageID)
 	if err != nil {
 		t.Fatalf("Failed to reconstruct message: %v", err)
 	}
@@ -1088,7 +1089,7 @@ func TestStoreMessage_ErrorHandling(t *testing.T) {
 		From:    []mail.Address{{Address: "test@example.com"}},
 	}
 
-	_, err := parser.StoreMessage(database, parsed)
+	_, err := parser.StoreMessageWithSharedDB(database, database, parsed)
 	if err == nil {
 		t.Error("Expected error when storing to closed database")
 	}

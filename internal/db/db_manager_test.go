@@ -323,7 +323,7 @@ func TestSharedDBTables(t *testing.T) {
 
 	sharedDB := manager.GetSharedDB()
 
-	expectedTables := []string{"domains", "users", "role_mailboxes", "user_role_assignments"}
+	expectedTables := []string{"domains", "users", "role_mailboxes", "user_role_assignments", "blobs"}
 	for _, tableName := range expectedTables {
 		var count int
 		err = sharedDB.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", tableName).Scan(&count)
@@ -356,7 +356,7 @@ func TestUserDBTables(t *testing.T) {
 	}
 
 	expectedTables := []string{
-		"blobs", "mailboxes", "aliases", "messages",
+		"mailboxes", "aliases", "messages",
 		"subscriptions", "addresses", "message_parts",
 		"deliveries", "message_mailbox", "message_headers",
 		"outbound_queue",
@@ -397,6 +397,7 @@ func TestSharedDBIndexes(t *testing.T) {
 		"idx_role_assignments_user",
 		"idx_role_assignments_role",
 		"idx_role_assignments_active",
+		"idx_blobs_hash",
 	}
 
 	for _, indexName := range expectedIndexes {
@@ -443,7 +444,6 @@ func TestUserDBIndexes(t *testing.T) {
 		"idx_message_mailbox_message",
 		"idx_message_mailbox_uid",
 		"idx_message_headers_message",
-		"idx_blobs_hash",
 		"idx_deliveries_message",
 		"idx_deliveries_status",
 		"idx_outbound_status",

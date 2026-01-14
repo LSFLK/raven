@@ -146,8 +146,9 @@ func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder s
 		return fmt.Errorf("failed to parse message: %w", err)
 	}
 
-	// Store the message in the target database (user or role mailbox) with S3 support
-	messageID, err := parser.StoreMessagePerUserWithS3(targetDB, parsed, s.s3Storage)
+	// Store the message in the target database (user or role mailbox) with S3 support and shared blob deduplication
+	// sharedDB is already obtained earlier for domain/user operations
+	messageID, err := parser.StoreMessagePerUserWithSharedDBAndS3(sharedDB, targetDB, parsed, s.s3Storage)
 	if err != nil {
 		return fmt.Errorf("failed to store message: %w", err)
 	}
