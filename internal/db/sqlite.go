@@ -3,8 +3,11 @@ package db
 import (
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"mime/quotedprintable"
 	"strings"
 	"time"
 
@@ -757,21 +760,67 @@ func renameInbox(db *sql.DB, userID int64, newName string) error {
 
 // Blob management functions
 
-func StoreBlob(db *sql.DB, content string) (int64, error) {
-	// Calculate SHA256 hash
-	hash := sha256.Sum256([]byte(content))
+// decodeContentForHashing decodes MIME content based on Content-Transfer-Encoding
+// to normalize it before hashing. This ensures that the same binary content with
+// different encodings (e.g., base64 with different line breaks) produces the same hash.
+func decodeContentForHashing(content string, encoding string) ([]byte, error) {
+	// Normalize encoding string (case-insensitive, trim whitespace)
+	encoding = strings.ToLower(strings.TrimSpace(encoding))
+
+	switch encoding {
+	case "base64":
+		// Decode base64 - this removes line breaks and other encoding artifacts
+		decoded, err := base64.StdEncoding.DecodeString(content)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode base64: %w", err)
+		}
+		return decoded, nil
+
+	case "quoted-printable":
+		// Decode quoted-printable
+		reader := quotedprintable.NewReader(strings.NewReader(content))
+		decoded, err := io.ReadAll(reader)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode quoted-printable: %w", err)
+		}
+		return decoded, nil
+
+	case "7bit", "8bit", "binary", "":
+		// No decoding needed for these encodings - content is already in its final form
+		return []byte(content), nil
+
+	default:
+		// Unknown encoding - treat as-is to avoid breaking existing functionality
+		// Log a warning in production code if needed
+		return []byte(content), nil
+	}
+}
+
+// StoreBlobWithEncoding stores a blob with proper deduplication based on decoded content
+func StoreBlobWithEncoding(db *sql.DB, content string, encoding string) (int64, error) {
+	// Decode content before hashing to ensure same binary content produces same hash
+	// regardless of encoding differences (e.g., base64 with different line breaks)
+	decodedContent, err := decodeContentForHashing(content, encoding)
+	if err != nil {
+		// If decoding fails, fall back to hashing the original content
+		// This maintains backward compatibility
+		decodedContent = []byte(content)
+	}
+
+	// Calculate SHA256 hash of decoded (binary) content
+	hash := sha256.Sum256(decodedContent)
 	hashStr := hex.EncodeToString(hash[:])
 
-	// Check if blob already exists
+	// Check if blob already exists (by hash of decoded content)
 	var blobID int64
-	err := db.QueryRow("SELECT id FROM blobs WHERE sha256_hash = ?", hashStr).Scan(&blobID)
+	err = db.QueryRow("SELECT id FROM blobs WHERE sha256_hash = ?", hashStr).Scan(&blobID)
 	if err == nil {
 		// Blob exists, increment reference count
 		_, err = db.Exec("UPDATE blobs SET reference_count = reference_count + 1 WHERE id = ?", blobID)
 		return blobID, err
 	}
 
-	// Create new blob (local storage)
+	// Create new blob (local storage) - store original encoded content
 	result, err := db.Exec(`
 		INSERT INTO blobs (sha256_hash, size_bytes, content, storage_type, reference_count)
 		VALUES (?, ?, ?, 'local', ?)
@@ -783,22 +832,31 @@ func StoreBlob(db *sql.DB, content string) (int64, error) {
 	return result.LastInsertId()
 }
 
-// StoreBlobS3 stores a blob reference with S3 blob ID
-func StoreBlobS3(db *sql.DB, content string, s3BlobID string) (int64, error) {
-	// Calculate SHA256 hash
-	hash := sha256.Sum256([]byte(content))
+// StoreBlobS3WithEncoding stores a blob reference with S3 blob ID with proper deduplication based on decoded content
+func StoreBlobS3WithEncoding(db *sql.DB, content string, s3BlobID string, encoding string) (int64, error) {
+	// Decode content before hashing to ensure same binary content produces same hash
+	// regardless of encoding differences (e.g., base64 with different line breaks)
+	decodedContent, err := decodeContentForHashing(content, encoding)
+	if err != nil {
+		// If decoding fails, fall back to hashing the original content
+		// This maintains backward compatibility
+		decodedContent = []byte(content)
+	}
+
+	// Calculate SHA256 hash of decoded (binary) content
+	hash := sha256.Sum256(decodedContent)
 	hashStr := hex.EncodeToString(hash[:])
 
-	// Check if blob already exists
+	// Check if blob already exists (by hash of decoded content)
 	var blobID int64
-	err := db.QueryRow("SELECT id FROM blobs WHERE sha256_hash = ?", hashStr).Scan(&blobID)
+	err = db.QueryRow("SELECT id FROM blobs WHERE sha256_hash = ?", hashStr).Scan(&blobID)
 	if err == nil {
 		// Blob exists, increment reference count
 		_, err = db.Exec("UPDATE blobs SET reference_count = reference_count + 1 WHERE id = ?", blobID)
 		return blobID, err
 	}
 
-	// Create new blob (S3 storage)
+	// Create new blob (S3 storage) - store hash of decoded content but reference to encoded S3 object
 	result, err := db.Exec(`
 		INSERT INTO blobs (sha256_hash, size_bytes, s3_blob_id, storage_type, reference_count)
 		VALUES (?, ?, ?, 's3', ?)
