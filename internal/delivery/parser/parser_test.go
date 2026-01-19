@@ -1094,3 +1094,117 @@ func TestStoreMessage_ErrorHandling(t *testing.T) {
 		t.Error("Expected error when storing to closed database")
 	}
 }
+
+func TestReconstructMessage_WithMultipartRelated(t *testing.T) {
+	database := setupTestDB(t)
+	defer func() { _ = database.Close() }()
+
+	// Message with multipart/alternative containing text/plain and multipart/related (with HTML + inline image)
+	rawMessage := `From: sender@example.com
+To: recipient@example.com
+Subject: Message with Inline Image
+Content-Type: multipart/alternative; boundary="boundary-alt"
+MIME-Version: 1.0
+
+--boundary-alt
+Content-Type: text/plain; charset=UTF-8
+
+Hi user2,
+--boundary-alt
+Content-Type: multipart/related; boundary="boundary-rel"
+
+--boundary-rel
+Content-Type: text/html; charset=UTF-8
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+</head>
+<body>
+<p>Hi user2,</p>
+<p><img src="cid:image123@example.com" alt=""></p>
+</body>
+</html>
+--boundary-rel
+Content-Type: image/png; name="image.png"
+Content-Disposition: inline; filename="image.png"
+Content-ID: <image123@example.com>
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
+--boundary-rel--
+--boundary-alt--`
+
+	parsed, err := parser.ParseMIMEMessage(rawMessage)
+	if err != nil {
+		t.Fatalf("Failed to parse message: %v", err)
+	}
+
+	// Verify parsing detected all parts including multipart/related container
+	if len(parsed.Parts) != 4 {
+		t.Fatalf("Expected 4 parts (text/plain, multipart/related, text/html, image/png), got %d", len(parsed.Parts))
+	}
+
+	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
+	if err != nil {
+		t.Fatalf("Failed to store message: %v", err)
+	}
+
+	reconstructed, err := parser.ReconstructMessageWithSharedDB(database, database, messageID)
+	if err != nil {
+		t.Fatalf("Failed to reconstruct message: %v", err)
+	}
+
+	// Verify the reconstructed message has proper structure
+	if !strings.Contains(reconstructed, "multipart/alternative") {
+		t.Error("Reconstructed message should be multipart/alternative")
+	}
+
+	if !strings.Contains(reconstructed, "multipart/related") {
+		t.Error("Reconstructed message missing multipart/related section")
+	}
+
+	if !strings.Contains(reconstructed, "text/html") {
+		t.Error("Reconstructed message missing HTML part")
+	}
+
+	if !strings.Contains(reconstructed, "image/png") {
+		t.Error("Reconstructed message missing inline image")
+	}
+
+	if !strings.Contains(reconstructed, "Content-ID: <image123@example.com>") {
+		t.Error("Reconstructed message missing Content-ID for inline image")
+	}
+
+	if !strings.Contains(reconstructed, "inline; filename=\"image.png\"") {
+		t.Error("Reconstructed message missing inline disposition for image")
+	}
+
+	// Verify structure: should have text/plain, then multipart/related (containing html + image)
+	// The multipart/related should come after text/plain in the alternative
+	plainIdx := strings.Index(reconstructed, "text/plain")
+	relatedIdx := strings.Index(reconstructed, "multipart/related")
+	htmlIdx := strings.Index(reconstructed, "text/html")
+	imageIdx := strings.Index(reconstructed, "image/png")
+
+	if plainIdx == -1 || relatedIdx == -1 || htmlIdx == -1 || imageIdx == -1 {
+		t.Fatal("Missing expected content types in reconstructed message")
+	}
+
+	// multipart/related should come after text/plain
+	if relatedIdx < plainIdx {
+		t.Error("multipart/related should come after text/plain in alternative")
+	}
+
+	// HTML and image should come after multipart/related header
+	if htmlIdx < relatedIdx {
+		t.Error("HTML part should be inside multipart/related section")
+	}
+
+	if imageIdx < relatedIdx {
+		t.Error("Image should be inside multipart/related section")
+	}
+
+	t.Logf("Reconstructed message structure verified successfully")
+}

@@ -386,6 +386,9 @@ func StoreMessageWithSharedDB(sharedDB *sql.DB, userDB *sql.DB, parsed *ParsedMe
 	}
 
 	// Store message parts
+	// Build a map from part_number to database id so we can correctly set parent_part_id
+	partNumberToDBID := make(map[int]int64)
+	
 	for _, part := range parsed.Parts {
 		var blobID sql.NullInt64
 
@@ -400,11 +403,25 @@ func StoreMessageWithSharedDB(sharedDB *sql.DB, userDB *sql.DB, parsed *ParsedMe
 			}
 		}
 
-		_, err := db.AddMessagePart(
+		// Convert parent part_number to parent database id
+		var parentDBID sql.NullInt64
+		if part.ParentPartID.Valid {
+			parentPartNum := int(part.ParentPartID.Int64)
+			if dbID, exists := partNumberToDBID[parentPartNum]; exists {
+				parentDBID = sql.NullInt64{Valid: true, Int64: dbID}
+				fmt.Printf("DEBUG StoreMessage: Part num=%d parent_part_num=%d -> parent_db_id=%d\n", 
+					part.PartNumber, parentPartNum, dbID)
+			} else {
+				fmt.Printf("DEBUG StoreMessage: WARNING - Part num=%d references parent_part_num=%d which hasn't been stored yet\n",
+					part.PartNumber, parentPartNum)
+			}
+		}
+
+		partDBID, err := db.AddMessagePart(
 			userDB,
 			messageID,
 			part.PartNumber,
-			part.ParentPartID,
+			parentDBID,
 			part.ContentType,
 			part.ContentDisposition,
 			part.ContentTransferEncoding,
@@ -418,6 +435,11 @@ func StoreMessageWithSharedDB(sharedDB *sql.DB, userDB *sql.DB, parsed *ParsedMe
 		if err != nil {
 			return 0, fmt.Errorf("failed to store message part: %v", err)
 		}
+		
+		// Track the database id for this part number
+		partNumberToDBID[part.PartNumber] = partDBID
+		fmt.Printf("DEBUG StoreMessage: Stored part num=%d as db_id=%d (parent_db_id=%v)\n",
+			part.PartNumber, partDBID, parentDBID)
 	}
 
 	return messageID, nil
@@ -471,6 +493,9 @@ func StoreMessagePerUserWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, pars
 	}
 
 	// Store message parts
+	// Build a map from part_number to database id so we can correctly set parent_part_id
+	partNumberToDBID := make(map[int]int64)
+	
 	for _, part := range parsed.Parts {
 		var blobID sql.NullInt64
 
@@ -509,11 +534,25 @@ func StoreMessagePerUserWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, pars
 			}
 		}
 
-		_, err := db.AddMessagePart(
+		// Convert parent part_number to parent database id
+		var parentDBID sql.NullInt64
+		if part.ParentPartID.Valid {
+			parentPartNum := int(part.ParentPartID.Int64)
+			if dbID, exists := partNumberToDBID[parentPartNum]; exists {
+				parentDBID = sql.NullInt64{Valid: true, Int64: dbID}
+				fmt.Printf("DEBUG StoreMessage: Part num=%d parent_part_num=%d -> parent_db_id=%d\n", 
+					part.PartNumber, parentPartNum, dbID)
+			} else {
+				fmt.Printf("DEBUG StoreMessage: WARNING - Part num=%d references parent_part_num=%d which hasn't been stored yet\n",
+					part.PartNumber, parentPartNum)
+			}
+		}
+
+		partDBID, err := db.AddMessagePart(
 			userDB,
 			messageID,
 			part.PartNumber,
-			part.ParentPartID,
+			parentDBID,
 			part.ContentType,
 			part.ContentDisposition,
 			part.ContentTransferEncoding,
@@ -527,6 +566,11 @@ func StoreMessagePerUserWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, pars
 		if err != nil {
 			return 0, fmt.Errorf("failed to store message part: %v", err)
 		}
+		
+		// Track the database id for this part number
+		partNumberToDBID[part.PartNumber] = partDBID
+		fmt.Printf("DEBUG StoreMessage: Stored part num=%d as db_id=%d (parent_db_id=%v)\n",
+			part.PartNumber, partDBID, parentDBID)
 	}
 
 	return messageID, nil
@@ -682,54 +726,96 @@ func ReconstructMessageWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, messa
 		}
 	} else {
 		// Multipart message handling
-		// Separate text parts from attachments
-		var textParts []map[string]interface{}
-		var attachments []map[string]interface{}
-
-		fmt.Printf("DEBUG ReconstructMessage: Processing %d parts\n", len(parts))
+		// Build a tree structure from flat parts list using parent_part_id
+		
+		// IMPORTANT: parent_part_id is a foreign key to message_parts(id), NOT part_number!
+		// Create a map from part id to node for lookups
+		partNodesById := make(map[int64]*PartNode)
+		var rootParts []*PartNode
 
 		for _, part := range parts {
-			contentType := part["content_type"].(string)
-			disposition := ""
-			if d, ok := part["content_disposition"].(string); ok {
-				disposition = d
-			}
-			filename := ""
-			if f, ok := part["filename"].(string); ok {
-				filename = f
-			}
+			partID := part["id"].(int64)
+			node := &PartNode{Part: part, Children: []*PartNode{}}
+			partNodesById[partID] = node
 
-			// Classify as attachment or text part
-			isAttachment := false
-			dispLower := strings.ToLower(strings.TrimSpace(disposition))
-			// Never treat multipart containers as attachments
-			// CRITICAL FIX: Skip multipart containers - they're just structure, not content
-			if strings.HasPrefix(strings.ToLower(contentType), "multipart/") {
-				fmt.Printf("DEBUG ReconstructMessage: Skipping multipart container: type='%s'\n", contentType)
-				continue
-			} else if strings.HasPrefix(dispLower, "attachment") {
-				isAttachment = true
-			} else if !strings.HasPrefix(strings.ToLower(contentType), "text/") && !strings.HasPrefix(dispLower, "inline") {
-				// Non-text types are attachments unless explicitly inline
-				isAttachment = true
-			}
-
-			fmt.Printf("DEBUG ReconstructMessage: Part type='%s', disposition='%s', filename='%s', isAttachment=%v\n",
-				contentType, disposition, filename, isAttachment)
-
-			if isAttachment {
-				attachments = append(attachments, part)
+			// Debug: Show part structure
+			if parentID, hasParent := part["parent_part_id"].(int64); hasParent {
+				fmt.Printf("DEBUG ReconstructMessage: Part id=%d num=%d (type=%s) has parent_part_id=%d\n", 
+					partID, part["part_number"].(int64), part["content_type"].(string), parentID)
 			} else {
-				textParts = append(textParts, part)
+				fmt.Printf("DEBUG ReconstructMessage: Part id=%d num=%d (type=%s) is root (no parent)\n", 
+					partID, part["part_number"].(int64), part["content_type"].(string))
+				rootParts = append(rootParts, node)
 			}
 		}
 
-		fmt.Printf("DEBUG ReconstructMessage: Found %d text parts, %d attachments\n", len(textParts), len(attachments))
+		// Build parent-child relationships using id
+		for _, node := range partNodesById {
+			if parentPartID, ok := node.Part["parent_part_id"].(int64); ok {
+				if parentNode, found := partNodesById[parentPartID]; found {
+					parentNode.Children = append(parentNode.Children, node)
+					fmt.Printf("DEBUG ReconstructMessage: Added part id=%d as child of part id=%d\n", 
+						node.Part["id"].(int64), parentPartID)
+				} else {
+					fmt.Printf("DEBUG ReconstructMessage: Warning - part id=%d references non-existent parent id=%d\n", 
+						node.Part["id"].(int64), parentPartID)
+				}
+			}
+		}
+
+		fmt.Printf("DEBUG ReconstructMessage: Processing %d parts (%d root parts)\n", len(parts), len(rootParts))
+
+		// Separate top-level parts into text/attachments (respecting hierarchy)
+		var textParts []map[string]interface{}
+		var attachments []map[string]interface{}
+		var multipartRelated *PartNode
+
+		for _, node := range rootParts {
+			contentType := node.Part["content_type"].(string)
+			disposition := ""
+			if d, ok := node.Part["content_disposition"].(string); ok {
+				disposition = d
+			}
+
+			// Check for multipart/related at root level
+			if strings.ToLower(contentType) == "multipart/related" {
+				fmt.Printf("DEBUG ReconstructMessage: Found multipart/related container with %d children\n", len(node.Children))
+				multipartRelated = node
+				continue
+			}
+
+			// Skip other multipart containers at root
+			if strings.HasPrefix(strings.ToLower(contentType), "multipart/") {
+				fmt.Printf("DEBUG ReconstructMessage: Skipping multipart container: type='%s'\n", contentType)
+				continue
+			}
+
+			// Classify regular parts
+			dispLower := strings.ToLower(strings.TrimSpace(disposition))
+			isAttachment := false
+			if strings.HasPrefix(dispLower, "attachment") {
+				isAttachment = true
+			} else if !strings.HasPrefix(strings.ToLower(contentType), "text/") && !strings.HasPrefix(dispLower, "inline") {
+				isAttachment = true
+			}
+
+			fmt.Printf("DEBUG ReconstructMessage: Part type='%s', disposition='%s', isAttachment=%v\n",
+				contentType, disposition, isAttachment)
+
+			if isAttachment {
+				attachments = append(attachments, node.Part)
+			} else {
+				textParts = append(textParts, node.Part)
+			}
+		}
+
+		fmt.Printf("DEBUG ReconstructMessage: Found %d text parts, %d attachments, multipart/related=%v\n", 
+			len(textParts), len(attachments), multipartRelated != nil)
 
 		// Determine if we have attachments
 		hasAttachments := len(attachments) > 0
 
-		// Check if we have both text/plain and text/html
+		// Check if we have both text/plain and text/html (at root level)
 		hasPlain := false
 		hasHTML := false
 		var htmlPart, plainPart map[string]interface{}
@@ -755,7 +841,7 @@ func ReconstructMessageWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, messa
 			buf.WriteString("\r\n")
 
 			// First part: the message body
-			if hasPlain && hasHTML {
+			if hasPlain && (hasHTML || multipartRelated != nil) {
 				// multipart/alternative for text versions
 				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryMixed))
 				buf.WriteString(fmt.Sprintf("Content-Type: multipart/alternative; boundary=\"%s\"\r\n", boundaryAlt))
@@ -766,12 +852,20 @@ func ReconstructMessageWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, messa
 				writePartHeaders(&buf, plainPart)
 				writePartContentWithS3(&buf, sharedDB, plainPart, s3Storage)
 
-				// HTML version
-				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryAlt))
-				writePartHeaders(&buf, htmlPart)
-				writePartContentWithS3(&buf, sharedDB, htmlPart, s3Storage)
+				// HTML version (possibly with related inline images)
+				if multipartRelated != nil {
+					writeMultipartRelated(&buf, &boundaryAlt, sharedDB, multipartRelated, s3Storage)
+				} else {
+					buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryAlt))
+					writePartHeaders(&buf, htmlPart)
+					writePartContentWithS3(&buf, sharedDB, htmlPart, s3Storage)
+				}
 
 				buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryAlt))
+			} else if multipartRelated != nil {
+				// multipart/related only
+				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryMixed))
+				writeMultipartRelated(&buf, &boundaryMixed, sharedDB, multipartRelated, s3Storage)
 			} else if hasHTML {
 				// HTML only
 				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryMixed))
@@ -792,7 +886,7 @@ func ReconstructMessageWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, messa
 			}
 
 			buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryMixed))
-		} else if hasPlain && hasHTML {
+		} else if hasPlain && (hasHTML || multipartRelated != nil) {
 			// multipart/alternative (no attachments)
 			buf.WriteString("MIME-Version: 1.0\r\n")
 			buf.WriteString(fmt.Sprintf("Content-Type: multipart/alternative; boundary=\"%s\"\r\n", boundaryAlt))
@@ -803,10 +897,31 @@ func ReconstructMessageWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, messa
 			writePartHeaders(&buf, plainPart)
 			writePartContentWithS3(&buf, sharedDB, plainPart, s3Storage)
 
-			// HTML version
-			buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryAlt))
-			writePartHeaders(&buf, htmlPart)
-			writePartContentWithS3(&buf, sharedDB, htmlPart, s3Storage)
+			// HTML version (possibly with related inline images)
+			if multipartRelated != nil {
+				writeMultipartRelated(&buf, &boundaryAlt, sharedDB, multipartRelated, s3Storage)
+			} else {
+				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryAlt))
+				writePartHeaders(&buf, htmlPart)
+				writePartContentWithS3(&buf, sharedDB, htmlPart, s3Storage)
+			}
+
+			buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryAlt))
+		} else if multipartRelated != nil {
+			// multipart/related only (no plain text alternative)
+			buf.WriteString("MIME-Version: 1.0\r\n")
+			boundaryRelated := "----=_Part_Related_" + fmt.Sprintf("%d", time.Now().UnixNano()+2)
+			buf.WriteString(fmt.Sprintf("Content-Type: multipart/related; boundary=\"%s\"\r\n", boundaryRelated))
+			buf.WriteString("\r\n")
+
+			// Write all children of multipart/related
+			for _, child := range multipartRelated.Children {
+				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryRelated))
+				writePartHeaders(&buf, child.Part)
+				writePartContentWithS3(&buf, sharedDB, child.Part, s3Storage)
+			}
+
+			buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryRelated))
 
 			buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryAlt))
 		} else if len(textParts) == 1 {
@@ -841,6 +956,32 @@ func ReconstructMessageWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, messa
 	fmt.Printf("DEBUG ReconstructMessage: Total message size: %d bytes\n", len(result))
 
 	return result, nil
+}
+
+// PartNode represents a MIME part in a tree structure
+type PartNode struct {
+	Part     map[string]interface{}
+	Children []*PartNode
+}
+
+// writeMultipartRelated writes a multipart/related section with its children
+func writeMultipartRelated(buf *bytes.Buffer, parentBoundary *string, sharedDB *sql.DB, relatedNode *PartNode, s3Storage *blobstorage.S3BlobStorage) {
+	// Generate a boundary for multipart/related
+	boundaryRelated := "----=_Part_Related_" + fmt.Sprintf("%d", time.Now().UnixNano()+2)
+	
+	// Write the multipart/related part header
+	buf.WriteString(fmt.Sprintf("--%s\r\n", *parentBoundary))
+	buf.WriteString(fmt.Sprintf("Content-Type: multipart/related; boundary=\"%s\"\r\n", boundaryRelated))
+	buf.WriteString("\r\n")
+
+	// Write all children of multipart/related
+	for _, child := range relatedNode.Children {
+		buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryRelated))
+		writePartHeaders(buf, child.Part)
+		writePartContentWithS3(buf, sharedDB, child.Part, s3Storage)
+	}
+
+	buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryRelated))
 }
 
 // writePartHeaders writes the MIME headers for a message part
