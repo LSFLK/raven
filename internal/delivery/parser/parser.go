@@ -684,10 +684,6 @@ func ReconstructMessageWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, messa
 		buf.WriteString(fmt.Sprintf("Date: %s\r\n", date.Format(time.RFC1123Z)))
 	}
 
-	// Use consistent boundaries for reconstructed messages
-	boundaryAlt := "----=_Part_Alternative_" + fmt.Sprintf("%d", time.Now().UnixNano())
-	boundaryMixed := "----=_Part_Mixed_" + fmt.Sprintf("%d", time.Now().UnixNano()+1)
-
 	// For simple single-part messages
 	if len(parts) == 1 {
 		part := parts[0]
@@ -725,7 +721,7 @@ func ReconstructMessageWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, messa
 			buf.WriteString(textContent)
 		}
 	} else {
-		// Multipart message handling
+		// Multipart message handling using DFS traversal
 		// Build a tree structure from flat parts list using parent_part_id
 		
 		// IMPORTANT: parent_part_id is a foreign key to message_parts(id), NOT part_number!
@@ -765,182 +761,34 @@ func ReconstructMessageWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, messa
 
 		fmt.Printf("DEBUG ReconstructMessage: Processing %d parts (%d root parts)\n", len(parts), len(rootParts))
 
-		// Separate top-level parts into text/attachments (respecting hierarchy)
-		var textParts []map[string]interface{}
-		var attachments []map[string]interface{}
-		var multipartRelated *PartNode
-
-		for _, node := range rootParts {
-			contentType := node.Part["content_type"].(string)
-			disposition := ""
-			if d, ok := node.Part["content_disposition"].(string); ok {
-				disposition = d
-			}
-
-			// Check for multipart/related at root level
-			if strings.ToLower(contentType) == "multipart/related" {
-				fmt.Printf("DEBUG ReconstructMessage: Found multipart/related container with %d children\n", len(node.Children))
-				multipartRelated = node
-				continue
-			}
-
-			// Skip other multipart containers at root
-			if strings.HasPrefix(strings.ToLower(contentType), "multipart/") {
-				fmt.Printf("DEBUG ReconstructMessage: Skipping multipart container: type='%s'\n", contentType)
-				continue
-			}
-
-			// Classify regular parts
-			dispLower := strings.ToLower(strings.TrimSpace(disposition))
-			isAttachment := false
-			if strings.HasPrefix(dispLower, "attachment") {
-				isAttachment = true
-			} else if !strings.HasPrefix(strings.ToLower(contentType), "text/") && !strings.HasPrefix(dispLower, "inline") {
-				isAttachment = true
-			}
-
-			fmt.Printf("DEBUG ReconstructMessage: Part type='%s', disposition='%s', isAttachment=%v\n",
-				contentType, disposition, isAttachment)
-
-			if isAttachment {
-				attachments = append(attachments, node.Part)
-			} else {
-				textParts = append(textParts, node.Part)
-			}
-		}
-
-		fmt.Printf("DEBUG ReconstructMessage: Found %d text parts, %d attachments, multipart/related=%v\n", 
-			len(textParts), len(attachments), multipartRelated != nil)
-
-		// Determine if we have attachments
-		hasAttachments := len(attachments) > 0
-
-		// Check if we have both text/plain and text/html (at root level)
-		hasPlain := false
-		hasHTML := false
-		var htmlPart, plainPart map[string]interface{}
-
-		for _, part := range textParts {
-			contentType := part["content_type"].(string)
-			switch contentType {
-			case "text/plain":
-				hasPlain = true
-				plainPart = part
-			case "text/html":
-				hasHTML = true
-				htmlPart = part
-			}
-		}
-
-		// Build the message structure
-		if hasAttachments {
-			fmt.Printf("DEBUG ReconstructMessage: Building multipart/mixed message\n")
-			// Always generate Content-Type header for multipart messages
+		// Use DFS to reconstruct the MIME structure
+		// If we have a single root part, handle it directly
+		if len(rootParts) == 1 {
+			reconstructPartDFS(&buf, sharedDB, rootParts[0], s3Storage, "")
+		} else if len(rootParts) > 1 {
+			// Multiple root parts - determine the best multipart type
+			// Check for common patterns:
+			// 1. text/plain + multipart/related = multipart/alternative
+			// 2. text/plain + text/html = multipart/alternative
+			// 3. Otherwise = multipart/mixed
+			
+			multipartType := detectMultipartType(rootParts)
+			boundary := fmt.Sprintf("----=_Part_%s_%d", 
+				strings.Title(strings.TrimPrefix(multipartType, "multipart/")), 
+				time.Now().UnixNano())
+			
+			fmt.Printf("DEBUG ReconstructMessage: Using %s for %d root parts\n", multipartType, len(rootParts))
+			
 			buf.WriteString("MIME-Version: 1.0\r\n")
-			buf.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=\"%s\"\r\n", boundaryMixed))
+			buf.WriteString(fmt.Sprintf("Content-Type: %s; boundary=\"%s\"\r\n", multipartType, boundary))
 			buf.WriteString("\r\n")
 
-			// First part: the message body
-			if hasPlain && (hasHTML || multipartRelated != nil) {
-				// multipart/alternative for text versions
-				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryMixed))
-				buf.WriteString(fmt.Sprintf("Content-Type: multipart/alternative; boundary=\"%s\"\r\n", boundaryAlt))
-				buf.WriteString("\r\n")
-
-				// Plain text version
-				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryAlt))
-				writePartHeaders(&buf, plainPart)
-				writePartContentWithS3(&buf, sharedDB, plainPart, s3Storage)
-
-				// HTML version (possibly with related inline images)
-				if multipartRelated != nil {
-					writeMultipartRelated(&buf, &boundaryAlt, sharedDB, multipartRelated, s3Storage)
-				} else {
-					buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryAlt))
-					writePartHeaders(&buf, htmlPart)
-					writePartContentWithS3(&buf, sharedDB, htmlPart, s3Storage)
-				}
-
-				buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryAlt))
-			} else if multipartRelated != nil {
-				// multipart/related only
-				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryMixed))
-				writeMultipartRelated(&buf, &boundaryMixed, sharedDB, multipartRelated, s3Storage)
-			} else if hasHTML {
-				// HTML only
-				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryMixed))
-				writePartHeaders(&buf, htmlPart)
-				writePartContentWithS3(&buf, sharedDB, htmlPart, s3Storage)
-			} else if hasPlain {
-				// Plain text only
-				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryMixed))
-				writePartHeaders(&buf, plainPart)
-				writePartContentWithS3(&buf, sharedDB, plainPart, s3Storage)
+			for _, rootNode := range rootParts {
+				buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
+				reconstructPartDFS(&buf, sharedDB, rootNode, s3Storage, boundary)
 			}
 
-			// Attachments
-			for _, attachment := range attachments {
-				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryMixed))
-				writePartHeaders(&buf, attachment)
-				writePartContentWithS3(&buf, sharedDB, attachment, s3Storage)
-			}
-
-			buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryMixed))
-		} else if hasPlain && (hasHTML || multipartRelated != nil) {
-			// multipart/alternative (no attachments)
-			buf.WriteString("MIME-Version: 1.0\r\n")
-			buf.WriteString(fmt.Sprintf("Content-Type: multipart/alternative; boundary=\"%s\"\r\n", boundaryAlt))
-			buf.WriteString("\r\n")
-
-			// Plain text version
-			buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryAlt))
-			writePartHeaders(&buf, plainPart)
-			writePartContentWithS3(&buf, sharedDB, plainPart, s3Storage)
-
-			// HTML version (possibly with related inline images)
-			if multipartRelated != nil {
-				writeMultipartRelated(&buf, &boundaryAlt, sharedDB, multipartRelated, s3Storage)
-			} else {
-				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryAlt))
-				writePartHeaders(&buf, htmlPart)
-				writePartContentWithS3(&buf, sharedDB, htmlPart, s3Storage)
-			}
-
-			buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryAlt))
-		} else if multipartRelated != nil {
-			// multipart/related only (no plain text alternative)
-			buf.WriteString("MIME-Version: 1.0\r\n")
-			boundaryRelated := "----=_Part_Related_" + fmt.Sprintf("%d", time.Now().UnixNano()+2)
-			buf.WriteString(fmt.Sprintf("Content-Type: multipart/related; boundary=\"%s\"\r\n", boundaryRelated))
-			buf.WriteString("\r\n")
-
-			// Write all children of multipart/related
-			for _, child := range multipartRelated.Children {
-				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryRelated))
-				writePartHeaders(&buf, child.Part)
-				writePartContentWithS3(&buf, sharedDB, child.Part, s3Storage)
-			}
-
-			buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryRelated))
-
-			buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryAlt))
-		} else if len(textParts) == 1 {
-			// Single text part, no multipart needed
-			writePartHeaders(&buf, textParts[0])
-			writePartContentWithS3(&buf, sharedDB, textParts[0], s3Storage)
-		} else {
-			// Fallback: multipart/mixed for all parts
-			buf.WriteString("MIME-Version: 1.0\r\n")
-			buf.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=\"%s\"\r\n", boundaryMixed))
-			buf.WriteString("\r\n")
-
-			for _, part := range parts {
-				buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryMixed))
-				writePartHeaders(&buf, part)
-				writePartContentWithS3(&buf, sharedDB, part, s3Storage)
-			}
-
-			buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryMixed))
+			buf.WriteString(fmt.Sprintf("--%s--\r\n", boundary))
 		}
 	}
 
@@ -958,30 +806,119 @@ func ReconstructMessageWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, messa
 	return result, nil
 }
 
+// detectMultipartType determines the appropriate multipart type based on root parts
+func detectMultipartType(rootParts []*PartNode) string {
+	// Count different types of parts
+	hasTextPlain := false
+	hasTextHTML := false
+	hasMultipartRelated := false
+	hasAttachment := false
+	
+	for _, node := range rootParts {
+		contentType := strings.ToLower(node.Part["content_type"].(string))
+		disposition := ""
+		if d, ok := node.Part["content_disposition"].(string); ok {
+			disposition = strings.ToLower(d)
+		}
+		
+		switch {
+		case contentType == "text/plain":
+			hasTextPlain = true
+		case contentType == "text/html":
+			hasTextHTML = true
+		case contentType == "multipart/related":
+			hasMultipartRelated = true
+		case strings.HasPrefix(disposition, "attachment"):
+			hasAttachment = true
+		case !strings.HasPrefix(contentType, "text/") && !strings.HasPrefix(contentType, "multipart/"):
+			// Non-text, non-multipart is likely an attachment
+			hasAttachment = true
+		}
+	}
+	
+	// Determine multipart type based on content
+	// multipart/alternative: text/plain + (text/html OR multipart/related)
+	// multipart/mixed: has attachments or mixed content types
+	
+	if hasAttachment {
+		return "multipart/mixed"
+	}
+	
+	if hasTextPlain && (hasTextHTML || hasMultipartRelated) {
+		return "multipart/alternative"
+	}
+	
+	if hasTextPlain || hasTextHTML {
+		return "multipart/alternative"
+	}
+	
+	// Default to mixed
+	return "multipart/mixed"
+}
+
 // PartNode represents a MIME part in a tree structure
 type PartNode struct {
 	Part     map[string]interface{}
 	Children []*PartNode
 }
 
+// reconstructPartDFS recursively reconstructs a MIME part using depth-first search
+func reconstructPartDFS(buf *bytes.Buffer, sharedDB *sql.DB, node *PartNode, s3Storage *blobstorage.S3BlobStorage, parentBoundary string) {
+	contentType := node.Part["content_type"].(string)
+	contentTypeLower := strings.ToLower(contentType)
+
+	// Check if this is a multipart container
+	if strings.HasPrefix(contentTypeLower, "multipart/") {
+		// This is a multipart container - generate a boundary and process children
+		multipartType := contentTypeLower // e.g., "multipart/mixed", "multipart/alternative", "multipart/related"
+		
+		// Generate a unique boundary for this multipart section
+		boundary := fmt.Sprintf("----=_Part_%s_%d", 
+			strings.Title(strings.TrimPrefix(multipartType, "multipart/")), 
+			time.Now().UnixNano())
+		
+		fmt.Printf("DEBUG reconstructPartDFS: Multipart container type='%s' with %d children, boundary='%s'\n", 
+			multipartType, len(node.Children), boundary)
+
+		// Write Content-Type header for this multipart section
+		// Only add MIME-Version if this is at the root level (no parent boundary)
+		if parentBoundary == "" {
+			buf.WriteString("MIME-Version: 1.0\r\n")
+		}
+		buf.WriteString(fmt.Sprintf("Content-Type: %s; boundary=\"%s\"\r\n", contentType, boundary))
+		buf.WriteString("\r\n")
+
+		// Recursively process all children with DFS
+		for _, child := range node.Children {
+			buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
+			reconstructPartDFS(buf, sharedDB, child, s3Storage, boundary)
+		}
+
+		// Write closing boundary
+		buf.WriteString(fmt.Sprintf("--%s--\r\n", boundary))
+	} else {
+		// This is a leaf part (actual content) - write headers and content
+		fmt.Printf("DEBUG reconstructPartDFS: Leaf part type='%s', has_blob=%v, text_len=%d\n", 
+			contentType, node.Part["blob_id"] != nil, len(getStringField(node.Part, "text_content")))
+		
+		writePartHeaders(buf, node.Part)
+		writePartContentWithS3(buf, sharedDB, node.Part, s3Storage)
+	}
+}
+
+// getStringField safely gets a string field from a map, returning empty string if not found
+func getStringField(m map[string]interface{}, key string) string {
+	if val, ok := m[key].(string); ok {
+		return val
+	}
+	return ""
+}
+
 // writeMultipartRelated writes a multipart/related section with its children
 func writeMultipartRelated(buf *bytes.Buffer, parentBoundary *string, sharedDB *sql.DB, relatedNode *PartNode, s3Storage *blobstorage.S3BlobStorage) {
-	// Generate a boundary for multipart/related
-	boundaryRelated := "----=_Part_Related_" + fmt.Sprintf("%d", time.Now().UnixNano()+2)
-	
-	// Write the multipart/related part header
+	// Use DFS to reconstruct the multipart/related part
 	buf.WriteString(fmt.Sprintf("--%s\r\n", *parentBoundary))
-	buf.WriteString(fmt.Sprintf("Content-Type: multipart/related; boundary=\"%s\"\r\n", boundaryRelated))
-	buf.WriteString("\r\n")
-
-	// Write all children of multipart/related
-	for _, child := range relatedNode.Children {
-		buf.WriteString(fmt.Sprintf("--%s\r\n", boundaryRelated))
-		writePartHeaders(buf, child.Part)
-		writePartContentWithS3(buf, sharedDB, child.Part, s3Storage)
-	}
-
-	buf.WriteString(fmt.Sprintf("--%s--\r\n", boundaryRelated))
+	reconstructPartDFS(buf, sharedDB, relatedNode, s3Storage, *parentBoundary)
 }
 
 // writePartHeaders writes the MIME headers for a message part
