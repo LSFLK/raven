@@ -897,6 +897,57 @@ func detectMultipartType(rootParts []*PartNode) string {
 	return "multipart/mixed"
 }
 
+// sortMultipartRelatedChildren reorders children of multipart/related so that:
+// 1. Body parts (multipart/alternative, text/html, text/plain) come FIRST (as root)
+// 2. Related resources (images with Content-ID) come AFTER
+// Per RFC 2387, the first part is the root document unless start= parameter specifies otherwise
+func sortMultipartRelatedChildren(children []*PartNode) []*PartNode {
+	if len(children) == 0 {
+		return children
+	}
+	
+	var bodyParts []*PartNode
+	var resourceParts []*PartNode
+	
+	for _, child := range children {
+		contentType := strings.ToLower(getStringField(child.Part, "content_type"))
+		disposition := strings.ToLower(getStringField(child.Part, "content_disposition"))
+		
+		// Body part candidates (should be root):
+		// 1. multipart/alternative (contains both text and HTML)
+		// 2. text/html
+		// 3. text/plain
+		isBodyPart := false
+		
+		if strings.HasPrefix(contentType, "multipart/") {
+			// Any multipart is a body container
+			isBodyPart = true
+		} else if contentType == "text/html" || contentType == "text/plain" {
+			// Text parts are body unless explicitly marked as attachment
+			isBodyPart = !strings.HasPrefix(disposition, "attachment")
+		}
+		
+		if isBodyPart {
+			bodyParts = append(bodyParts, child)
+		} else {
+			// Resources: images, styles, etc. with Content-ID
+			resourceParts = append(resourceParts, child)
+		}
+	}
+	
+	// Combine: body parts first, then resources
+	result := make([]*PartNode, 0, len(children))
+	result = append(result, bodyParts...)
+	result = append(result, resourceParts...)
+	
+	if len(bodyParts) > 0 && len(resourceParts) > 0 {
+		fmt.Printf("DEBUG sortMultipartRelatedChildren: Reordered %d body parts before %d resource parts\n", 
+			len(bodyParts), len(resourceParts))
+	}
+	
+	return result
+}
+
 // prepareMultipartRelated ensures that for multipart/related, the HTML part is the root.
 // Per RFC 2387, the first part is the root unless a start= parameter specifies otherwise.
 // Returns reordered children and a start= parameter value (if needed).
@@ -989,12 +1040,17 @@ func reconstructPartDFS(buf *bytes.Buffer, sharedDB *sql.DB, node *PartNode, s3S
 		fmt.Printf("DEBUG reconstructPartDFS: Multipart container type='%s' with %d children, boundary='%s'\n", 
 			multipartType, len(node.Children), boundary)
 
-		// Special handling for multipart/related: ensure HTML is the root part
+		// Special handling for multipart/related: ensure body part (HTML/alternative) is the root
 		children := node.Children
 		startParam := ""
 		
 		if multipartType == "multipart/related" {
 			children, startParam = prepareMultipartRelated(node.Children)
+		}
+		
+		// Additional sorting for multipart/related to ensure correct order
+		if multipartType == "multipart/related" {
+			children = sortMultipartRelatedChildren(children)
 		}
 
 		// Write Content-Type header for this multipart section
