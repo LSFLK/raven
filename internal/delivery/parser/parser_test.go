@@ -2,6 +2,7 @@ package parser_test
 
 import (
 	"bufio"
+	"bytes"
 	"database/sql"
 	"strings"
 	"testing"
@@ -22,7 +23,7 @@ Message-Id: <test123@example.com>
 This is a test message body.
 `
 
-	msg, err := parser.ParseMessageFromBytes([]byte(rawEmail))
+	msg, err := parser.ParseMessage(bytes.NewReader([]byte(rawEmail)))
 	if err != nil {
 		t.Fatalf("Failed to parse message: %v", err)
 	}
@@ -57,7 +58,7 @@ Subject: Test Message
 Body
 `
 
-	msg, err := parser.ParseMessageFromBytes([]byte(rawEmail))
+	msg, err := parser.ParseMessage(bytes.NewReader([]byte(rawEmail)))
 	if err != nil {
 		t.Fatalf("Failed to parse message: %v", err)
 	}
@@ -633,7 +634,7 @@ func TestParseAddressList(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test indirectly through ParseMessage
 			rawEmail := "From: sender@example.com\nTo: " + tt.input + "\n\nBody"
-			msg, err := parser.ParseMessageFromBytes([]byte(rawEmail))
+			msg, err := parser.ParseMessage(bytes.NewReader([]byte(rawEmail)))
 			if tt.expected > 0 && err != nil {
 				t.Errorf("Unexpected error: %v", err)
 			}

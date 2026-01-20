@@ -146,11 +146,6 @@ func ParseMessage(r io.Reader) (*Message, error) {
 	}, nil
 }
 
-// ParseMessageFromBytes parses an email message from bytes
-func ParseMessageFromBytes(data []byte) (*Message, error) {
-	return ParseMessage(bytes.NewReader(data))
-}
-
 // ParseMIMEMessage parses a raw MIME message into structured components for database storage
 func ParseMIMEMessage(rawMessage string) (*ParsedMessage, error) {
 	parsed := &ParsedMessage{
