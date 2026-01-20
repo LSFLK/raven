@@ -485,11 +485,6 @@ func storeAddresses(database *sql.DB, messageID int64, addressType string, addre
 	return nil
 }
 
-// StoreMessagePerUserWithSharedDB stores a message with separate shared and user databases
-func StoreMessagePerUserWithSharedDB(sharedDB *sql.DB, userDB *sql.DB, parsed *ParsedMessage) (int64, error) {
-	return StoreMessagePerUserWithSharedDBAndS3(sharedDB, userDB, parsed, nil)
-}
-
 // StoreMessagePerUserWithSharedDBAndS3 stores a message in a per-user database with optional S3 blob storage and shared blob deduplication
 func StoreMessagePerUserWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, parsed *ParsedMessage, s3Storage *blobstorage.S3BlobStorage) (int64, error) {
 	// Create message record in user database

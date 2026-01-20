@@ -352,7 +352,7 @@ func InsertTestMail(t *testing.T, database interface{}, username, subject, sende
 	var messageID int64
 	if dbManager != nil {
 		sharedDB := dbManager.GetSharedDB()
-		messageID, err = parser.StoreMessagePerUserWithSharedDB(sharedDB, userDB, parsed)
+		messageID, err = parser.StoreMessagePerUserWithSharedDBAndS3(sharedDB, userDB, parsed, nil)
 		if err != nil {
 			t.Fatalf("Failed to store test message: %v", err)
 		}

@@ -807,7 +807,7 @@ Message body for user.`
 		t.Fatalf("Failed to parse message: %v", err)
 	}
 
-	messageID, err := parser.StoreMessagePerUserWithSharedDB(database, database, parsed)
+	messageID, err := parser.StoreMessagePerUserWithSharedDBAndS3(database, database, parsed, nil)
 	if err != nil {
 		t.Fatalf("Failed to store message per user: %v", err)
 	}
