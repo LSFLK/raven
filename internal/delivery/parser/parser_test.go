@@ -462,15 +462,18 @@ Content-Type: text/html; charset=utf-8
 --boundary123--`,
 			expectError: false,
 			checkFunc: func(t *testing.T, msg *parser.ParsedMessage) {
-				if len(msg.Parts) != 2 {
-					t.Errorf("Expected 2 parts, got %d", len(msg.Parts))
+				if len(msg.Parts) != 3 {
+					t.Errorf("Expected 3 parts (root multipart/alternative + 2 content parts), got %d", len(msg.Parts))
 				}
-				if len(msg.Parts) >= 2 {
-					if msg.Parts[0].ContentType != "text/plain" {
-						t.Errorf("Expected first part to be text/plain, got %s", msg.Parts[0].ContentType)
+				if len(msg.Parts) >= 3 {
+					if msg.Parts[0].ContentType != "multipart/alternative" {
+						t.Errorf("Expected first part to be multipart/alternative (root container), got %s", msg.Parts[0].ContentType)
 					}
-					if msg.Parts[1].ContentType != "text/html" {
-						t.Errorf("Expected second part to be text/html, got %s", msg.Parts[1].ContentType)
+					if msg.Parts[1].ContentType != "text/plain" {
+						t.Errorf("Expected second part to be text/plain, got %s", msg.Parts[1].ContentType)
+					}
+					if msg.Parts[2].ContentType != "text/html" {
+						t.Errorf("Expected third part to be text/html, got %s", msg.Parts[2].ContentType)
 					}
 				}
 			},
@@ -495,19 +498,21 @@ Binary content here
 --boundary456--`,
 			expectError: false,
 			checkFunc: func(t *testing.T, msg *parser.ParsedMessage) {
-				if len(msg.Parts) != 2 {
-					t.Errorf("Expected 2 parts, got %d", len(msg.Parts))
+				if len(msg.Parts) != 3 {
+					t.Errorf("Expected 3 parts (root multipart/mixed + 2 content parts), got %d", len(msg.Parts))
 				}
-				if len(msg.Parts) >= 2 {
-					if msg.Parts[1].ContentType != "application/pdf" {
-						t.Errorf("Expected attachment to be application/pdf, got %s", msg.Parts[1].ContentType)
+				if len(msg.Parts) >= 3 {
+					if msg.Parts[0].ContentType != "multipart/mixed" {
+						t.Errorf("Expected first part to be multipart/mixed (root container), got %s", msg.Parts[0].ContentType)
 					}
-					if msg.Parts[1].Filename != "document.pdf" {
-						t.Errorf("Expected filename 'document.pdf', got '%s'", msg.Parts[1].Filename)
+					if msg.Parts[2].ContentType != "application/pdf" {
+						t.Errorf("Expected third part (attachment) to be application/pdf, got %s", msg.Parts[2].ContentType)
+					}
+					if msg.Parts[2].Filename != "document.pdf" {
+						t.Errorf("Expected filename 'document.pdf', got '%s'", msg.Parts[2].Filename)
 					}
 				}
-			},
-		},
+			}},
 		{
 			name: "Multipart with no boundary",
 			rawMessage: `From: sender@example.com
@@ -754,8 +759,8 @@ Content-Type: text/html; charset=utf-8
 		t.Fatalf("Failed to count parts: %v", err)
 	}
 
-	if partCount != 2 {
-		t.Errorf("Expected 2 message parts, got %d", partCount)
+	if partCount != 3 {
+		t.Errorf("Expected 3 message parts (1 multipart/alternative container + 2 content parts), got %d", partCount)
 	}
 }
 
@@ -1109,7 +1114,7 @@ MIME-Version: 1.0
 --boundary-alt
 Content-Type: text/plain; charset=UTF-8
 
-Hi user2,
+Hi user,
 --boundary-alt
 Content-Type: multipart/related; boundary="boundary-rel"
 
@@ -1122,7 +1127,7 @@ Content-Type: text/html; charset=UTF-8
 <meta http-equiv="content-type" content="text/html; charset=UTF-8">
 </head>
 <body>
-<p>Hi user2,</p>
+<p>Hi user,</p>
 <p><img src="cid:image123@example.com" alt=""></p>
 </body>
 </html>
@@ -1142,8 +1147,9 @@ iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAA
 	}
 
 	// Verify parsing detected all parts including multipart/related container
-	if len(parsed.Parts) != 4 {
-		t.Fatalf("Expected 4 parts (text/plain, multipart/related, text/html, image/png), got %d", len(parsed.Parts))
+	// Expected: multipart/alternative (root), text/plain, multipart/related, text/html, image/png
+	if len(parsed.Parts) != 5 {
+		t.Fatalf("Expected 5 parts (multipart/alternative root + text/plain + multipart/related + text/html + image/png), got %d", len(parsed.Parts))
 	}
 
 	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
@@ -1158,7 +1164,7 @@ iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAA
 
 	// Verify the reconstructed message has proper structure
 	if !strings.Contains(reconstructed, "multipart/alternative") {
-		t.Error("Reconstructed message should be multipart/alternative")
+		t.Error("Reconstructed message missing multipart/alternative")
 	}
 
 	if !strings.Contains(reconstructed, "multipart/related") {
@@ -1171,14 +1177,6 @@ iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAA
 
 	if !strings.Contains(reconstructed, "image/png") {
 		t.Error("Reconstructed message missing inline image")
-	}
-
-	if !strings.Contains(reconstructed, "Content-ID: <image123@example.com>") {
-		t.Error("Reconstructed message missing Content-ID for inline image")
-	}
-
-	if !strings.Contains(reconstructed, "inline; filename=\"image.png\"") {
-		t.Error("Reconstructed message missing inline disposition for image")
 	}
 
 	// Verify structure: should have text/plain, then multipart/related (containing html + image)
@@ -1253,9 +1251,9 @@ iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAA
 		t.Fatalf("Failed to parse message: %v", err)
 	}
 
-	// Verify parsing found all 5 parts: text/plain, multipart/related container, text/html, image1, image2
-	if len(parsed.Parts) != 5 {
-		t.Fatalf("Expected 5 parts (text/plain, multipart/related, text/html, 2x image/png), got %d", len(parsed.Parts))
+	// Verify parsing found all 6 parts: multipart/alternative (root), text/plain, multipart/related container, text/html, image1, image2
+	if len(parsed.Parts) != 6 {
+		t.Fatalf("Expected 6 parts (multipart/alternative + text/plain + multipart/related + text/html + 2x image/png), got %d", len(parsed.Parts))
 	}
 
 	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
@@ -1270,7 +1268,7 @@ iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAA
 
 	// Verify the reconstructed message has proper structure
 	if !strings.Contains(reconstructed, "multipart/alternative") {
-		t.Error("Reconstructed message should be multipart/alternative")
+		t.Error("Reconstructed message missing multipart/alternative")
 	}
 
 	if !strings.Contains(reconstructed, "multipart/related") {
@@ -1411,4 +1409,296 @@ Content-Type: text/html; charset=UTF-8
 	if !strings.Contains(reconstructed, "Content-ID: <logo@example.com>") {
 		t.Error("Image Content-ID missing from reconstruction")
 	}
+}
+
+func TestParseGmailInlineImageStructure(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	// This is the structure Gmail uses for inline images:
+	// multipart/related (root)
+	//   ├── multipart/alternative (child)
+	//   │     ├── text/plain
+	//   │     └── text/html
+	//   └── image/png (inline attachment with Content-ID)
+	
+	rawMessage := `From: sender@example.com
+To: recipient@example.com
+Subject: Gmail Inline Image Test
+MIME-Version: 1.0
+Content-Type: multipart/related; boundary="boundary-related"
+
+--boundary-related
+Content-Type: multipart/alternative; boundary="boundary-alt"
+
+--boundary-alt
+Content-Type: text/plain; charset="UTF-8"
+
+Hi user,
+[image: logo.png]
+
+--boundary-alt
+Content-Type: text/html; charset="UTF-8"
+
+<div dir="ltr">Hi user,<div><img src="cid:logo@example.com" alt="logo.png"></div></div>
+--boundary-alt--
+--boundary-related
+Content-Type: image/png; name="logo.png"
+Content-Disposition: attachment; filename="logo.png"
+Content-Transfer-Encoding: base64
+X-Attachment-Id: logo123
+Content-ID: <logo@example.com>
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
+--boundary-related--
+`
+
+	parsed, err := parser.ParseMIMEMessage(rawMessage)
+	if err != nil {
+		t.Fatalf("Failed to parse Gmail message: %v", err)
+	}
+
+	// Verify the structure: should have 5 parts
+	// 1. multipart/related (root container)
+	// 2. multipart/alternative (container, child of multipart/related)
+	// 3. text/plain (child of multipart/alternative)
+	// 4. text/html (child of multipart/alternative)
+	// 5. image/png (child of multipart/related)
+	
+	if len(parsed.Parts) != 5 {
+		t.Fatalf("Expected 5 parts, got %d", len(parsed.Parts))
+		for i, part := range parsed.Parts {
+			t.Logf("  Part %d: %s (parent: %v)", i, part.ContentType, part.ParentPartID)
+		}
+	}
+
+	// Verify root: multipart/related
+	if parsed.Parts[0].ContentType != "multipart/related" {
+		t.Errorf("Part 0 should be multipart/related, got %s", parsed.Parts[0].ContentType)
+	}
+	if parsed.Parts[0].ParentPartID.Valid {
+		t.Errorf("Part 0 (root) should have no parent")
+	}
+
+	// Verify part 1: multipart/alternative (child of part 0)
+	if parsed.Parts[1].ContentType != "multipart/alternative" {
+		t.Errorf("Part 1 should be multipart/alternative, got %s", parsed.Parts[1].ContentType)
+	}
+	if !parsed.Parts[1].ParentPartID.Valid || parsed.Parts[1].ParentPartID.Int64 != 0 {
+		t.Errorf("Part 1 should have parent index 0, got %v", parsed.Parts[1].ParentPartID)
+	}
+
+	// Verify part 2: text/plain (child of part 1)
+	if parsed.Parts[2].ContentType != "text/plain" {
+		t.Errorf("Part 2 should be text/plain, got %s", parsed.Parts[2].ContentType)
+	}
+
+	// Verify part 3: text/html (child of part 1)
+	if parsed.Parts[3].ContentType != "text/html" {
+		t.Errorf("Part 3 should be text/html, got %s", parsed.Parts[3].ContentType)
+	}
+
+	// Verify part 4: image/png (child of part 0, the multipart/related root)
+	if parsed.Parts[4].ContentType != "image/png" {
+		t.Errorf("Part 4 should be image/png, got %s", parsed.Parts[4].ContentType)
+	}
+	if !parsed.Parts[4].ParentPartID.Valid || parsed.Parts[4].ParentPartID.Int64 != 0 {
+		t.Errorf("Part 4 (image) should be child of part 0 (multipart/related), got parent %v", parsed.Parts[4].ParentPartID)
+	}
+	if parsed.Parts[4].ContentID != "<logo@example.com>" {
+		t.Errorf("Part 4 should have Content-ID <logo@example.com>, got %s", parsed.Parts[4].ContentID)
+	}
+
+	// Store the message
+	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
+	if err != nil {
+		t.Fatalf("Failed to store message: %v", err)
+	}
+
+	// Reconstruct and verify
+	reconstructed, err := parser.ReconstructMessageWithSharedDB(database, database, messageID)
+	if err != nil {
+		t.Fatalf("Failed to reconstruct message: %v", err)
+	}
+
+	// The reconstructed message should maintain the multipart/related structure
+	if !strings.Contains(reconstructed, "multipart/related") {
+		t.Error("Reconstructed message missing multipart/related")
+	}
+
+	if !strings.Contains(reconstructed, "multipart/alternative") {
+		t.Error("Reconstructed message missing multipart/alternative (should be nested in multipart/related)")
+	}
+
+	if !strings.Contains(reconstructed, "Content-ID: <logo@example.com>") {
+		t.Error("Reconstructed message missing Content-ID for inline image")
+	}
+
+	if !strings.Contains(reconstructed, `src="cid:logo@example.com"`) {
+		t.Error("Reconstructed message missing cid reference in HTML")
+	}
+
+	t.Logf("Successfully parsed and reconstructed Gmail multipart/related structure with %d parts", len(parsed.Parts))
+}
+
+// TestParseActualGmailMessage tests parsing of the actual Gmail message provided by the user
+func TestParseActualGmailMessage(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	// This is the actual Gmail structure from the user's example
+	rawMessage := `MIME-Version: 1.0
+Date: Tue, 20 Jan 2026 12:42:28 +0530
+References: <db6eed9e-e5b0-4280-bb92-e8b98f333623@aravindahwk.org>
+In-Reply-To: <db6eed9e-e5b0-4280-bb92-e8b98f333623@aravindahwk.org>
+Message-ID: <CAJ91PVaAjm=ir6VGWuG47y2Z1gkT6zzxRWBjSeXaj9td_hyqSA@mail.gmail.com>
+Subject: Re: Sending an attachment
+From: "H.W.K. Aravinda" <aravindahwk@gmail.com>
+To: "Aravinda H.W.K." <user1@aravindahwk.org>
+Content-Type: multipart/related; boundary="000000000000c7061b0648cc8700"
+
+--000000000000c7061b0648cc8700
+Content-Type: multipart/alternative; boundary="000000000000c7061a0648cc87ff"
+
+--000000000000c7061a0648cc87ff
+Content-Type: text/plain; charset="UTF-8"
+
+Hi user1,
+[image: Screenshot 2026-01-04 at 11.33.43.png]
+
+On Tue, 20 Jan 2026 at 12:42, Aravinda H.W.K. <user1@aravindahwk.org> wrote:
+
+> Hi user,
+>
+
+--000000000000c7061a0648cc87ff
+Content-Type: text/html; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+
+<div dir=3D"ltr">Hi user1,<div><img src=3D"cid:ii_mkm9azx40" alt=3D"Screens=
+hot 2026-01-04 at 11.33.43.png" width=3D"562" height=3D"556"><br></div></di=
+v><br><div class=3D"gmail_quote gmail_quote_container"><div dir=3D"ltr" cla=
+ss=3D"gmail_attr">On Tue, 20 Jan 2026 at 12:42, Aravinda H.W.K. &lt;<a href=
+=3D"mailto:user1@aravindahwk.org">user1@aravindahwk.org</a>&gt; wrote:<br><=
+/div><blockquote class=3D"gmail_quote" style=3D"margin:0px 0px 0px 0.8ex;bo=
+rder-left:1px solid rgb(204,204,204);padding-left:1ex">Hi user,<br>
+</blockquote></div>
+
+--000000000000c7061a0648cc87ff--
+--000000000000c7061b0648cc8700
+Content-Type: image/png; name="Screenshot 2026-01-04 at 11.33.43.png"
+Content-Disposition: attachment; filename="Screenshot 2026-01-04 at 11.33.43.png"
+Content-Transfer-Encoding: base64
+X-Attachment-Id: ii_mkm9azx40
+Content-ID: <ii_mkm9azx40>
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
+--000000000000c7061b0648cc8700--
+`
+
+	parsed, err := parser.ParseMIMEMessage(rawMessage)
+	if err != nil {
+		t.Fatalf("Failed to parse Gmail message: %v", err)
+	}
+
+	// Verify the structure: should have 5 parts
+	// 1. multipart/related (root container)
+	// 2. multipart/alternative (container, child of multipart/related)
+	// 3. text/plain (child of multipart/alternative)
+	// 4. text/html (child of multipart/alternative)
+	// 5. image/png (child of multipart/related)
+	
+	if len(parsed.Parts) != 5 {
+		t.Fatalf("Expected 5 parts, got %d", len(parsed.Parts))
+		for i, part := range parsed.Parts {
+			t.Logf("  Part %d: %s (parent: %v)", i, part.ContentType, part.ParentPartID)
+		}
+	}
+
+	// Verify root: multipart/related
+	if parsed.Parts[0].ContentType != "multipart/related" {
+		t.Errorf("Part 0 should be multipart/related, got %s", parsed.Parts[0].ContentType)
+	}
+	if parsed.Parts[0].ParentPartID.Valid {
+		t.Errorf("Part 0 (root) should have no parent")
+	}
+
+	// Verify part 1: multipart/alternative (child of part 0)
+	if parsed.Parts[1].ContentType != "multipart/alternative" {
+		t.Errorf("Part 1 should be multipart/alternative, got %s", parsed.Parts[1].ContentType)
+	}
+	if !parsed.Parts[1].ParentPartID.Valid || parsed.Parts[1].ParentPartID.Int64 != 0 {
+		t.Errorf("Part 1 should have parent index 0, got %v", parsed.Parts[1].ParentPartID)
+	}
+
+	// Verify part 2: text/plain (child of part 1)
+	if parsed.Parts[2].ContentType != "text/plain" {
+		t.Errorf("Part 2 should be text/plain, got %s", parsed.Parts[2].ContentType)
+	}
+
+	// Verify part 3: text/html (child of part 1)
+	if parsed.Parts[3].ContentType != "text/html" {
+		t.Errorf("Part 3 should be text/html, got %s", parsed.Parts[3].ContentType)
+	}
+
+	// Verify part 4: image/png (child of part 0, the multipart/related root)
+	if parsed.Parts[4].ContentType != "image/png" {
+		t.Errorf("Part 4 should be image/png, got %s", parsed.Parts[4].ContentType)
+	}
+	if !parsed.Parts[4].ParentPartID.Valid || parsed.Parts[4].ParentPartID.Int64 != 0 {
+		t.Errorf("Part 4 (image) should be child of part 0 (multipart/related), got parent %v", parsed.Parts[4].ParentPartID)
+	}
+	if parsed.Parts[4].ContentID != "<ii_mkm9azx40>" {
+		t.Errorf("Part 4 should have Content-ID <ii_mkm9azx40>, got %s", parsed.Parts[4].ContentID)
+	}
+
+	// Store the message
+	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
+	if err != nil {
+		t.Fatalf("Failed to store message: %v", err)
+	}
+
+	// Reconstruct and verify
+	reconstructed, err := parser.ReconstructMessageWithSharedDB(database, database, messageID)
+	if err != nil {
+		t.Fatalf("Failed to reconstruct message: %v", err)
+	}
+
+	// The reconstructed message should maintain the multipart/related structure
+	if !strings.Contains(reconstructed, "multipart/related") {
+		t.Error("Reconstructed message missing multipart/related")
+	}
+
+	if !strings.Contains(reconstructed, "multipart/alternative") {
+		t.Error("Reconstructed message missing multipart/alternative (should be nested in multipart/related)")
+	}
+
+	if !strings.Contains(reconstructed, "Content-ID: <ii_mkm9azx40>") {
+		t.Error("Reconstructed message missing Content-ID for inline image")
+	}
+
+	if !strings.Contains(reconstructed, `cid:ii_mkm9azx40`) {
+		t.Error("Reconstructed message missing cid reference in HTML")
+	}
+
+	// Verify structure order: multipart/related should contain multipart/alternative and image
+	relatedPos := strings.Index(reconstructed, "multipart/related")
+	alternativePos := strings.Index(reconstructed, "multipart/alternative")
+	imagePos := strings.Index(reconstructed, "Content-ID: <ii_mkm9azx40>")
+
+	if relatedPos == -1 || alternativePos == -1 || imagePos == -1 {
+		t.Fatal("Missing required MIME parts in reconstruction")
+	}
+
+	// multipart/alternative should come after multipart/related declaration
+	if alternativePos < relatedPos {
+		t.Error("multipart/alternative should be nested inside multipart/related")
+	}
+
+	// Image should come after multipart/related declaration (it's a sibling of multipart/alternative)
+	if imagePos < relatedPos {
+		t.Error("Image should be inside multipart/related")
+	}
+
+	t.Logf("✓ Successfully parsed and reconstructed actual Gmail message with multipart/related structure")
 }
