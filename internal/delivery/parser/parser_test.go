@@ -1317,3 +1317,98 @@ iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAA
 
 	t.Logf("Successfully reconstructed message with %d inline images", 2)
 }
+
+// TestReconstructMessage_MultipartRelatedHTMLNotFirst tests that when HTML is not first
+// in a multipart/related block, it gets reordered to be first (the root part per RFC 2387)
+func TestReconstructMessage_MultipartRelatedHTMLNotFirst(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	// Create a message where the IMAGE comes BEFORE the HTML in multipart/related
+	// This is the scenario that causes Thunderbird to show only the image
+	// We nest it in multipart/alternative to match the real-world structure
+	rawMessage := `From: sender@example.com
+To: recipient@example.com
+Subject: HTML Not First Test
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alt-boundary"
+
+--alt-boundary
+Content-Type: text/plain; charset=UTF-8
+
+Plain text version
+--alt-boundary
+Content-Type: multipart/related; boundary="rel-boundary"
+
+--rel-boundary
+Content-Type: image/png; name="logo.png"
+Content-Transfer-Encoding: base64
+Content-ID: <logo@example.com>
+Content-Disposition: inline; filename="logo.png"
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
+--rel-boundary
+Content-Type: text/html; charset=UTF-8
+
+<html><body><h1>Welcome</h1><img src="cid:logo@example.com"/></body></html>
+--rel-boundary--
+--alt-boundary--
+`
+
+	msg, err := parser.ParseMIMEMessage(rawMessage)
+	if err != nil {
+		t.Fatalf("Failed to parse message: %v", err)
+	}
+
+	messageID, err := parser.StoreMessageWithSharedDB(database, database, msg)
+	if err != nil {
+		t.Fatalf("Failed to store message: %v", err)
+	}
+
+	reconstructed, err := parser.ReconstructMessageWithSharedDB(database, database, messageID)
+	if err != nil {
+		t.Fatalf("Failed to reconstruct message: %v", err)
+	}
+
+	// Verify the reconstructed message has multipart/related
+	if !strings.Contains(reconstructed, "multipart/related") {
+		t.Error("Reconstructed message missing multipart/related")
+	}
+
+	// Find the positions of HTML and image parts in the reconstructed message
+	// We need to find them AFTER the multipart/related boundary
+	relatedBoundaryPos := strings.Index(reconstructed, "multipart/related")
+	if relatedBoundaryPos == -1 {
+		t.Fatal("Could not find multipart/related in reconstructed message")
+	}
+
+	// Get the part of the message after the multipart/related header
+	afterRelated := reconstructed[relatedBoundaryPos:]
+	
+	htmlPos := strings.Index(afterRelated, "text/html")
+	imagePos := strings.Index(afterRelated, "image/png")
+
+	if htmlPos == -1 {
+		t.Fatal("HTML part not found in reconstructed message")
+	}
+	if imagePos == -1 {
+		t.Fatal("Image part not found in reconstructed message")
+	}
+
+	// The critical check: HTML should come BEFORE the image in the reconstructed message
+	// This ensures that RFC 2387-compliant clients will use HTML as the root, not the image
+	if htmlPos > imagePos {
+		t.Errorf("HTML part should come BEFORE image in multipart/related (HTML at %d, image at %d)", htmlPos, imagePos)
+		t.Logf("This means Thunderbird will incorrectly show the image as the main content instead of the HTML")
+	} else {
+		t.Logf("✓ HTML part correctly comes first in multipart/related (HTML at %d, image at %d)", htmlPos, imagePos)
+	}
+
+	// Also verify that both parts are present
+	if !strings.Contains(reconstructed, "<html>") {
+		t.Error("HTML content missing from reconstruction")
+	}
+	if !strings.Contains(reconstructed, "Content-ID: <logo@example.com>") {
+		t.Error("Image Content-ID missing from reconstruction")
+	}
+}

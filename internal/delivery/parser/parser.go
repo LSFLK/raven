@@ -886,6 +886,74 @@ func detectMultipartType(rootParts []*PartNode) string {
 	return "multipart/mixed"
 }
 
+// prepareMultipartRelated ensures that for multipart/related, the HTML part is the root.
+// Per RFC 2387, the first part is the root unless a start= parameter specifies otherwise.
+// Returns reordered children and a start= parameter value (if needed).
+func prepareMultipartRelated(children []*PartNode) ([]*PartNode, string) {
+	if len(children) == 0 {
+		return children, ""
+	}
+
+	// Find the HTML part (text/html)
+	htmlIndex := -1
+	for i, child := range children {
+		contentType := strings.ToLower(getStringField(child.Part, "content_type"))
+		if contentType == "text/html" {
+			htmlIndex = i
+			break
+		}
+	}
+
+	// If no HTML part found, return as-is (no change needed)
+	if htmlIndex == -1 {
+		return children, ""
+	}
+
+	// If HTML is already first, no change needed
+	if htmlIndex == 0 {
+		return children, ""
+	}
+
+	// Option 1: Reorder children to put HTML first (simpler and more compatible)
+	// This is the preferred approach as it doesn't require Content-ID management
+	reordered := make([]*PartNode, len(children))
+	reordered[0] = children[htmlIndex]
+	j := 1
+	for i, child := range children {
+		if i != htmlIndex {
+			reordered[j] = child
+			j++
+		}
+	}
+
+	fmt.Printf("DEBUG prepareMultipartRelated: Reordered children to put HTML part first (was at index %d)\n", htmlIndex)
+	return reordered, ""
+
+	// Option 2: Use start= parameter (more complex, requires Content-ID)
+	// Uncomment below if you prefer this approach instead of reordering:
+	/*
+	htmlPart := children[htmlIndex]
+	
+	// Ensure the HTML part has a Content-ID
+	contentID, ok := htmlPart.Part["content_id"].(string)
+	if !ok || contentID == "" {
+		// Generate a Content-ID for the HTML part
+		contentID = fmt.Sprintf("<html-part-%d@raven>", time.Now().UnixNano())
+		htmlPart.Part["content_id"] = contentID
+		fmt.Printf("DEBUG prepareMultipartRelated: Generated Content-ID '%s' for HTML part\n", contentID)
+	}
+	
+	// Clean up Content-ID if it doesn't have angle brackets
+	if !strings.HasPrefix(contentID, "<") {
+		contentID = "<" + contentID + ">"
+		htmlPart.Part["content_id"] = contentID
+	}
+	
+	fmt.Printf("DEBUG prepareMultipartRelated: Using start=%s to designate HTML part as root\n", contentID)
+	return children, contentID
+	*/
+}
+
 // PartNode represents a MIME part in a tree structure
 type PartNode struct {
 	Part     map[string]interface{}
@@ -910,16 +978,30 @@ func reconstructPartDFS(buf *bytes.Buffer, sharedDB *sql.DB, node *PartNode, s3S
 		fmt.Printf("DEBUG reconstructPartDFS: Multipart container type='%s' with %d children, boundary='%s'\n", 
 			multipartType, len(node.Children), boundary)
 
+		// Special handling for multipart/related: ensure HTML is the root part
+		children := node.Children
+		startParam := ""
+		
+		if multipartType == "multipart/related" {
+			children, startParam = prepareMultipartRelated(node.Children)
+		}
+
 		// Write Content-Type header for this multipart section
 		// Only add MIME-Version if this is at the root level (no parent boundary)
 		if parentBoundary == "" {
 			buf.WriteString("MIME-Version: 1.0\r\n")
 		}
-		buf.WriteString(fmt.Sprintf("Content-Type: %s; boundary=\"%s\"\r\n", contentType, boundary))
+		
+		// Write Content-Type with boundary (and start= parameter for multipart/related if needed)
+		if startParam != "" {
+			buf.WriteString(fmt.Sprintf("Content-Type: %s; boundary=\"%s\"; start=\"%s\"\r\n", contentType, boundary, startParam))
+		} else {
+			buf.WriteString(fmt.Sprintf("Content-Type: %s; boundary=\"%s\"\r\n", contentType, boundary))
+		}
 		buf.WriteString("\r\n")
 
 		// Recursively process all children with DFS
-		for _, child := range node.Children {
+		for _, child := range children {
 			buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
 			reconstructPartDFS(buf, sharedDB, child, s3Storage, boundary)
 		}
