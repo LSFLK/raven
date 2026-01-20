@@ -386,10 +386,12 @@ func StoreMessageWithSharedDB(sharedDB *sql.DB, userDB *sql.DB, parsed *ParsedMe
 	}
 
 	// Store message parts
-	// Build a map from part_number to database id so we can correctly set parent_part_id
-	partNumberToDBID := make(map[int]int64)
+	// Build a map from part index in the flat list to database id
+	// Note: ParentPartID refers to the part_number in the parsing, which corresponds
+	// to the index in parsed.Parts (1-indexed), NOT the database id
+	partIndexToDBID := make(map[int]int64)
 	
-	for _, part := range parsed.Parts {
+	for partIdx, part := range parsed.Parts {
 		var blobID sql.NullInt64
 
 		// Store large content or attachments in blobs (in shared database for deduplication)
@@ -403,17 +405,30 @@ func StoreMessageWithSharedDB(sharedDB *sql.DB, userDB *sql.DB, parsed *ParsedMe
 			}
 		}
 
-		// Convert parent part_number to parent database id
+		// Convert parent part index to parent database id
+		// ParentPartID contains the part_number from parsing, which is 1-indexed
+		// We need to find which part in the flat list this refers to
 		var parentDBID sql.NullInt64
 		if part.ParentPartID.Valid {
 			parentPartNum := int(part.ParentPartID.Int64)
-			if dbID, exists := partNumberToDBID[parentPartNum]; exists {
-				parentDBID = sql.NullInt64{Valid: true, Int64: dbID}
-				fmt.Printf("DEBUG StoreMessage: Part num=%d parent_part_num=%d -> parent_db_id=%d\n", 
-					part.PartNumber, parentPartNum, dbID)
-			} else {
-				fmt.Printf("DEBUG StoreMessage: WARNING - Part num=%d references parent_part_num=%d which hasn't been stored yet\n",
-					part.PartNumber, parentPartNum)
+			// Find the part in parsed.Parts that has this part_number and matches the nesting
+			// Since parts are in depth-first order, we search backwards from current position
+			for i := partIdx - 1; i >= 0; i-- {
+				if parsed.Parts[i].PartNumber == parentPartNum {
+					// Check if this is a multipart container (potential parent)
+					if strings.HasPrefix(strings.ToLower(parsed.Parts[i].ContentType), "multipart/") {
+						if dbID, exists := partIndexToDBID[i]; exists {
+							parentDBID = sql.NullInt64{Valid: true, Int64: dbID}
+							fmt.Printf("DEBUG StoreMessage: Part idx=%d num=%d parent_part_num=%d -> parent_db_id=%d (from idx=%d)\n", 
+								partIdx, part.PartNumber, parentPartNum, dbID, i)
+							break
+						}
+					}
+				}
+			}
+			if !parentDBID.Valid {
+				fmt.Printf("DEBUG StoreMessage: WARNING - Part idx=%d num=%d references parent_part_num=%d which wasn't found\n",
+					partIdx, part.PartNumber, parentPartNum)
 			}
 		}
 
@@ -436,10 +451,10 @@ func StoreMessageWithSharedDB(sharedDB *sql.DB, userDB *sql.DB, parsed *ParsedMe
 			return 0, fmt.Errorf("failed to store message part: %v", err)
 		}
 		
-		// Track the database id for this part number
-		partNumberToDBID[part.PartNumber] = partDBID
-		fmt.Printf("DEBUG StoreMessage: Stored part num=%d as db_id=%d (parent_db_id=%v)\n",
-			part.PartNumber, partDBID, parentDBID)
+		// Track the database id for this part index
+		partIndexToDBID[partIdx] = partDBID
+		fmt.Printf("DEBUG StoreMessage: Stored part idx=%d num=%d as db_id=%d (parent_db_id=%v)\n",
+			partIdx, part.PartNumber, partDBID, parentDBID)
 	}
 
 	return messageID, nil
@@ -493,10 +508,12 @@ func StoreMessagePerUserWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, pars
 	}
 
 	// Store message parts
-	// Build a map from part_number to database id so we can correctly set parent_part_id
-	partNumberToDBID := make(map[int]int64)
+	// Build a map from part index in the flat list to database id
+	// Note: ParentPartID refers to the part_number in the parsing, which corresponds
+	// to the index in parsed.Parts (1-indexed), NOT the database id
+	partIndexToDBID := make(map[int]int64)
 	
-	for _, part := range parsed.Parts {
+	for partIdx, part := range parsed.Parts {
 		var blobID sql.NullInt64
 
 		// Store large content or attachments in blobs (in shared database for cross-user deduplication)
@@ -534,17 +551,30 @@ func StoreMessagePerUserWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, pars
 			}
 		}
 
-		// Convert parent part_number to parent database id
+		// Convert parent part index to parent database id
+		// ParentPartID contains the part_number from parsing, which is 1-indexed
+		// We need to find which part in the flat list this refers to
 		var parentDBID sql.NullInt64
 		if part.ParentPartID.Valid {
 			parentPartNum := int(part.ParentPartID.Int64)
-			if dbID, exists := partNumberToDBID[parentPartNum]; exists {
-				parentDBID = sql.NullInt64{Valid: true, Int64: dbID}
-				fmt.Printf("DEBUG StoreMessage: Part num=%d parent_part_num=%d -> parent_db_id=%d\n", 
-					part.PartNumber, parentPartNum, dbID)
-			} else {
-				fmt.Printf("DEBUG StoreMessage: WARNING - Part num=%d references parent_part_num=%d which hasn't been stored yet\n",
-					part.PartNumber, parentPartNum)
+			// Find the part in parsed.Parts that has this part_number and matches the nesting
+			// Since parts are in depth-first order, we search backwards from current position
+			for i := partIdx - 1; i >= 0; i-- {
+				if parsed.Parts[i].PartNumber == parentPartNum {
+					// Check if this is a multipart container (potential parent)
+					if strings.HasPrefix(strings.ToLower(parsed.Parts[i].ContentType), "multipart/") {
+						if dbID, exists := partIndexToDBID[i]; exists {
+							parentDBID = sql.NullInt64{Valid: true, Int64: dbID}
+							fmt.Printf("DEBUG StoreMessage: Part idx=%d num=%d parent_part_num=%d -> parent_db_id=%d (from idx=%d)\n", 
+								partIdx, part.PartNumber, parentPartNum, dbID, i)
+							break
+						}
+					}
+				}
+			}
+			if !parentDBID.Valid {
+				fmt.Printf("DEBUG StoreMessage: WARNING - Part idx=%d num=%d references parent_part_num=%d which wasn't found\n",
+					partIdx, part.PartNumber, parentPartNum)
 			}
 		}
 
@@ -567,10 +597,10 @@ func StoreMessagePerUserWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, pars
 			return 0, fmt.Errorf("failed to store message part: %v", err)
 		}
 		
-		// Track the database id for this part number
-		partNumberToDBID[part.PartNumber] = partDBID
-		fmt.Printf("DEBUG StoreMessage: Stored part num=%d as db_id=%d (parent_db_id=%v)\n",
-			part.PartNumber, partDBID, parentDBID)
+		// Track the database id for this part index
+		partIndexToDBID[partIdx] = partDBID
+		fmt.Printf("DEBUG StoreMessage: Stored part idx=%d num=%d as db_id=%d (parent_db_id=%v)\n",
+			partIdx, part.PartNumber, partDBID, parentDBID)
 	}
 
 	return messageID, nil

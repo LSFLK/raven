@@ -1208,3 +1208,112 @@ iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAA
 
 	t.Logf("Reconstructed message structure verified successfully")
 }
+
+// TestReconstructMessage_WithMultipleInlineImages tests reconstruction with multiple inline images
+func TestReconstructMessage_WithMultipleInlineImages(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	rawMessage := `From: sender@example.com
+To: recipient@example.com
+Subject: Test Multiple Inline Images
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alt-boundary"
+
+--alt-boundary
+Content-Type: text/plain; charset=UTF-8
+
+Plain text version with two images referenced
+--alt-boundary
+Content-Type: multipart/related; boundary="rel-boundary"
+
+--rel-boundary
+Content-Type: text/html; charset=UTF-8
+
+<html><body><p>Image 1: <img src="cid:image1@test.com"></p><p>Image 2: <img src="cid:image2@test.com"></p></body></html>
+--rel-boundary
+Content-Type: image/png
+Content-ID: <image1@test.com>
+Content-Disposition: inline; filename="image1.png"
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
+--rel-boundary
+Content-Type: image/png
+Content-ID: <image2@test.com>
+Content-Disposition: inline; filename="image2.png"
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==
+--rel-boundary--
+--alt-boundary--`
+
+	parsed, err := parser.ParseMIMEMessage(rawMessage)
+	if err != nil {
+		t.Fatalf("Failed to parse message: %v", err)
+	}
+
+	// Verify parsing found all 5 parts: text/plain, multipart/related container, text/html, image1, image2
+	if len(parsed.Parts) != 5 {
+		t.Fatalf("Expected 5 parts (text/plain, multipart/related, text/html, 2x image/png), got %d", len(parsed.Parts))
+	}
+
+	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
+	if err != nil {
+		t.Fatalf("Failed to store message: %v", err)
+	}
+
+	reconstructed, err := parser.ReconstructMessageWithSharedDB(database, database, messageID)
+	if err != nil {
+		t.Fatalf("Failed to reconstruct message: %v", err)
+	}
+
+	// Verify the reconstructed message has proper structure
+	if !strings.Contains(reconstructed, "multipart/alternative") {
+		t.Error("Reconstructed message should be multipart/alternative")
+	}
+
+	if !strings.Contains(reconstructed, "multipart/related") {
+		t.Error("Reconstructed message missing multipart/related section")
+	}
+
+	if !strings.Contains(reconstructed, "text/html") {
+		t.Error("Reconstructed message missing HTML part")
+	}
+
+	// Check for BOTH inline images
+	if !strings.Contains(reconstructed, "Content-ID: <image1@test.com>") {
+		t.Error("Reconstructed message missing first inline image (image1@test.com)")
+	}
+
+	if !strings.Contains(reconstructed, "Content-ID: <image2@test.com>") {
+		t.Error("Reconstructed message missing second inline image (image2@test.com)")
+	}
+
+	if !strings.Contains(reconstructed, `filename="image1.png"`) {
+		t.Error("Reconstructed message missing filename for first image")
+	}
+
+	if !strings.Contains(reconstructed, `filename="image2.png"`) {
+		t.Error("Reconstructed message missing filename for second image")
+	}
+
+	// Verify both images are in the multipart/related section
+	relatedIdx := strings.Index(reconstructed, "multipart/related")
+	image1Idx := strings.Index(reconstructed, "image1@test.com")
+	image2Idx := strings.Index(reconstructed, "image2@test.com")
+
+	if relatedIdx == -1 || image1Idx == -1 || image2Idx == -1 {
+		t.Fatal("Missing required content types or Content-IDs")
+	}
+
+	if image1Idx < relatedIdx {
+		t.Error("Image 1 should be inside multipart/related section")
+	}
+
+	if image2Idx < relatedIdx {
+		t.Error("Image 2 should be inside multipart/related section")
+	}
+
+	t.Logf("Successfully reconstructed message with %d inline images", 2)
+}
