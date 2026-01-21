@@ -672,7 +672,7 @@ This is the message body.`
 		t.Fatalf("Failed to parse message: %v", err)
 	}
 
-	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
+	messageID, err := parser.StoreMessagePerUserWithSharedDBAndS3(database, database, parsed, nil)
 	if err != nil {
 		t.Fatalf("Failed to store message: %v", err)
 	}
@@ -747,7 +747,7 @@ Content-Type: text/html; charset=utf-8
 		t.Fatalf("Failed to parse message: %v", err)
 	}
 
-	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
+	messageID, err := parser.StoreMessagePerUserWithSharedDBAndS3(database, database, parsed, nil)
 	if err != nil {
 		t.Fatalf("Failed to store message: %v", err)
 	}
@@ -775,7 +775,7 @@ func TestStoreMessage_LargeContent(t *testing.T) {
 		t.Fatalf("Failed to parse message: %v", err)
 	}
 
-	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
+	messageID, err := parser.StoreMessagePerUserWithSharedDBAndS3(database, database, parsed, nil)
 	if err != nil {
 		t.Fatalf("Failed to store message: %v", err)
 	}
@@ -844,7 +844,7 @@ Simple message body.`
 		t.Fatalf("Failed to parse message: %v", err)
 	}
 
-	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
+	messageID, err := parser.StoreMessagePerUserWithSharedDBAndS3(database, database, parsed, nil)
 	if err != nil {
 		t.Fatalf("Failed to store message: %v", err)
 	}
@@ -892,7 +892,7 @@ Content-Type: text/html; charset=utf-8
 		t.Fatalf("Failed to parse message: %v", err)
 	}
 
-	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
+	messageID, err := parser.StoreMessagePerUserWithSharedDBAndS3(database, database, parsed, nil)
 	if err != nil {
 		t.Fatalf("Failed to store message: %v", err)
 	}
@@ -941,7 +941,7 @@ Binary content
 		t.Fatalf("Failed to parse message: %v", err)
 	}
 
-	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
+	messageID, err := parser.StoreMessagePerUserWithSharedDBAndS3(database, database, parsed, nil)
 	if err != nil {
 		t.Fatalf("Failed to store message: %v", err)
 	}
@@ -1001,7 +1001,7 @@ Content-Disposition: attachment; filename="large.bin"
 		t.Fatalf("Failed to parse message: %v", err)
 	}
 
-	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
+	messageID, err := parser.StoreMessagePerUserWithSharedDBAndS3(database, database, parsed, nil)
 	if err != nil {
 		t.Fatalf("Failed to store message: %v", err)
 	}
@@ -1054,7 +1054,7 @@ Content-Type: text/html; charset=utf-8
 		t.Errorf("Expected InReplyTo '<previous@example.com>', got '%s'", parsed.InReplyTo)
 	}
 
-	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
+	messageID, err := parser.StoreMessagePerUserWithSharedDBAndS3(database, database, parsed, nil)
 	if err != nil {
 		t.Fatalf("Failed to store message: %v", err)
 	}
@@ -1133,7 +1133,7 @@ iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAA
 		t.Fatalf("Expected 5 parts (multipart/alternative root + text/plain + multipart/related + text/html + image/png), got %d", len(parsed.Parts))
 	}
 
-	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
+	messageID, err := parser.StoreMessagePerUserWithSharedDBAndS3(database, database, parsed, nil)
 	if err != nil {
 		t.Fatalf("Failed to store message: %v", err)
 	}
@@ -1237,7 +1237,7 @@ iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAA
 		t.Fatalf("Expected 6 parts (multipart/alternative + text/plain + multipart/related + text/html + 2x image/png), got %d", len(parsed.Parts))
 	}
 
-	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
+	messageID, err := parser.StoreMessagePerUserWithSharedDBAndS3(database, database, parsed, nil)
 	if err != nil {
 		t.Fatalf("Failed to store message: %v", err)
 	}
@@ -1339,7 +1339,7 @@ Content-Type: text/html; charset=UTF-8
 		t.Fatalf("Failed to parse message: %v", err)
 	}
 
-	messageID, err := parser.StoreMessageWithSharedDB(database, database, msg)
+	messageID, err := parser.StoreMessagePerUserWithSharedDBAndS3(database, database, msg, nil)
 	if err != nil {
 		t.Fatalf("Failed to store message: %v", err)
 	}
@@ -1500,7 +1500,7 @@ iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAA
 	}
 
 	// Store the message
-	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
+	messageID, err := parser.StoreMessagePerUserWithSharedDBAndS3(database, database, parsed, nil)
 	if err != nil {
 		t.Fatalf("Failed to store message: %v", err)
 	}
@@ -1569,7 +1569,7 @@ imagedata
 		t.Fatalf("Failed to parse: %v", err)
 	}
 
-	messageID, err := parser.StoreMessageWithSharedDB(database, database, parsed)
+	messageID, err := parser.StoreMessagePerUserWithSharedDBAndS3(database, database, parsed, nil)
 	if err != nil {
 		t.Fatalf("Failed to store: %v", err)
 	}

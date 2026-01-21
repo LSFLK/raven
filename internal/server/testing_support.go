@@ -363,7 +363,7 @@ func InsertTestMail(t *testing.T, database interface{}, username, subject, sende
 		}
 	} else {
 		// Legacy monolithic database approach
-		messageID, err = parser.StoreMessageWithSharedDB(userDB, userDB, parsed)
+		messageID, err = parser.StoreMessagePerUserWithSharedDBAndS3(userDB, userDB, parsed, nil)
 		if err != nil {
 			t.Fatalf("Failed to store test message: %v", err)
 		}
