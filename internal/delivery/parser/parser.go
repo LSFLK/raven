@@ -1078,13 +1078,6 @@ func getStringField(m map[string]interface{}, key string) string {
 	return ""
 }
 
-// writeMultipartRelated writes a multipart/related section with its children
-func writeMultipartRelated(buf *bytes.Buffer, parentBoundary *string, sharedDB *sql.DB, relatedNode *PartNode, s3Storage *blobstorage.S3BlobStorage) {
-	// Use DFS to reconstruct the multipart/related part
-	buf.WriteString(fmt.Sprintf("--%s\r\n", *parentBoundary))
-	reconstructPartDFS(buf, sharedDB, relatedNode, s3Storage, *parentBoundary)
-}
-
 // writePartHeaders writes the MIME headers for a message part
 func writePartHeaders(buf *bytes.Buffer, part map[string]interface{}) {
 	contentType := part["content_type"].(string)
