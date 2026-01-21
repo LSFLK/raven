@@ -1191,7 +1191,7 @@ iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAA
 // TestReconstructMessage_WithMultipleInlineImages tests reconstruction with multiple inline images
 func TestReconstructMessage_WithMultipleInlineImages(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	rawMessage := `From: sender@example.com
 To: recipient@example.com
@@ -1301,7 +1301,7 @@ iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAA
 // in a multipart/related block, it gets reordered to be first (the root part per RFC 2387)
 func TestReconstructMessage_MultipartRelatedHTMLNotFirst(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Create a message where the IMAGE comes BEFORE the HTML in multipart/related
 	// This is the scenario that causes Thunderbird to show only the image
@@ -1394,7 +1394,7 @@ Content-Type: text/html; charset=UTF-8
 
 func TestParseGmailInlineImageStructure(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// This is the structure Gmail uses for inline images:
 	// multipart/related (root)
@@ -1535,7 +1535,7 @@ iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAA
 // TestReconstructedMultipartRelatedOrder verifies that multipart/related has correct part order
 func TestReconstructedMultipartRelatedOrder(t *testing.T) {
 	database := setupTestDB(t)
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	// Gmail structure: multipart/related with multipart/alternative BEFORE image
 	rawMessage := `From: sender@example.com

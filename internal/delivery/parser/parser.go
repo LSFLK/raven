@@ -701,9 +701,12 @@ func ReconstructMessageWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, messa
 			// 3. Otherwise = multipart/mixed
 			
 			multipartType := detectMultipartType(rootParts)
-			boundary := fmt.Sprintf("----=_Part_%s_%d", 
-				strings.Title(strings.TrimPrefix(multipartType, "multipart/")), 
-				time.Now().UnixNano())
+			subtype := strings.TrimPrefix(multipartType, "multipart/")
+			// Capitalize first letter manually (simple replacement for deprecated strings.Title)
+			if len(subtype) > 0 {
+				subtype = strings.ToUpper(subtype[:1]) + subtype[1:]
+			}
+			boundary := fmt.Sprintf("----=_Part_%s_%d", subtype, time.Now().UnixNano())
 			
 			fmt.Printf("DEBUG ReconstructMessage: Using %s for %d root parts\n", multipartType, len(rootParts))
 			
@@ -920,9 +923,12 @@ func reconstructPartDFS(buf *bytes.Buffer, sharedDB *sql.DB, node *PartNode, s3S
 		multipartType := contentTypeLower // e.g., "multipart/mixed", "multipart/alternative", "multipart/related"
 		
 		// Generate a unique boundary for this multipart section
-		boundary := fmt.Sprintf("----=_Part_%s_%d", 
-			strings.Title(strings.TrimPrefix(multipartType, "multipart/")), 
-			time.Now().UnixNano())
+		subtype := strings.TrimPrefix(multipartType, "multipart/")
+		// Capitalize first letter manually (simple replacement for deprecated strings.Title)
+		if len(subtype) > 0 {
+			subtype = strings.ToUpper(subtype[:1]) + subtype[1:]
+		}
+		boundary := fmt.Sprintf("----=_Part_%s_%d", subtype, time.Now().UnixNano())
 		
 		fmt.Printf("DEBUG reconstructPartDFS: Multipart container type='%s' with %d children, boundary='%s'\n", 
 			multipartType, len(node.Children), boundary)
@@ -948,20 +954,20 @@ func reconstructPartDFS(buf *bytes.Buffer, sharedDB *sql.DB, node *PartNode, s3S
 		
 		// Write Content-Type with boundary (and start= parameter for multipart/related if needed)
 		if startParam != "" {
-			buf.WriteString(fmt.Sprintf("Content-Type: %s; boundary=\"%s\"; start=\"%s\"\r\n", contentType, boundary, startParam))
+			fmt.Fprintf(buf, "Content-Type: %s; boundary=\"%s\"; start=\"%s\"\r\n", contentType, boundary, startParam)
 		} else {
-			buf.WriteString(fmt.Sprintf("Content-Type: %s; boundary=\"%s\"\r\n", contentType, boundary))
+			fmt.Fprintf(buf, "Content-Type: %s; boundary=\"%s\"\r\n", contentType, boundary)
 		}
 		buf.WriteString("\r\n")
 
 		// Recursively process all children with DFS
 		for _, child := range children {
-			buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
+			fmt.Fprintf(buf, "--%s\r\n", boundary)
 			reconstructPartDFS(buf, sharedDB, child, s3Storage, boundary)
 		}
 
 		// Write closing boundary
-		buf.WriteString(fmt.Sprintf("--%s--\r\n", boundary))
+		fmt.Fprintf(buf, "--%s--\r\n", boundary)
 	} else {
 		// This is a leaf part (actual content) - write headers and content
 		fmt.Printf("DEBUG reconstructPartDFS: Leaf part type='%s', has_blob=%v, text_len=%d\n", 
