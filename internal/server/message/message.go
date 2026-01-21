@@ -530,9 +530,10 @@ func matchesHeaderOrBody(msg messageInfo, field string, searchStr string, charse
 
 	// Get shared database for blob access
 	sharedDB := deps.GetSharedDB()
+	s3Storage := deps.GetS3Storage()
 
 	// Reconstruct message to search in headers/body
-	rawMsg, err := parser.ReconstructMessageWithSharedDB(sharedDB, userDB, msg.messageID)
+	rawMsg, err := parser.ReconstructMessageWithSharedDBAndS3(sharedDB, userDB, msg.messageID, s3Storage)
 	if err != nil {
 		return false
 	}
@@ -578,8 +579,9 @@ func matchesHeader(msg messageInfo, fieldName string, searchStr string, charset 
 
 	// Get shared database for blob access
 	sharedDB := deps.GetSharedDB()
+	s3Storage := deps.GetS3Storage()
 
-	rawMsg, err := parser.ReconstructMessageWithSharedDB(sharedDB, userDB, msg.messageID)
+	rawMsg, err := parser.ReconstructMessageWithSharedDBAndS3(sharedDB, userDB, msg.messageID, s3Storage)
 	if err != nil {
 		return false
 	}
@@ -655,8 +657,9 @@ func matchesSize(msg messageInfo, size int, larger bool, userID int64, deps Serv
 
 	// Get shared database for blob access
 	sharedDB := deps.GetSharedDB()
+	s3Storage := deps.GetS3Storage()
 
-	rawMsg, err := parser.ReconstructMessageWithSharedDB(sharedDB, userDB, msg.messageID)
+	rawMsg, err := parser.ReconstructMessageWithSharedDBAndS3(sharedDB, userDB, msg.messageID, s3Storage)
 	if err != nil {
 		return false
 	}
@@ -700,9 +703,10 @@ func matchesSentDate(msg messageInfo, dateStr string, comparison string, userID 
 
 	// Get shared database for blob access
 	sharedDB := deps.GetSharedDB()
+	s3Storage := deps.GetS3Storage()
 
 	// Get Date: header from message
-	rawMsg, err := parser.ReconstructMessageWithSharedDB(sharedDB, userDB, msg.messageID)
+	rawMsg, err := parser.ReconstructMessageWithSharedDBAndS3(sharedDB, userDB, msg.messageID, s3Storage)
 	if err != nil {
 		return false
 	}

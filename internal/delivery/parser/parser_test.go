@@ -849,7 +849,7 @@ Simple message body.`
 		t.Fatalf("Failed to store message: %v", err)
 	}
 
-	reconstructed, err := parser.ReconstructMessageWithSharedDB(database, database, messageID)
+	reconstructed, err := parser.ReconstructMessageWithSharedDBAndS3(database, database, messageID, nil)
 	if err != nil {
 		t.Fatalf("Failed to reconstruct message: %v", err)
 	}
@@ -897,7 +897,7 @@ Content-Type: text/html; charset=utf-8
 		t.Fatalf("Failed to store message: %v", err)
 	}
 
-	reconstructed, err := parser.ReconstructMessageWithSharedDB(database, database, messageID)
+	reconstructed, err := parser.ReconstructMessageWithSharedDBAndS3(database, database, messageID, nil)
 	if err != nil {
 		t.Fatalf("Failed to reconstruct message: %v", err)
 	}
@@ -946,7 +946,7 @@ Binary content
 		t.Fatalf("Failed to store message: %v", err)
 	}
 
-	reconstructed, err := parser.ReconstructMessageWithSharedDB(database, database, messageID)
+	reconstructed, err := parser.ReconstructMessageWithSharedDBAndS3(database, database, messageID, nil)
 	if err != nil {
 		t.Fatalf("Failed to reconstruct message: %v", err)
 	}
@@ -968,7 +968,7 @@ func TestReconstructMessage_NoPartsError(t *testing.T) {
 	database := setupTestDB(t)
 	defer func() { _ = database.Close() }()
 
-	_, err := parser.ReconstructMessageWithSharedDB(database, database, 99999)
+	_, err := parser.ReconstructMessageWithSharedDBAndS3(database, database, 99999, nil)
 	if err == nil {
 		t.Error("Expected error when reconstructing non-existent message")
 	}
@@ -1059,7 +1059,7 @@ Content-Type: text/html; charset=utf-8
 		t.Fatalf("Failed to store message: %v", err)
 	}
 
-	reconstructed, err := parser.ReconstructMessageWithSharedDB(database, database, messageID)
+	reconstructed, err := parser.ReconstructMessageWithSharedDBAndS3(database, database, messageID, nil)
 	if err != nil {
 		t.Fatalf("Failed to reconstruct message: %v", err)
 	}
@@ -1138,7 +1138,7 @@ iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAA
 		t.Fatalf("Failed to store message: %v", err)
 	}
 
-	reconstructed, err := parser.ReconstructMessageWithSharedDB(database, database, messageID)
+	reconstructed, err := parser.ReconstructMessageWithSharedDBAndS3(database, database, messageID, nil)
 	if err != nil {
 		t.Fatalf("Failed to reconstruct message: %v", err)
 	}
@@ -1242,7 +1242,7 @@ iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAA
 		t.Fatalf("Failed to store message: %v", err)
 	}
 
-	reconstructed, err := parser.ReconstructMessageWithSharedDB(database, database, messageID)
+	reconstructed, err := parser.ReconstructMessageWithSharedDBAndS3(database, database, messageID, nil)
 	if err != nil {
 		t.Fatalf("Failed to reconstruct message: %v", err)
 	}
@@ -1344,7 +1344,7 @@ Content-Type: text/html; charset=UTF-8
 		t.Fatalf("Failed to store message: %v", err)
 	}
 
-	reconstructed, err := parser.ReconstructMessageWithSharedDB(database, database, messageID)
+	reconstructed, err := parser.ReconstructMessageWithSharedDBAndS3(database, database, messageID, nil)
 	if err != nil {
 		t.Fatalf("Failed to reconstruct message: %v", err)
 	}
@@ -1506,7 +1506,7 @@ iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAA
 	}
 
 	// Reconstruct and verify
-	reconstructed, err := parser.ReconstructMessageWithSharedDB(database, database, messageID)
+	reconstructed, err := parser.ReconstructMessageWithSharedDBAndS3(database, database, messageID, nil)
 	if err != nil {
 		t.Fatalf("Failed to reconstruct message: %v", err)
 	}
@@ -1574,7 +1574,7 @@ imagedata
 		t.Fatalf("Failed to store: %v", err)
 	}
 
-	reconstructed, err := parser.ReconstructMessageWithSharedDB(database, database, messageID)
+	reconstructed, err := parser.ReconstructMessageWithSharedDBAndS3(database, database, messageID, nil)
 	if err != nil {
 		t.Fatalf("Failed to reconstruct: %v", err)
 	}

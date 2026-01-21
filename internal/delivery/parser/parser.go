@@ -607,11 +607,6 @@ func StoreMessagePerUserWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, pars
 	return messageID, nil
 }
 
-// ReconstructMessageWithSharedDB reconstructs the raw message with separate shared and user databases
-func ReconstructMessageWithSharedDB(sharedDB *sql.DB, userDB *sql.DB, messageID int64) (string, error) {
-	return ReconstructMessageWithSharedDBAndS3(sharedDB, userDB, messageID, nil)
-}
-
 // ReconstructMessageWithSharedDBAndS3 reconstructs the raw message from database parts with S3 support and shared blob storage
 func ReconstructMessageWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, messageID int64, s3Storage *blobstorage.S3BlobStorage) (string, error) {
 	// Get message parts from user database
