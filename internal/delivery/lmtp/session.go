@@ -2,6 +2,7 @@ package lmtp
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"log"
 	"net"
@@ -240,7 +241,7 @@ func (s *Session) handleDATA() error {
 	}
 
 	// Parse message
-	msg, err := parser.ParseMessageFromBytes(data)
+	msg, err := parser.ParseMessage(bytes.NewReader(data))
 	if err != nil {
 		log.Printf("Error parsing message: %v", err)
 		return s.sendResponse(554, "Error parsing message: %v", err)
