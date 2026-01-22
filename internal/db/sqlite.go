@@ -1064,7 +1064,7 @@ func GetMessageParts(db *sql.DB, messageID int64) ([]map[string]interface{}, err
 		       content_transfer_encoding, charset, filename, content_id, blob_id, text_content, size_bytes
 		FROM message_parts
 		WHERE message_id = ?
-		ORDER BY part_number
+		ORDER BY id
 	`, messageID)
 	if err != nil {
 		return nil, err
