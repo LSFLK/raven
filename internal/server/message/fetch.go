@@ -253,6 +253,7 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 	if strings.Contains(itemsUpper, "BODYSTRUCTURE") {
 		msg := loadRawMsg()
 		bodyStructure := response.BuildBodyStructure(msg)
+		fmt.Printf("DEBUG FETCH: BODYSTRUCTURE for message %d: %s\n", messageID, bodyStructure)
 		responseParts = append(responseParts, bodyStructure)
 	}
 
@@ -321,8 +322,17 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 				partPath, err := parsePartNumberPath(partNumStr)
 				if err == nil && len(partPath) > 0 {
 					loadParts()
+					// Debug: Show parts structure
+					fmt.Printf("DEBUG FETCH: Looking up part %v for message %d, have %d parts\n", partPath, messageID, len(parts))
+					for i, p := range parts {
+						fmt.Printf("  Part %d: id=%v, part_number=%v, parent_part_id=%v, content_type=%v\n", 
+							i, p["id"], p["part_number"], p["parent_part_id"], p["content_type"])
+					}
+					
 					// Map IMAP part number path to database part
 					target := mapIMAPPartPathToDBPart(parts, partPath)
+					
+					fmt.Printf("DEBUG FETCH: mapIMAPPartPathToDBPart returned: %v\n", target != nil)
 
 					payload := ""
 					if target != nil {
@@ -807,11 +817,11 @@ func mapIMAPPartPathToDBPart(parts []map[string]interface{}, partPath []int) map
 		return asInt(v)
 	}
 
-	// Helper to get children of a part
-	getChildren := func(parentPartNum int) []map[string]interface{} {
+	// Helper to get children of a part by database ID (not part_number!)
+	getChildren := func(parentDBID int) []map[string]interface{} {
 		children := []map[string]interface{}{}
 		for _, p := range parts {
-			if pid, ok := getParentID(p); ok && pid == parentPartNum {
+			if pid, ok := getParentID(p); ok && pid == parentDBID {
 				children = append(children, p)
 			}
 		}
@@ -825,6 +835,9 @@ func mapIMAPPartPathToDBPart(parts []map[string]interface{}, partPath []int) map
 	}
 
 	// Get top-level parts
+	// IMPORTANT: In IMAP, the root multipart container is invisible.
+	// If there's a single root part that's a multipart container, we skip it
+	// and treat its children as the IMAP top-level parts.
 	topLevelParts := []map[string]interface{}{}
 	for _, p := range parts {
 		if _, hasParent := p["parent_part_id"]; !hasParent || p["parent_part_id"] == nil {
@@ -838,6 +851,23 @@ func mapIMAPPartPathToDBPart(parts []map[string]interface{}, partPath []int) map
 		return pnI < pnJ
 	})
 
+	// Check if we have a single root multipart container
+	// If so, skip it and use its children as IMAP top-level parts
+	if len(topLevelParts) == 1 {
+		rootPart := topLevelParts[0]
+		contentType := ""
+		if ct, ok := rootPart["content_type"].(string); ok {
+			contentType = strings.ToLower(ct)
+		}
+		// If the root part is a multipart container, treat its children as top-level
+		if strings.HasPrefix(contentType, "multipart/") {
+			rootID, ok := asInt(rootPart["id"])
+			if ok {
+				topLevelParts = getChildren(rootID)
+			}
+		}
+	}
+
 	// Start with first part in path (top-level)
 	if partPath[0] <= 0 || partPath[0] > len(topLevelParts) {
 		return nil
@@ -846,13 +876,13 @@ func mapIMAPPartPathToDBPart(parts []map[string]interface{}, partPath []int) map
 
 	// Traverse down the path
 	for i := 1; i < len(partPath); i++ {
-		// Get part_number of current part to find its children
-		partNum, ok := asInt(current["part_number"])
+		// Get database ID of current part to find its children
+		partDBID, ok := asInt(current["id"])
 		if !ok {
 			return nil
 		}
 
-		children := getChildren(partNum)
+		children := getChildren(partDBID)
 		if partPath[i] <= 0 || partPath[i] > len(children) {
 			return nil
 		}

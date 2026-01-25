@@ -9,6 +9,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/mail"
+	"sort"
 	"strings"
 	"time"
 
@@ -228,10 +229,10 @@ func ParseMIMEMessage(rawMessage string) (*ParsedMessage, error) {
 		boundary := params["boundary"]
 		if boundary != "" {
 			fmt.Printf("DEBUG ParseMIMEMessage: Parsing multipart with boundary='%s'\n", boundary)
-			
+
 			// Initialize parts list and add the root multipart container as the first part
 			parsed.Parts = []MessagePart{{
-				PartNumber:              0, // Will be set during storage
+				PartNumber:              0,               // Will be set during storage
 				ParentPartID:            sql.NullInt64{}, // No parent (root)
 				ContentType:             mediaType,
 				ContentDisposition:      "",
@@ -242,7 +243,7 @@ func ParseMIMEMessage(rawMessage string) (*ParsedMessage, error) {
 				TextContent:             "", // Containers have no content
 				SizeBytes:               0,
 			}}
-			
+
 			// Index 0 is the root multipart container we just added
 			rootIdx := 0
 			err = parseMultipart(msg.Body, boundary, 0, &rootIdx, &parsed.Parts)
@@ -350,18 +351,19 @@ func parseMultipart(body io.Reader, boundary string, depth int, parentPartIdx *i
 
 		// If this is a multipart container, recursively parse it
 		if strings.HasPrefix(mediaType, "multipart/") && params["boundary"] != "" {
-			fmt.Printf("DEBUG parseMultipart: Part is nested multipart/%s with boundary='%s'\n", 
+			fmt.Printf("DEBUG parseMultipart: Part is nested multipart/%s with boundary='%s'\n",
 				strings.TrimPrefix(mediaType, "multipart/"), params["boundary"])
-			
+
 			// Store the multipart container itself (with empty content)
 			part.TextContent = ""
 			*allParts = append(*allParts, part)
-			
+
 			// The current part's index in the global parts array (0-based)
 			currentPartIdx := len(*allParts) - 1
-			fmt.Printf("DEBUG parseMultipart: Added multipart container at index %d\n", currentPartIdx)
-			
+			fmt.Printf("DEBUG parseMultipart: Added multipart container at index %d (will be parent)\n", currentPartIdx)
+
 			// Parse sub-parts recursively, passing the current part's index as parent
+			// Children will be appended AFTER the parent, ensuring correct storage order
 			err := parseMultipart(bytes.NewReader(content), params["boundary"], depth+1, &currentPartIdx, allParts)
 			if err != nil {
 				fmt.Printf("DEBUG parseMultipart: Error parsing nested multipart: %v\n", err)
@@ -422,7 +424,11 @@ func StoreMessagePerUserWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, pars
 	// Build a map from part array index to database ID
 	// ParentPartID in the parsed parts contains the array index (0-based) of the parent part
 	partIndexToDBID := make(map[int]int64)
-	
+
+	// Build a map to track children count per parent for relative part numbering
+	// Key: parent array index (or -1 for root), Value: count of children
+	childCountByParent := make(map[int]int)
+
 	for partIdx, part := range parsed.Parts {
 		var blobID sql.NullInt64
 
@@ -464,12 +470,14 @@ func StoreMessagePerUserWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, pars
 		// Convert parent part array index to parent database ID
 		// ParentPartID contains the array index (0-based) of the parent part in parsed.Parts
 		var parentDBID sql.NullInt64
+		parentArrayIdx := -1 // -1 means root level
 		if part.ParentPartID.Valid {
 			parentIdx := int(part.ParentPartID.Int64)
+			parentArrayIdx = parentIdx
 			if parentIdx >= 0 && parentIdx < len(parsed.Parts) {
 				if dbID, exists := partIndexToDBID[parentIdx]; exists {
 					parentDBID = sql.NullInt64{Valid: true, Int64: dbID}
-					fmt.Printf("DEBUG StoreMessage: Part idx=%d references parent idx=%d (db_id=%d)\n", 
+					fmt.Printf("DEBUG StoreMessage: Part idx=%d references parent idx=%d (db_id=%d)\n",
 						partIdx, parentIdx, dbID)
 				} else {
 					fmt.Printf("DEBUG StoreMessage: WARNING - Part idx=%d references parent idx=%d which hasn't been stored yet\n",
@@ -481,10 +489,14 @@ func StoreMessagePerUserWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, pars
 			}
 		}
 
+		// Calculate relative part number within parent (1-based)
+		childCountByParent[parentArrayIdx]++
+		relativePartNumber := childCountByParent[parentArrayIdx]
+
 		partDBID, err := db.AddMessagePart(
 			userDB,
 			messageID,
-			partIdx+1, // Use 1-based part number for display purposes
+			relativePartNumber, // Use relative part number within parent
 			parentDBID,
 			part.ContentType,
 			part.ContentDisposition,
@@ -499,11 +511,11 @@ func StoreMessagePerUserWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, pars
 		if err != nil {
 			return 0, fmt.Errorf("failed to store message part: %v", err)
 		}
-		
+
 		// Track the database id for this part index
 		partIndexToDBID[partIdx] = partDBID
-		fmt.Printf("DEBUG StoreMessage: Stored part idx=%d (type=%s) as db_id=%d (parent_db_id=%v)\n",
-			partIdx, part.ContentType, partDBID, parentDBID)
+		fmt.Printf("DEBUG StoreMessage: Stored part idx=%d (type=%s) as db_id=%d with part_number=%d (parent_db_id=%v)\n",
+			partIdx, part.ContentType, partDBID, relativePartNumber, parentDBID)
 	}
 
 	return messageID, nil
@@ -651,7 +663,7 @@ func ReconstructMessageWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, messa
 	} else {
 		// Multipart message handling using DFS traversal
 		// Build a tree structure from flat parts list using parent_part_id
-		
+
 		// IMPORTANT: parent_part_id is a foreign key to message_parts(id), NOT part_number!
 		// Create a map from part id to node for lookups
 		partNodesById := make(map[int64]*PartNode)
@@ -664,10 +676,10 @@ func ReconstructMessageWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, messa
 
 			// Debug: Show part structure
 			if parentID, hasParent := part["parent_part_id"].(int64); hasParent {
-				fmt.Printf("DEBUG ReconstructMessage: Part id=%d num=%d (type=%s) has parent_part_id=%d\n", 
+				fmt.Printf("DEBUG ReconstructMessage: Part id=%d num=%d (type=%s) has parent_part_id=%d\n",
 					partID, part["part_number"].(int64), part["content_type"].(string), parentID)
 			} else {
-				fmt.Printf("DEBUG ReconstructMessage: Part id=%d num=%d (type=%s) is root (no parent)\n", 
+				fmt.Printf("DEBUG ReconstructMessage: Part id=%d num=%d (type=%s) is root (no parent)\n",
 					partID, part["part_number"].(int64), part["content_type"].(string))
 				rootParts = append(rootParts, node)
 			}
@@ -678,13 +690,22 @@ func ReconstructMessageWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, messa
 			if parentPartID, ok := node.Part["parent_part_id"].(int64); ok {
 				if parentNode, found := partNodesById[parentPartID]; found {
 					parentNode.Children = append(parentNode.Children, node)
-					fmt.Printf("DEBUG ReconstructMessage: Added part id=%d as child of part id=%d\n", 
+					fmt.Printf("DEBUG ReconstructMessage: Added part id=%d as child of part id=%d\n",
 						node.Part["id"].(int64), parentPartID)
 				} else {
-					fmt.Printf("DEBUG ReconstructMessage: Warning - part id=%d references non-existent parent id=%d\n", 
+					fmt.Printf("DEBUG ReconstructMessage: Warning - part id=%d references non-existent parent id=%d\n",
 						node.Part["id"].(int64), parentPartID)
 				}
 			}
+		}
+
+		// Sort children by part_number to maintain database order
+		for _, node := range partNodesById {
+			sort.Slice(node.Children, func(i, j int) bool {
+				pnI := node.Children[i].Part["part_number"].(int64)
+				pnJ := node.Children[j].Part["part_number"].(int64)
+				return pnI < pnJ
+			})
 		}
 
 		fmt.Printf("DEBUG ReconstructMessage: Processing %d parts (%d root parts)\n", len(parts), len(rootParts))
@@ -699,7 +720,7 @@ func ReconstructMessageWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, messa
 			// 1. text/plain + multipart/related = multipart/alternative
 			// 2. text/plain + text/html = multipart/alternative
 			// 3. Otherwise = multipart/mixed
-			
+
 			multipartType := detectMultipartType(rootParts)
 			subtype := strings.TrimPrefix(multipartType, "multipart/")
 			// Capitalize first letter manually (simple replacement for deprecated strings.Title)
@@ -707,9 +728,9 @@ func ReconstructMessageWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, messa
 				subtype = strings.ToUpper(subtype[:1]) + subtype[1:]
 			}
 			boundary := fmt.Sprintf("----=_Part_%s_%d", subtype, time.Now().UnixNano())
-			
+
 			fmt.Printf("DEBUG ReconstructMessage: Using %s for %d root parts\n", multipartType, len(rootParts))
-			
+
 			buf.WriteString("MIME-Version: 1.0\r\n")
 			buf.WriteString(fmt.Sprintf("Content-Type: %s; boundary=\"%s\"\r\n", multipartType, boundary))
 			buf.WriteString("\r\n")
@@ -744,14 +765,14 @@ func detectMultipartType(rootParts []*PartNode) string {
 	hasTextHTML := false
 	hasMultipartRelated := false
 	hasAttachment := false
-	
+
 	for _, node := range rootParts {
 		contentType := strings.ToLower(node.Part["content_type"].(string))
 		disposition := ""
 		if d, ok := node.Part["content_disposition"].(string); ok {
 			disposition = strings.ToLower(d)
 		}
-		
+
 		switch {
 		case contentType == "text/plain":
 			hasTextPlain = true
@@ -766,144 +787,25 @@ func detectMultipartType(rootParts []*PartNode) string {
 			hasAttachment = true
 		}
 	}
-	
+
 	// Determine multipart type based on content
 	// multipart/alternative: text/plain + (text/html OR multipart/related)
 	// multipart/mixed: has attachments or mixed content types
-	
+
 	if hasAttachment {
 		return "multipart/mixed"
 	}
-	
+
 	if hasTextPlain && (hasTextHTML || hasMultipartRelated) {
 		return "multipart/alternative"
 	}
-	
+
 	if hasTextPlain || hasTextHTML {
 		return "multipart/alternative"
 	}
-	
+
 	// Default to mixed
 	return "multipart/mixed"
-}
-
-// sortMultipartRelatedChildren reorders children of multipart/related so that:
-// 1. Body parts (multipart/alternative, text/html, text/plain) come FIRST (as root)
-// 2. Related resources (images with Content-ID) come AFTER
-// Per RFC 2387, the first part is the root document unless start= parameter specifies otherwise
-func sortMultipartRelatedChildren(children []*PartNode) []*PartNode {
-	if len(children) == 0 {
-		return children
-	}
-	
-	var bodyParts []*PartNode
-	var resourceParts []*PartNode
-	
-	for _, child := range children {
-		contentType := strings.ToLower(getStringField(child.Part, "content_type"))
-		disposition := strings.ToLower(getStringField(child.Part, "content_disposition"))
-		
-		// Body part candidates (should be root):
-		// 1. multipart/alternative (contains both text and HTML)
-		// 2. text/html
-		// 3. text/plain
-		isBodyPart := false
-		
-		if strings.HasPrefix(contentType, "multipart/") {
-			// Any multipart is a body container
-			isBodyPart = true
-		} else if contentType == "text/html" || contentType == "text/plain" {
-			// Text parts are body unless explicitly marked as attachment
-			isBodyPart = !strings.HasPrefix(disposition, "attachment")
-		}
-		
-		if isBodyPart {
-			bodyParts = append(bodyParts, child)
-		} else {
-			// Resources: images, styles, etc. with Content-ID
-			resourceParts = append(resourceParts, child)
-		}
-	}
-	
-	// Combine: body parts first, then resources
-	result := make([]*PartNode, 0, len(children))
-	result = append(result, bodyParts...)
-	result = append(result, resourceParts...)
-	
-	if len(bodyParts) > 0 && len(resourceParts) > 0 {
-		fmt.Printf("DEBUG sortMultipartRelatedChildren: Reordered %d body parts before %d resource parts\n", 
-			len(bodyParts), len(resourceParts))
-	}
-	
-	return result
-}
-
-// prepareMultipartRelated ensures that for multipart/related, the HTML part is the root.
-// Per RFC 2387, the first part is the root unless a start= parameter specifies otherwise.
-// Returns reordered children and a start= parameter value (if needed).
-func prepareMultipartRelated(children []*PartNode) ([]*PartNode, string) {
-	if len(children) == 0 {
-		return children, ""
-	}
-
-	// Find the HTML part (text/html)
-	htmlIndex := -1
-	for i, child := range children {
-		contentType := strings.ToLower(getStringField(child.Part, "content_type"))
-		if contentType == "text/html" {
-			htmlIndex = i
-			break
-		}
-	}
-
-	// If no HTML part found, return as-is (no change needed)
-	if htmlIndex == -1 {
-		return children, ""
-	}
-
-	// If HTML is already first, no change needed
-	if htmlIndex == 0 {
-		return children, ""
-	}
-
-	// Option 1: Reorder children to put HTML first (simpler and more compatible)
-	// This is the preferred approach as it doesn't require Content-ID management
-	reordered := make([]*PartNode, len(children))
-	reordered[0] = children[htmlIndex]
-	j := 1
-	for i, child := range children {
-		if i != htmlIndex {
-			reordered[j] = child
-			j++
-		}
-	}
-
-	fmt.Printf("DEBUG prepareMultipartRelated: Reordered children to put HTML part first (was at index %d)\n", htmlIndex)
-	return reordered, ""
-
-	// Option 2: Use start= parameter (more complex, requires Content-ID)
-	// Uncomment below if you prefer this approach instead of reordering:
-	/*
-	htmlPart := children[htmlIndex]
-	
-	// Ensure the HTML part has a Content-ID
-	contentID, ok := htmlPart.Part["content_id"].(string)
-	if !ok || contentID == "" {
-		// Generate a Content-ID for the HTML part
-		contentID = fmt.Sprintf("<html-part-%d@raven>", time.Now().UnixNano())
-		htmlPart.Part["content_id"] = contentID
-		fmt.Printf("DEBUG prepareMultipartRelated: Generated Content-ID '%s' for HTML part\n", contentID)
-	}
-	
-	// Clean up Content-ID if it doesn't have angle brackets
-	if !strings.HasPrefix(contentID, "<") {
-		contentID = "<" + contentID + ">"
-		htmlPart.Part["content_id"] = contentID
-	}
-	
-	fmt.Printf("DEBUG prepareMultipartRelated: Using start=%s to designate HTML part as root\n", contentID)
-	return children, contentID
-	*/
 }
 
 // PartNode represents a MIME part in a tree structure
@@ -921,7 +823,7 @@ func reconstructPartDFS(buf *bytes.Buffer, sharedDB *sql.DB, node *PartNode, s3S
 	if strings.HasPrefix(contentTypeLower, "multipart/") {
 		// This is a multipart container - generate a boundary and process children
 		multipartType := contentTypeLower // e.g., "multipart/mixed", "multipart/alternative", "multipart/related"
-		
+
 		// Generate a unique boundary for this multipart section
 		subtype := strings.TrimPrefix(multipartType, "multipart/")
 		// Capitalize first letter manually (simple replacement for deprecated strings.Title)
@@ -929,29 +831,25 @@ func reconstructPartDFS(buf *bytes.Buffer, sharedDB *sql.DB, node *PartNode, s3S
 			subtype = strings.ToUpper(subtype[:1]) + subtype[1:]
 		}
 		boundary := fmt.Sprintf("----=_Part_%s_%d", subtype, time.Now().UnixNano())
-		
-		fmt.Printf("DEBUG reconstructPartDFS: Multipart container type='%s' with %d children, boundary='%s'\n", 
+
+		fmt.Printf("DEBUG reconstructPartDFS: Multipart container type='%s' with %d children, boundary='%s'\n",
 			multipartType, len(node.Children), boundary)
 
-		// Special handling for multipart/related: ensure body part (HTML/alternative) is the root
+		// Use children as-is from database (sorted by part_number)
+		// This ensures BODYSTRUCTURE matches the database structure and BODY[x.y] lookups work correctly
 		children := node.Children
 		startParam := ""
-		
-		if multipartType == "multipart/related" {
-			children, startParam = prepareMultipartRelated(node.Children)
-		}
-		
-		// Additional sorting for multipart/related to ensure correct order
-		if multipartType == "multipart/related" {
-			children = sortMultipartRelatedChildren(children)
-		}
+
+		// Note: We no longer reorder parts for multipart/related here
+		// The parts are already in the order they were stored in the database
+		// If the original email has parts in non-RFC-compliant order, we preserve that order
 
 		// Write Content-Type header for this multipart section
 		// Only add MIME-Version if this is at the root level (no parent boundary)
 		if parentBoundary == "" {
 			buf.WriteString("MIME-Version: 1.0\r\n")
 		}
-		
+
 		// Write Content-Type with boundary (and start= parameter for multipart/related if needed)
 		if startParam != "" {
 			fmt.Fprintf(buf, "Content-Type: %s; boundary=\"%s\"; start=\"%s\"\r\n", contentType, boundary, startParam)
@@ -970,9 +868,9 @@ func reconstructPartDFS(buf *bytes.Buffer, sharedDB *sql.DB, node *PartNode, s3S
 		fmt.Fprintf(buf, "--%s--\r\n", boundary)
 	} else {
 		// This is a leaf part (actual content) - write headers and content
-		fmt.Printf("DEBUG reconstructPartDFS: Leaf part type='%s', has_blob=%v, text_len=%d\n", 
+		fmt.Printf("DEBUG reconstructPartDFS: Leaf part type='%s', has_blob=%v, text_len=%d\n",
 			contentType, node.Part["blob_id"] != nil, len(getStringField(node.Part, "text_content")))
-		
+
 		writePartHeaders(buf, node.Part)
 		writePartContentWithS3(buf, sharedDB, node.Part, s3Storage)
 	}

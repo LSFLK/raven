@@ -1297,14 +1297,14 @@ iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAA
 	t.Logf("Successfully reconstructed message with %d inline images", 2)
 }
 
-// TestReconstructMessage_MultipartRelatedHTMLNotFirst tests that when HTML is not first
-// in a multipart/related block, it gets reordered to be first (the root part per RFC 2387)
+// TestReconstructMessage_MultipartRelatedHTMLNotFirst tests that parts are preserved
+// in their original order from the email, maintaining consistency with BODYSTRUCTURE
 func TestReconstructMessage_MultipartRelatedHTMLNotFirst(t *testing.T) {
 	database := setupTestDB(t)
 	defer func() { _ = database.Close() }()
 
 	// Create a message where the IMAGE comes BEFORE the HTML in multipart/related
-	// This is the scenario that causes Thunderbird to show only the image
+	// We now preserve the original order to maintain consistency between BODYSTRUCTURE and BODY[x] requests
 	// We nest it in multipart/alternative to match the real-world structure
 	rawMessage := `From: sender@example.com
 To: recipient@example.com
@@ -1363,7 +1363,7 @@ Content-Type: text/html; charset=UTF-8
 
 	// Get the part of the message after the multipart/related header
 	afterRelated := reconstructed[relatedBoundaryPos:]
-	
+
 	htmlPos := strings.Index(afterRelated, "text/html")
 	imagePos := strings.Index(afterRelated, "image/png")
 
@@ -1374,16 +1374,16 @@ Content-Type: text/html; charset=UTF-8
 		t.Fatal("Image part not found in reconstructed message")
 	}
 
-	// The critical check: HTML should come BEFORE the image in the reconstructed message
-	// This ensures that RFC 2387-compliant clients will use HTML as the root, not the image
-	if htmlPos > imagePos {
-		t.Errorf("HTML part should come BEFORE image in multipart/related (HTML at %d, image at %d)", htmlPos, imagePos)
-		t.Logf("This means Thunderbird will incorrectly show the image as the main content instead of the HTML")
+	// NEW BEHAVIOR: We preserve the original order from the email
+	// This maintains consistency between BODYSTRUCTURE and BODY[x.y] requests
+	// In this test email, image comes BEFORE HTML in the original message
+	if imagePos > htmlPos {
+		t.Errorf("Part order changed during reconstruction - should preserve original order (HTML at %d, image at %d)", htmlPos, imagePos)
 	} else {
-		t.Logf("✓ HTML part correctly comes first in multipart/related (HTML at %d, image at %d)", htmlPos, imagePos)
+		t.Logf("✓ Parts preserved in original order: image first (HTML at %d, image at %d)", htmlPos, imagePos)
 	}
 
-	// Also verify that both parts are present
+	// Verify that both parts are present
 	if !strings.Contains(reconstructed, "<html>") {
 		t.Error("HTML content missing from reconstruction")
 	}
@@ -1402,7 +1402,7 @@ func TestParseGmailInlineImageStructure(t *testing.T) {
 	//   │     ├── text/plain
 	//   │     └── text/html
 	//   └── image/png (inline attachment with Content-ID)
-	
+
 	rawMessage := `From: sender@example.com
 To: recipient@example.com
 Subject: Gmail Inline Image Test
@@ -1454,7 +1454,7 @@ iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAA
 	// 3. text/plain (child of multipart/alternative)
 	// 4. text/html (child of multipart/alternative)
 	// 5. image/png (child of multipart/related)
-	
+
 	if len(parsed.Parts) != 5 {
 		t.Fatalf("Expected 5 parts, got %d", len(parsed.Parts))
 		for i, part := range parsed.Parts {
@@ -1601,7 +1601,7 @@ imagedata
 	if alternativePos < relatedPos {
 		t.Error("multipart/alternative should be nested inside multipart/related")
 	}
-	
+
 	if imagePos < alternativePos {
 		t.Errorf("Image should come AFTER multipart/alternative in multipart/related")
 		t.Errorf("  multipart/alternative at position %d", alternativePos)
