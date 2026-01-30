@@ -44,9 +44,14 @@
 #   make test-fetch        - Run FETCH command tests
 #   make test-store        - Run STORE command tests
 #   make test-commands     - Run all command tests
+#   make docker-build      - Build all Docker images
+#   make docker-build-sasl - Build SASL Docker image
+#   make docker-build-lmtp - Build LMTP Docker image
+#   make docker-build-imap - Build IMAP Docker image
+#   make docker-build-all  - Build combined Docker image
 #   make help              - Show all available targets
 
-.PHONY: test test-integration test-integration-db test-integration-server test-integration-delivery test-integration-sasl test-e2e test-e2e-delivery test-e2e-imap test-e2e-auth test-e2e-concurrency test-e2e-persistence test-e2e-coverage test-e2e-minimal test-integration-coverage test-integration-race test-db test-db-init test-db-domain test-db-user test-db-mailbox test-db-message test-db-blob test-db-role test-db-manager test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-uid test-commands test-delivery test-parser test-parser-coverage test-sasl test-conf test-utils test-response test-storage test-models test-middleware test-selection test-core-server test-verbose test-coverage test-race clean
+.PHONY: test test-integration test-integration-db test-integration-server test-integration-delivery test-integration-sasl test-e2e test-e2e-delivery test-e2e-imap test-e2e-auth test-e2e-concurrency test-e2e-persistence test-e2e-coverage test-e2e-minimal test-integration-coverage test-integration-race test-db test-db-init test-db-domain test-db-user test-db-mailbox test-db-message test-db-blob test-db-role test-db-manager test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-uid test-commands test-delivery test-parser test-parser-coverage test-sasl test-conf test-utils test-response test-storage test-models test-middleware test-selection test-core-server test-verbose test-coverage test-race clean docker-build docker-build-sasl docker-build-lmtp docker-build-imap docker-build-all docker-run docker-stop docker-clean docker-images docker-logs docker-logs-sasl docker-logs-lmtp docker-logs-imap docker-logs-all
 
 # Build delivery service
 build-delivery:
@@ -482,6 +487,100 @@ check: fmt lint test-race test-coverage
 
 # Run tests in CI environment
 ci: deps check
+
+# ============================================================================
+# Docker Configuration
+# ============================================================================
+VERSION ?= latest
+
+# Docker image names (local only)
+DOCKER_IMAGE_SASL := raven-sasl
+DOCKER_IMAGE_LMTP := raven-lmtp
+DOCKER_IMAGE_IMAP := raven-imap
+DOCKER_IMAGE_ALL := raven
+
+# ============================================================================
+# Docker Targets
+# ============================================================================
+
+# Build all Docker images locally
+docker-build:
+	@echo "Building all Docker images locally..."
+	@$(MAKE) docker-build-sasl
+	@$(MAKE) docker-build-lmtp
+	@$(MAKE) docker-build-imap
+	@$(MAKE) docker-build-all
+
+# Build individual service images
+docker-build-sasl:
+	@echo "Building SASL Docker image..."
+	docker build --target raven-sasl -t $(DOCKER_IMAGE_SASL):$(VERSION) -t $(DOCKER_IMAGE_SASL):latest .
+
+docker-build-lmtp:
+	@echo "Building LMTP Docker image..."
+	docker build --target raven-lmtp -t $(DOCKER_IMAGE_LMTP):$(VERSION) -t $(DOCKER_IMAGE_LMTP):latest .
+
+docker-build-imap:
+	@echo "Building IMAP Docker image..."
+	docker build --target raven-imap -t $(DOCKER_IMAGE_IMAP):$(VERSION) -t $(DOCKER_IMAGE_IMAP):latest .
+
+docker-build-all:
+	@echo "Building combined Docker image..."
+	docker build --target raven -t $(DOCKER_IMAGE_ALL):$(VERSION) -t $(DOCKER_IMAGE_ALL):latest .
+
+# Run Docker containers for testing
+docker-run:
+	@echo "Starting all services using Docker Compose..."
+	docker-compose up -d
+
+docker-run-sasl:
+	docker run -d --name raven-sasl -p 12345:12345 -v $(PWD)/config/raven.yaml:/etc/raven/raven.yaml:ro $(DOCKER_IMAGE_SASL):$(VERSION)
+
+docker-run-lmtp:
+	docker run -d --name raven-lmtp -p 24:24 -v raven-data:/app/data $(DOCKER_IMAGE_LMTP):$(VERSION)
+
+docker-run-imap:
+	docker run -d --name raven-imap -p 143:143 -p 993:993 -v raven-data:/app/data $(DOCKER_IMAGE_IMAP):$(VERSION)
+
+docker-run-all:
+	docker run -d --name raven-all -p 143:143 -p 993:993 -p 24:24 -p 12345:12345 -v raven-data:/app/data -v $(PWD)/config/raven.yaml:/etc/raven/raven.yaml:ro $(DOCKER_IMAGE_ALL):$(VERSION)
+
+# Stop and remove Docker containers
+docker-stop:
+	@echo "Stopping Docker containers..."
+	-docker-compose down
+	-docker stop raven-sasl raven-lmtp raven-imap raven-all 2>/dev/null || true
+	-docker rm raven-sasl raven-lmtp raven-imap raven-all 2>/dev/null || true
+
+# Clean Docker images and volumes
+docker-clean: docker-stop
+	@echo "Cleaning Docker images and volumes..."
+	-docker rmi $(DOCKER_IMAGE_SASL):$(VERSION) $(DOCKER_IMAGE_SASL):latest 2>/dev/null || true
+	-docker rmi $(DOCKER_IMAGE_LMTP):$(VERSION) $(DOCKER_IMAGE_LMTP):latest 2>/dev/null || true
+	-docker rmi $(DOCKER_IMAGE_IMAP):$(VERSION) $(DOCKER_IMAGE_IMAP):latest 2>/dev/null || true
+	-docker rmi $(DOCKER_IMAGE_ALL):$(VERSION) $(DOCKER_IMAGE_ALL):latest 2>/dev/null || true
+	-docker volume rm raven-data 2>/dev/null || true
+
+# Show Docker images
+docker-images:
+	@echo "Raven Docker images:"
+	@docker images | grep -E "raven|REPOSITORY" || echo "No Raven images found"
+
+# Show Docker container logs
+docker-logs:
+	docker-compose logs -f
+
+docker-logs-sasl:
+	docker logs -f raven-sasl
+
+docker-logs-lmtp:
+	docker logs -f raven-lmtp
+
+docker-logs-imap:
+	docker logs -f raven-imap
+
+docker-logs-all:
+	docker logs -f raven-all
 
 # Help
 help:

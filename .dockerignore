@@ -1,0 +1,66 @@
+# Git
+.git
+.gitignore
+.github
+
+# Documentation
+*.md
+!docs/
+docs/*.md
+
+# Test files
+*_test.go
+test/
+coverage.out
+*.coverprofile
+
+# Build artifacts
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Development
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Logs
+*.log
+
+# Docker
+docker-compose.yml
+docker-compose.*.yml
+Dockerfile.*
+.dockerignore
+
+# CI/CD (except GitHub Actions workflows)
+.gitlab-ci.yml
+.travis.yml
+azure-pipelines.yml
+
+# Data directories (if present in repo)
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Scripts that aren't needed in container
+scripts/docker-build.sh
+scripts/docker-push.sh
+
+# Quick reference
+DOCKER_QUICKREF.md
