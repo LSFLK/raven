@@ -19,6 +19,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -26,15 +32,50 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build Docker image (IMAP + Delivery Service)
-        run: |
-          IMAGE_NAME=ghcr.io/lsflk/raven
-          VERSION=${GITHUB_REF_NAME}
-          docker build -t $IMAGE_NAME:latest -t $IMAGE_NAME:$VERSION .
+      - name: Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
 
-      - name: Push Docker image
-        run: |
-          IMAGE_NAME=ghcr.io/lsflk/raven
-          VERSION=${GITHUB_REF_NAME}
-          docker push $IMAGE_NAME:latest
-          docker push $IMAGE_NAME:$VERSION
+      - name: Build and push raven-sasl
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          target: raven-sasl
+          push: true
+          tags: |
+            ghcr.io/lsflk/raven-sasl:latest
+            ghcr.io/lsflk/raven-sasl:${{ steps.version.outputs.VERSION }}
+
+      - name: Build and push raven-lmtp
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          target: raven-lmtp
+          push: true
+          tags: |
+            ghcr.io/lsflk/raven-lmtp:latest
+            ghcr.io/lsflk/raven-lmtp:${{ steps.version.outputs.VERSION }}
+
+      - name: Build and push raven-imap
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          target: raven-imap
+          push: true
+          tags: |
+            ghcr.io/lsflk/raven-imap:latest
+            ghcr.io/lsflk/raven-imap:${{ steps.version.outputs.VERSION }}
+
+      - name: Build and push raven (combined)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          target: raven
+          push: true
+          tags: |
+            ghcr.io/lsflk/raven:latest
+            ghcr.io/lsflk/raven:${{ steps.version.outputs.VERSION }}
