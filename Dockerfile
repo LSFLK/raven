@@ -47,8 +47,6 @@ RUN apk add --no-cache sqlite tzdata netcat-openbsd ca-certificates bash \
 RUN addgroup -g 1001 -S ravenuser && \
     adduser -u 1001 -S ravenuser -G ravenuser
 
-WORKDIR /app
-
 # ============================================================================
 # Stage 3: SASL Authentication Service Image
 # ============================================================================
