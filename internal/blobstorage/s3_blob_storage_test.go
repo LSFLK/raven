@@ -2,9 +2,13 @@ package blobstorage
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/smithy-go"
 )
 
 // mockS3Client is a mock implementation of the S3 client for testing
@@ -181,6 +185,112 @@ func TestIsEnabled(t *testing.T) {
 
 			if storage.IsEnabled() != tt.enabled {
 				t.Errorf("expected IsEnabled()=%v, got %v", tt.enabled, storage.IsEnabled())
+			}
+		})
+	}
+}
+
+func TestStore(t *testing.T) {
+	testContent := "test content for blob storage"
+	hash := sha256.Sum256([]byte(testContent))
+	expectedBlobID := hex.EncodeToString(hash[:])
+
+	tests := []struct {
+		name          string
+		content       string
+		enabled       bool
+		setupMock     func(*mockS3Client)
+		expectError   bool
+		errorContains string
+		expectedID    string
+	}{
+		{
+			name:          "disabled storage",
+			content:       testContent,
+			enabled:       false,
+			setupMock:     func(m *mockS3Client) {},
+			expectError:   true,
+			errorContains: "blob storage is not enabled",
+		},
+		{
+			name:    "successful first time store",
+			content: testContent,
+			enabled: true,
+			setupMock: func(m *mockS3Client) {
+				m.headObjectFunc = func(ctx context.Context, params *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error) {
+					// Simulate blob doesn't exist
+					return nil, &smithy.GenericAPIError{Code: "NotFound"}
+				}
+				m.putObjectFunc = func(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
+					// Verify the key format
+					expectedKey := "blobs/" + expectedBlobID
+					if *params.Key != expectedKey {
+						t.Errorf("expected key=%q, got %q", expectedKey, *params.Key)
+					}
+					return &s3.PutObjectOutput{}, nil
+				}
+			},
+			expectError: false,
+			expectedID:  expectedBlobID,
+		},
+		{
+			name:    "deduplication - blob already exists",
+			content: testContent,
+			enabled: true,
+			setupMock: func(m *mockS3Client) {
+				m.headObjectFunc = func(ctx context.Context, params *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error) {
+					// Simulate blob already exists
+					return &s3.HeadObjectOutput{}, nil
+				}
+				m.putObjectFunc = func(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
+					t.Error("PutObject should not be called when blob exists")
+					return nil, errors.New("should not be called")
+				}
+			},
+			expectError: false,
+			expectedID:  expectedBlobID,
+		},
+		{
+			name:    "upload failure",
+			content: testContent,
+			enabled: true,
+			setupMock: func(m *mockS3Client) {
+				m.headObjectFunc = func(ctx context.Context, params *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error) {
+					return nil, &smithy.GenericAPIError{Code: "NotFound"}
+				}
+				m.putObjectFunc = func(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
+					return nil, errors.New("upload failed")
+				}
+			},
+			expectError:   true,
+			errorContains: "failed to upload blob",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockS3Client{}
+			tt.setupMock(mock)
+			storage := newMockS3BlobStorage(mock, "test-bucket", tt.enabled)
+
+			blobID, err := storage.Store(tt.content)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				} else if tt.errorContains != "" && !contains(err.Error(), tt.errorContains) {
+					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			if blobID != tt.expectedID {
+				t.Errorf("expected blobID=%q, got %q", tt.expectedID, blobID)
 			}
 		})
 	}
