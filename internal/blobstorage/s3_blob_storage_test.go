@@ -2,6 +2,7 @@ package blobstorage
 
 import (
 	"context"
+	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
@@ -58,6 +59,103 @@ func newMockS3BlobStorage(mock S3Api, bucket string, enabled bool) *S3BlobStorag
 		enabled: enabled,
 		ctx:     context.Background(),
 		timeout: 30,
+	}
+}
+
+func TestNewS3BlobStorage(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      Config
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "disabled blob storage",
+			config: Config{
+				Enabled: false,
+			},
+			expectError: false,
+		},
+		{
+			name: "missing access key",
+			config: Config{
+				Enabled:   true,
+				SecretKey: "secret",
+			},
+			expectError: true,
+			errorMsg:    "S3 access key and secret key are required",
+		},
+		{
+			name: "missing secret key",
+			config: Config{
+				Enabled:   true,
+				AccessKey: "access",
+			},
+			expectError: true,
+			errorMsg:    "S3 access key and secret key are required",
+		},
+		{
+			name: "valid config with defaults",
+			config: Config{
+				Enabled:   true,
+				AccessKey: "test-access-key",
+				SecretKey: "test-secret-key",
+			},
+			expectError: false,
+		},
+		{
+			name: "valid config with custom values",
+			config: Config{
+				Enabled:   true,
+				Endpoint:  "http://localhost:9000",
+				Region:    "us-west-2",
+				Bucket:    "custom-bucket",
+				AccessKey: "test-access-key",
+				SecretKey: "test-secret-key",
+				Timeout:   60,
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			storage, err := NewS3BlobStorage(tt.config)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				} else if tt.errorMsg != "" && !contains(err.Error(), tt.errorMsg) {
+					t.Errorf("expected error containing %q, got %q", tt.errorMsg, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			if storage == nil {
+				t.Fatal("expected storage to be non-nil")
+			}
+
+			// Verify enabled state
+			if storage.IsEnabled() != tt.config.Enabled {
+				t.Errorf("expected enabled=%v, got %v", tt.config.Enabled, storage.IsEnabled())
+			}
+
+			// Verify defaults were applied for enabled storage
+			if tt.config.Enabled {
+				expectedBucket := tt.config.Bucket
+				if expectedBucket == "" {
+					expectedBucket = "email-attachments"
+				}
+				if storage.bucket != expectedBucket {
+					t.Errorf("expected bucket=%q, got %q", expectedBucket, storage.bucket)
+				}
+			}
+		})
 	}
 }
 
