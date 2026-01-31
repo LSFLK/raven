@@ -1,10 +1,12 @@
 package blobstorage
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -291,6 +293,102 @@ func TestStore(t *testing.T) {
 
 			if blobID != tt.expectedID {
 				t.Errorf("expected blobID=%q, got %q", tt.expectedID, blobID)
+			}
+		})
+	}
+}
+
+func TestRetrieve(t *testing.T) {
+	testBlobID := "abc123def456"
+	testContent := "retrieved content"
+
+	tests := []struct {
+		name            string
+		blobID          string
+		enabled         bool
+		setupMock       func(*mockS3Client)
+		expectError     bool
+		errorContains   string
+		expectedContent string
+	}{
+		{
+			name:          "disabled storage",
+			blobID:        testBlobID,
+			enabled:       false,
+			setupMock:     func(m *mockS3Client) {},
+			expectError:   true,
+			errorContains: "blob storage is not enabled",
+		},
+		{
+			name:    "successful retrieval",
+			blobID:  testBlobID,
+			enabled: true,
+			setupMock: func(m *mockS3Client) {
+				m.getObjectFunc = func(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+					expectedKey := "blobs/" + testBlobID
+					if *params.Key != expectedKey {
+						t.Errorf("expected key=%q, got %q", expectedKey, *params.Key)
+					}
+					return &s3.GetObjectOutput{
+						Body: io.NopCloser(bytes.NewReader([]byte(testContent))),
+					}, nil
+				}
+			},
+			expectError:     false,
+			expectedContent: testContent,
+		},
+		{
+			name:    "blob not found",
+			blobID:  testBlobID,
+			enabled: true,
+			setupMock: func(m *mockS3Client) {
+				m.getObjectFunc = func(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+					return nil, &smithy.GenericAPIError{Code: "NoSuchKey"}
+				}
+			},
+			expectError:   true,
+			errorContains: "failed to retrieve blob",
+		},
+		{
+			name:    "read error",
+			blobID:  testBlobID,
+			enabled: true,
+			setupMock: func(m *mockS3Client) {
+				m.getObjectFunc = func(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+					return &s3.GetObjectOutput{
+						Body: io.NopCloser(&errorReader{err: errors.New("read failed")}),
+					}, nil
+				}
+			},
+			expectError:   true,
+			errorContains: "failed to read blob data",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockS3Client{}
+			tt.setupMock(mock)
+			storage := newMockS3BlobStorage(mock, "test-bucket", tt.enabled)
+
+			content, err := storage.Retrieve(tt.blobID)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				} else if tt.errorContains != "" && !contains(err.Error(), tt.errorContains) {
+					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			if content != tt.expectedContent {
+				t.Errorf("expected content=%q, got %q", tt.expectedContent, content)
 			}
 		})
 	}
