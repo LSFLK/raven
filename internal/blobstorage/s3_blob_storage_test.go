@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -132,7 +133,7 @@ func TestNewS3BlobStorage(t *testing.T) {
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("expected error but got none")
-				} else if tt.errorMsg != "" && !contains(err.Error(), tt.errorMsg) {
+				} else if tt.errorMsg != "" && !strings.Contains(err.Error(), tt.errorMsg) {
 					t.Errorf("expected error containing %q, got %q", tt.errorMsg, err.Error())
 				}
 				return
@@ -281,7 +282,7 @@ func TestStore(t *testing.T) {
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("expected error but got none")
-				} else if tt.errorContains != "" && !contains(err.Error(), tt.errorContains) {
+				} else if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
 					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
 				}
 				return
@@ -377,7 +378,7 @@ func TestRetrieve(t *testing.T) {
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("expected error but got none")
-				} else if tt.errorContains != "" && !contains(err.Error(), tt.errorContains) {
+				} else if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
 					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
 				}
 				return
@@ -454,7 +455,7 @@ func TestDelete(t *testing.T) {
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("expected error but got none")
-				} else if tt.errorContains != "" && !contains(err.Error(), tt.errorContains) {
+				} else if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
 					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
 				}
 				return
@@ -528,7 +529,7 @@ func TestExists(t *testing.T) {
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("expected error but got none")
-				} else if tt.errorContains != "" && !contains(err.Error(), tt.errorContains) {
+				} else if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
 					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
 				}
 				return
@@ -544,40 +545,6 @@ func TestExists(t *testing.T) {
 			}
 		})
 	}
-}
-
-// Helper functions
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		(len(s) > 0 && len(substr) > 0 && bytesContains([]byte(s), []byte(substr))))
-}
-
-func bytesContains(b, subslice []byte) bool {
-	if len(subslice) == 0 {
-		return true
-	}
-	if len(b) < len(subslice) {
-		return false
-	}
-	for i := 0; i <= len(b)-len(subslice); i++ {
-		if bytesEqual(b[i:i+len(subslice)], subslice) {
-			return true
-		}
-	}
-	return false
-}
-
-func bytesEqual(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // errorReader is a helper type that always returns an error on Read
