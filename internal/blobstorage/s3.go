@@ -15,9 +15,18 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
+// s3API defines the S3 operations used by S3BlobStorage for testability
+type s3API interface {
+	CreateBucket(ctx context.Context, params *s3.CreateBucketInput, optFns ...func(*s3.Options)) (*s3.CreateBucketOutput, error)
+	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+	HeadObject(ctx context.Context, params *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
+	DeleteObject(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
+}
+
 // S3BlobStorage handles blob storage operations using S3-compatible storage
 type S3BlobStorage struct {
-	client  *s3.Client
+	client  s3API
 	bucket  string
 	enabled bool
 	ctx     context.Context
