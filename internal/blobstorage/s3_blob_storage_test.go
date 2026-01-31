@@ -159,6 +159,33 @@ func TestNewS3BlobStorage(t *testing.T) {
 	}
 }
 
+func TestIsEnabled(t *testing.T) {
+	tests := []struct {
+		name    string
+		enabled bool
+	}{
+		{
+			name:    "enabled storage",
+			enabled: true,
+		},
+		{
+			name:    "disabled storage",
+			enabled: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockS3Client{}
+			storage := newMockS3BlobStorage(mock, "test-bucket", tt.enabled)
+
+			if storage.IsEnabled() != tt.enabled {
+				t.Errorf("expected IsEnabled()=%v, got %v", tt.enabled, storage.IsEnabled())
+			}
+		})
+	}
+}
+
 // Helper functions
 
 func contains(s, substr string) bool {
