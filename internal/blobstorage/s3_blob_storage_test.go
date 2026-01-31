@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go"
@@ -64,7 +65,7 @@ func newMockS3BlobStorage(mock S3Api, bucket string, enabled bool) *S3BlobStorag
 		bucket:  bucket,
 		enabled: enabled,
 		ctx:     context.Background(),
-		timeout: 30,
+		timeout: 30 * time.Second,
 	}
 }
 
