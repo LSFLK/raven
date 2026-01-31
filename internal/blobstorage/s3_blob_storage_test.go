@@ -394,6 +394,78 @@ func TestRetrieve(t *testing.T) {
 	}
 }
 
+func TestDelete(t *testing.T) {
+	testBlobID := "abc123def456"
+
+	tests := []struct {
+		name          string
+		blobID        string
+		enabled       bool
+		setupMock     func(*mockS3Client)
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:          "disabled storage",
+			blobID:        testBlobID,
+			enabled:       false,
+			setupMock:     func(m *mockS3Client) {},
+			expectError:   true,
+			errorContains: "blob storage is not enabled",
+		},
+		{
+			name:    "successful deletion",
+			blobID:  testBlobID,
+			enabled: true,
+			setupMock: func(m *mockS3Client) {
+				m.deleteObjectFunc = func(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error) {
+					expectedKey := "blobs/" + testBlobID
+					if *params.Key != expectedKey {
+						t.Errorf("expected key=%q, got %q", expectedKey, *params.Key)
+					}
+					return &s3.DeleteObjectOutput{}, nil
+				}
+			},
+			expectError: false,
+		},
+		{
+			name:    "deletion error",
+			blobID:  testBlobID,
+			enabled: true,
+			setupMock: func(m *mockS3Client) {
+				m.deleteObjectFunc = func(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error) {
+					return nil, errors.New("delete failed")
+				}
+			},
+			expectError:   true,
+			errorContains: "failed to delete blob",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockS3Client{}
+			tt.setupMock(mock)
+			storage := newMockS3BlobStorage(mock, "test-bucket", tt.enabled)
+
+			err := storage.Delete(tt.blobID)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				} else if tt.errorContains != "" && !contains(err.Error(), tt.errorContains) {
+					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 // Helper functions
 
 func contains(s, substr string) bool {
