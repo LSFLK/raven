@@ -58,7 +58,7 @@ jobs:
       - name: Test Blob Storage
         run: |
           echo "::group::Blob Storage Tests"
-          go test -v ./internal/blobstorage/..
+          go test -v ./internal/blobstorage/...
           echo "::endgroup::"
 
       # IMAP Server Tests - Authentication
