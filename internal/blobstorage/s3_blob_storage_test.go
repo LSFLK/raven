@@ -528,6 +528,18 @@ func TestExists(t *testing.T) {
 			expectError:   false,
 			expectedExist: false,
 		},
+		{
+			name:    "head object error",
+			blobID:  testBlobID,
+			enabled: true,
+			setupMock: func(m *mockS3Client) {
+				m.headObjectFunc = func(ctx context.Context, params *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error) {
+					return nil, errors.New("transient network error")
+				}
+			},
+			expectError:   true,
+			errorContains: "transient network error",
+		},
 	}
 
 	for _, tt := range tests {

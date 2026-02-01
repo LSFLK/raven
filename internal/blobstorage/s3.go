@@ -243,8 +243,11 @@ func (s *S3BlobStorage) Exists(blobID string) (bool, error) {
 		Key:    aws.String(key),
 	})
 	if err != nil {
-		return false, nil
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "NotFound" {
+			return false, nil // Not found is not an error in this context
+		}
+		return false, err // Propagate other errors
 	}
-
 	return true, nil
 }
