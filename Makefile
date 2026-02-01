@@ -4,6 +4,7 @@
 #   make test              - Run all tests
 #   make test-db           - Run all database tests
 #   make test-db-init      - Run database initialization tests
+#   make test-blob-storage - Run blob storage tests
 #   make test-db-domain    - Run domain management tests
 #   make test-db-user      - Run user management tests
 #   make test-db-mailbox   - Run mailbox operations tests
@@ -46,7 +47,7 @@
 #   make test-commands     - Run all command tests
 #   make help              - Show all available targets
 
-.PHONY: test test-integration test-integration-db test-integration-server test-integration-delivery test-integration-sasl test-e2e test-e2e-delivery test-e2e-imap test-e2e-auth test-e2e-concurrency test-e2e-persistence test-e2e-coverage test-e2e-minimal test-integration-coverage test-integration-race test-db test-db-init test-db-domain test-db-user test-db-mailbox test-db-message test-db-blob test-db-role test-db-manager test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-uid test-commands test-delivery test-parser test-parser-coverage test-sasl test-conf test-utils test-response test-storage test-models test-middleware test-selection test-core-server test-verbose test-coverage test-race clean
+.PHONY: test test-integration test-integration-db test-integration-server test-integration-delivery test-integration-sasl test-e2e test-e2e-delivery test-e2e-imap test-e2e-auth test-e2e-concurrency test-e2e-persistence test-e2e-coverage test-e2e-minimal test-integration-coverage test-integration-race test-db test-db-init test-blob-storage test-db-domain test-db-user test-db-mailbox test-db-message test-db-blob test-db-role test-db-manager test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-uid test-commands test-delivery test-parser test-parser-coverage test-sasl test-conf test-utils test-response test-storage test-models test-middleware test-selection test-core-server test-verbose test-coverage test-race clean
 
 # Build delivery service
 build-delivery:
@@ -87,6 +88,10 @@ test-response:
 # Test delivery storage
 test-storage:
 	go test -v ./internal/delivery/storage/...
+
+# Test blobstorage package
+test-blob-storage:
+	go test -v ./internal/blobstorage/...
 
 # ============================================================================
 # Integration Tests - Cross-Module Testing
@@ -511,6 +516,7 @@ help:
 	@echo "  test-db                - Run all database tests"
 	@echo "  test-db-coverage       - Run database tests with coverage"
 	@echo "  test-db-init           - Run database initialization tests"
+	@echo "  test-blob-storage      - Run blob storage tests"
 	@echo "  test-db-domain         - Run domain management tests"
 	@echo "  test-db-user           - Run user management tests"
 	@echo "  test-db-mailbox        - Run mailbox operations tests"
