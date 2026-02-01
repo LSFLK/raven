@@ -255,6 +255,18 @@ func TestStore(t *testing.T) {
 			expectedID:  expectedBlobID,
 		},
 		{
+			name:    "head object failure on store",
+			content: testContent,
+			enabled: true,
+			setupMock: func(m *mockS3Client) {
+				m.headObjectFunc = func(ctx context.Context, params *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error) {
+					return nil, errors.New("head object failed")
+				}
+			},
+			expectError:   true,
+			errorContains: "head object failed",
+		},
+		{
 			name:    "upload failure",
 			content: testContent,
 			enabled: true,
