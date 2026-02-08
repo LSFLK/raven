@@ -4,6 +4,7 @@
 #   make test              - Run all tests
 #   make test-db           - Run all database tests
 #   make test-db-init      - Run database initialization tests
+#   make test-blob-storage - Run blob storage tests
 #   make test-db-domain    - Run domain management tests
 #   make test-db-user      - Run user management tests
 #   make test-db-mailbox   - Run mailbox operations tests
@@ -92,6 +93,10 @@ test-response:
 # Test delivery storage
 test-storage:
 	go test -v ./internal/delivery/storage/...
+
+# Test blobstorage package
+test-blob-storage:
+	go test -v ./internal/blobstorage/...
 
 # ============================================================================
 # Integration Tests - Cross-Module Testing
@@ -610,6 +615,7 @@ help:
 	@echo "  test-db                - Run all database tests"
 	@echo "  test-db-coverage       - Run database tests with coverage"
 	@echo "  test-db-init           - Run database initialization tests"
+	@echo "  test-blob-storage      - Run blob storage tests"
 	@echo "  test-db-domain         - Run domain management tests"
 	@echo "  test-db-user           - Run user management tests"
 	@echo "  test-db-mailbox        - Run mailbox operations tests"

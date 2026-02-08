@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -13,11 +14,21 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/smithy-go"
 )
+
+// S3Api defines the S3 operations used by S3BlobStorage for testability
+type S3Api interface {
+	CreateBucket(ctx context.Context, params *s3.CreateBucketInput, optFns ...func(*s3.Options)) (*s3.CreateBucketOutput, error)
+	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+	HeadObject(ctx context.Context, params *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
+	DeleteObject(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
+}
 
 // S3BlobStorage handles blob storage operations using S3-compatible storage
 type S3BlobStorage struct {
-	client  *s3.Client
+	client  S3Api
 	bucket  string
 	enabled bool
 	ctx     context.Context
@@ -142,6 +153,11 @@ func (s *S3BlobStorage) Store(content string) (string, error) {
 		return blobID, nil
 	}
 
+	var apiErr smithy.APIError
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode() != "NotFound" {
+		return "", fmt.Errorf("failed to check blob existence: %w", err) // Not a "NotFound" error
+	}
+
 	// Upload the blob
 	_, err = s.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(s.bucket),
@@ -227,8 +243,11 @@ func (s *S3BlobStorage) Exists(blobID string) (bool, error) {
 		Key:    aws.String(key),
 	})
 	if err != nil {
-		return false, nil
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "NotFound" {
+			return false, nil // Not found is not an error in this context
+		}
+		return false, err // Propagate other errors
 	}
-
 	return true, nil
 }

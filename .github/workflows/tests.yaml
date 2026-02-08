@@ -54,6 +54,13 @@ jobs:
           go test -v ./internal/models/...
           echo "::endgroup::"
 
+      # Blob Storage Tests
+      - name: Test Blob Storage
+        run: |
+          echo "::group::Blob Storage Tests"
+          go test -v ./internal/blobstorage/...
+          echo "::endgroup::"
+
       # IMAP Server Tests - Authentication
       - name: Test IMAP Authentication
         run: |
