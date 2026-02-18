@@ -231,12 +231,7 @@ func CreateTestUser(t *testing.T, database interface{}, username string) (userID
 	}
 
 	// Create user in shared database
-	// If we have a DBManager (newer flow), create the user with password initialized
-	if dbManager != nil {
-		userID, err = db.GetOrCreateUserInitialized(sharedDB, username, domainID)
-	} else {
-		userID, err = db.GetOrCreateUser(sharedDB, username, domainID)
-	}
+	userID, err = db.GetOrCreateUser(sharedDB, username, domainID)
 	if err != nil {
 		t.Fatalf("Failed to create user %s: %v", username, err)
 	}

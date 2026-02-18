@@ -118,7 +118,6 @@ func createUsersTable(db *sql.DB) error {
 		domain_id INTEGER NOT NULL,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		enabled BOOLEAN DEFAULT TRUE,
-		password_initialized BOOLEAN DEFAULT FALSE,
 		FOREIGN KEY (domain_id) REFERENCES domains(id),
 		UNIQUE(username, domain_id)
 	);
@@ -438,10 +437,7 @@ func GetOrCreateDomain(db *sql.DB, domain string) (int64, error) {
 // User management functions
 
 func CreateUser(db *sql.DB, username string, domainID int64) (int64, error) {
-	// By default create users with password_initialized = false so admin-provisioned accounts
-	// cannot login until they initialize their password. Callers that create "trusted"
-	// accounts for automated systems can explicitly set the flag with SetPasswordInitialized.
-	result, err := db.Exec("INSERT INTO users (username, domain_id, enabled, password_initialized) VALUES (?, ?, ?, ?)", username, domainID, true, false)
+	result, err := db.Exec("INSERT INTO users (username, domain_id, enabled) VALUES (?, ?, ?)", username, domainID, true)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
 			return 0, fmt.Errorf("user already exists")
@@ -1437,39 +1433,6 @@ func IsUserAssignedToRoleMailbox(db *sql.DB, userID, roleMailboxID int64) (bool,
 		WHERE user_id = ? AND role_mailbox_id = ? AND is_active = TRUE
 	`, userID, roleMailboxID).Scan(&count)
 	return count > 0, err
-}
-
-// New helper functions for password_initialized
-func IsPasswordInitialized(db *sql.DB, userID int64) (bool, error) {
-	var initialized bool
-	err := db.QueryRow("SELECT password_initialized FROM users WHERE id = ?", userID).Scan(&initialized)
-	if err != nil {
-		return false, err
-	}
-	return initialized, nil
-}
-
-func SetPasswordInitialized(db *sql.DB, userID int64, initialized bool) error {
-	_, err := db.Exec("UPDATE users SET password_initialized = ? WHERE id = ?", initialized, userID)
-	return err
-}
-
-// GetOrCreateUserInitialized ensures the user exists; if creating a new user, mark password_initialized = true.
-func GetOrCreateUserInitialized(db *sql.DB, username string, domainID int64) (int64, error) {
-	id, err := GetUserByUsername(db, username, domainID)
-	if err == nil {
-		return id, nil
-	}
-	// Try to insert with password_initialized = true
-	result, err := db.Exec("INSERT INTO users (username, domain_id, enabled, password_initialized) VALUES (?, ?, ?, ?)", username, domainID, true, true)
-	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			// Race: another process created the user; select again
-			return GetUserByUsername(db, username, domainID)
-		}
-		return 0, err
-	}
-	return result.LastInsertId()
 }
 
 // createDefaultMailboxes creates default mailboxes for a new user.
