@@ -694,8 +694,9 @@ type MockAuthServer struct {
 
 // MockAuthRequest captures details of an authentication request
 type MockAuthRequest struct {
-	Email    string
-	Password string //nolint:gosec // G117: Test fixture field, not a real secret
+	Email string
+	// #nosec G117 -- Test fixture field, not a real secret
+	Password string
 	Headers  http.Header
 	Time     time.Time
 }
