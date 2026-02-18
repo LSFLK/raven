@@ -41,8 +41,8 @@ type Config struct {
 	Endpoint  string `yaml:"endpoint"`
 	Region    string `yaml:"region"`
 	Bucket    string `yaml:"bucket"`
-	AccessKey string `yaml:"access_key"`
-	SecretKey string `yaml:"secret_key"`
+	AccessKey string `yaml:"access_key"` //nolint:gosec // G117: Configuration field name, not a hardcoded secret
+	SecretKey string `yaml:"secret_key"` //nolint:gosec // G117: Configuration field name, not a hardcoded secret
 	Timeout   int    `yaml:"timeout"` // seconds
 }
 

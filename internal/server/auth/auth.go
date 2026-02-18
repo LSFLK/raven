@@ -303,7 +303,7 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 	transport := &http.Transport{TLSClientConfig: tlsConfig}
 	client := &http.Client{Transport: transport}
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // #nosec G107 -- URL is from validated config, not user input
 	if err != nil {
 		log.Printf("LOGIN: error reaching auth server: %v", err)
 		deps.SendResponse(conn, fmt.Sprintf("%s NO [UNAVAILABLE] Authentication service unavailable", tag))

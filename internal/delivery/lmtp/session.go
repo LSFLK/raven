@@ -68,7 +68,9 @@ func (s *Session) Handle() error {
 			continue
 		}
 
-		log.Printf("C: %s", line)
+		// Sanitize line for logging to prevent log injection
+		sanitizedLine := strings.ReplaceAll(strings.ReplaceAll(line, "\n", "\\n"), "\r", "\\r")
+		log.Printf("C: %s", sanitizedLine)
 
 		// Parse command
 		parts := strings.SplitN(line, " ", 2)

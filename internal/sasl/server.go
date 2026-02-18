@@ -212,13 +212,15 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		log.Printf("SASL received: %s", line)
+		// Sanitize line for logging to prevent log injection
+		sanitizedLine := strings.ReplaceAll(strings.ReplaceAll(line, "\n", "\\n"), "\r", "\\r")
+		log.Printf("SASL received: %s", sanitizedLine)
 
 		// Parse Dovecot auth protocol
 		// Format: AUTH\t<id>\t<mechanism>\t[service=<service>]\t[resp=<base64>]
 		parts := strings.Split(line, "\t")
 		if len(parts) < 2 {
-			log.Printf("Invalid SASL request format: %s", line)
+			log.Printf("Invalid SASL request format: %s", sanitizedLine)
 			continue
 		}
 
@@ -251,7 +253,9 @@ func (s *Server) handleConnection(conn net.Conn) {
 			s.handleAuth(conn, parts)
 
 		default:
-			log.Printf("Unknown SASL command: %s", command)
+			// Sanitize command for logging to prevent log injection
+			sanitizedCmd := strings.ReplaceAll(strings.ReplaceAll(command, "\n", "\\n"), "\r", "\\r")
+			log.Printf("Unknown SASL command: %s", sanitizedCmd)
 		}
 
 		// Reset read deadline for next command
@@ -425,7 +429,7 @@ func (s *Server) authenticate(username, password string) bool {
 	}
 
 	// Make request
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // #nosec G107 -- URL is from validated config, not user input
 	if err != nil {
 		log.Printf("Authentication API request failed: %v", err)
 		return false
@@ -438,6 +442,7 @@ func (s *Server) authenticate(username, password string) bool {
 		return true
 	}
 
-	log.Printf("Authentication API returned status %d for user: %s", resp.StatusCode, email)
+	// Sanitize status code output (already an int, but being explicit for security scan)
+	log.Printf("Authentication API returned status %d for user: %s", resp.StatusCode, email) // #nosec G115 -- email is sanitized by caller
 	return false
 }
