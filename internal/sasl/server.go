@@ -214,14 +214,14 @@ func (s *Server) handleConnection(conn net.Conn) {
 		line := scanner.Text()
 		// Sanitize line for logging to prevent log injection
 		sanitizedLine := strings.ReplaceAll(strings.ReplaceAll(line, "\n", "\\n"), "\r", "\\r")
-		// #nosec G115 -- Input is sanitized above to prevent log injection
+		// #nosec G706 -- Input is sanitized above to prevent log injection
 		log.Printf("SASL received: %s", sanitizedLine)
 
 		// Parse Dovecot auth protocol
 		// Format: AUTH\t<id>\t<mechanism>\t[service=<service>]\t[resp=<base64>]
 		parts := strings.Split(line, "\t")
 		if len(parts) < 2 {
-			// #nosec G115 -- Input is sanitized above to prevent log injection
+			// #nosec G706 -- Input is sanitized above to prevent log injection
 			log.Printf("Invalid SASL request format: %s", sanitizedLine)
 			continue
 		}
@@ -257,7 +257,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 		default:
 			// Sanitize command for logging to prevent log injection
 			sanitizedCmd := strings.ReplaceAll(strings.ReplaceAll(command, "\n", "\\n"), "\r", "\\r")
-			// #nosec G115 -- Input is sanitized above to prevent log injection
+			// #nosec G706 -- Input is sanitized above to prevent log injection
 			log.Printf("Unknown SASL command: %s", sanitizedCmd)
 		}
 
@@ -432,7 +432,7 @@ func (s *Server) authenticate(username, password string) bool {
 	}
 
 	// Make request
-	// #nosec G107 -- URL is from validated config, not user input
+	// #nosec G704 -- URL is from validated config, not user input
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("Authentication API request failed: %v", err)
@@ -446,7 +446,7 @@ func (s *Server) authenticate(username, password string) bool {
 		return true
 	}
 
-	// #nosec G115 -- email is sanitized by caller, status code is int
+	// #nosec G706 -- email is sanitized by caller, status code is int
 	log.Printf("Authentication API returned status %d for user: %s", resp.StatusCode, email)
 	return false
 }

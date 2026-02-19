@@ -303,7 +303,7 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 	transport := &http.Transport{TLSClientConfig: tlsConfig}
 	client := &http.Client{Transport: transport}
 
-	// #nosec G107 -- URL is from validated config, not user input
+	// #nosec G704 -- URL is from validated config, not user input
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("LOGIN: error reaching auth server: %v", err)

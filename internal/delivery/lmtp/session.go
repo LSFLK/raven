@@ -70,7 +70,7 @@ func (s *Session) Handle() error {
 
 		// Sanitize line for logging to prevent log injection
 		sanitizedLine := strings.ReplaceAll(strings.ReplaceAll(line, "\n", "\\n"), "\r", "\\r")
-		// #nosec G115 -- Input is sanitized above to prevent log injection
+		// #nosec G706 -- Input is sanitized above to prevent log injection
 		log.Printf("C: %s", sanitizedLine)
 
 		// Parse command
