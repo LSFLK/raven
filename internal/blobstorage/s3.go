@@ -37,13 +37,15 @@ type S3BlobStorage struct {
 
 // Config holds S3 blob storage configuration
 type Config struct {
-	Enabled   bool   `yaml:"enabled"`
-	Endpoint  string `yaml:"endpoint"`
-	Region    string `yaml:"region"`
-	Bucket    string `yaml:"bucket"`
+	Enabled  bool   `yaml:"enabled"`
+	Endpoint string `yaml:"endpoint"`
+	Region   string `yaml:"region"`
+	Bucket   string `yaml:"bucket"`
+	// #nosec G117 -- Configuration field name, not a hardcoded secret
 	AccessKey string `yaml:"access_key"`
+	// #nosec G117 -- Configuration field name, not a hardcoded secret
 	SecretKey string `yaml:"secret_key"`
-	Timeout   int    `yaml:"timeout"` // seconds
+	Timeout   int `yaml:"timeout"` // seconds
 }
 
 // NewS3BlobStorage creates a new S3 blob storage instance

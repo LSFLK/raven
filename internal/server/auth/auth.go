@@ -303,6 +303,7 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 	transport := &http.Transport{TLSClientConfig: tlsConfig}
 	client := &http.Client{Transport: transport}
 
+	// #nosec G704 -- URL is from validated config, not user input
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("LOGIN: error reaching auth server: %v", err)
@@ -323,19 +324,6 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 		if err != nil {
 			log.Printf("Failed to create user and mailboxes: %v", err)
 			deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Server error", tag))
-			return
-		}
-
-		// Check if user's password has been initialized (user must change admin-provisioned password)
-		initialized, err := db.IsPasswordInitialized(deps.GetDBManager().GetSharedDB(), userID)
-		if err != nil {
-			log.Printf("Failed to read password_initialized for user %d: %v", userID, err)
-			deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Server error", tag))
-			return
-		}
-		if !initialized {
-			// Reject login — instruct user that they must initialize their password first
-			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Password must be initialized. Please set your password before logging in.", tag))
 			return
 		}
 
