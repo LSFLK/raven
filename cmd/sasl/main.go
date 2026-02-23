@@ -29,8 +29,8 @@ func main() {
 	}
 
 	// Set defaults and validate configuration
-	cfg.SetDefaults()
-if err := cfg.Validate(); err != nil {
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("Configuration error: %v", err)
 	}
 
 	log.Printf("Configuration loaded:")
