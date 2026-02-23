@@ -71,8 +71,7 @@ func (s *Server) Start() error {
 		if err := s.startTCPListener(); err != nil {
 			return fmt.Errorf("failed to start TCP listener: %w", err)
 		}
-	} else if s.tcpAddr != "" && s.saslScope == conf.SASLScopeUnixSocketOnly {
-		log.Printf("Skipping TCP listener (scope: %s)", s.saslScope)
+		log.Printf("Skipping TCP listener (scope: %s, only Unix socket connections are allowed)", s.saslScope)
 	}
 
 	// Validate that at least one listener was started
