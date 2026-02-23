@@ -1233,24 +1233,20 @@ func BenchmarkBase64EncodeDecode(b *testing.B) {
 // TestServerWithSASLScope tests server creation with different SASL scopes
 func TestServerWithSASLScope(t *testing.T) {
 	tests := []struct {
-		name      string
-		scope     conf.SASLScope
-		expectErr bool
+		name  string
+		scope conf.SASLScope
 	}{
 		{
-			name:      "Server with tcp_only scope",
-			scope:     conf.SASLScopeTCPOnly,
-			expectErr: false,
+			name:  "Server with tcp_only scope",
+			scope: conf.SASLScopeTCPOnly,
 		},
 		{
-			name:      "Server with unix_socket_only scope",
-			scope:     conf.SASLScopeUnixSocketOnly,
-			expectErr: false,
+			name:  "Server with unix_socket_only scope",
+			scope: conf.SASLScopeUnixSocketOnly,
 		},
 		{
-			name:      "Server with all scope",
-			scope:     conf.SASLScopeAll,
-			expectErr: false,
+			name:  "Server with all scope",
+			scope: conf.SASLScopeAll,
 		},
 	}
 
@@ -1264,12 +1260,15 @@ func TestServerWithSASLScope(t *testing.T) {
 				tt.scope,
 			)
 
-			if server == nil && !tt.expectErr {
-				t.Error("Expected server to be created, got nil")
+			// NewServer should always return a non-nil server
+			if server == nil {
+				t.Fatal("Expected server to be created, got nil")
 			}
-			if server != nil && tt.expectErr {
-				t.Error("Expected error creating server, but got server")
-			}
+
+			// Verify the server has the correct scope configured
+			// Note: This requires accessing the server's internal state,
+			// which is tested indirectly through the Start() method behavior
+			// in TestSASLScopeConfiguration
 		})
 	}
 }
