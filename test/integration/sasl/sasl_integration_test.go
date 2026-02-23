@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"raven/internal/conf"
 	"raven/internal/sasl"
 	"raven/test/helpers"
 )
@@ -24,7 +25,7 @@ func TestSASLAuthenticationFlow(t *testing.T) {
 
 	// Create SASL server with test socket
 	socketPath := helpers.GetTestSocketPath(t, "sasl-auth-flow")
-	server := sasl.NewServer(socketPath, "", mockAuth.URL+"/auth", "example.com")
+	server := sasl.NewServer(socketPath, "", mockAuth.URL+"/auth", "example.com", conf.SASLScopeAll)
 
 	// Start SASL server
 	serverErr := make(chan error, 1)
@@ -113,7 +114,7 @@ func TestSASLAuthenticationFailure(t *testing.T) {
 	defer mockAuth.Close()
 
 	socketPath := helpers.GetTestSocketPath(t, "sasl-auth-failure")
-	server := sasl.NewServer(socketPath, "", mockAuth.URL+"/auth", "example.com")
+	server := sasl.NewServer(socketPath, "", mockAuth.URL+"/auth", "example.com", conf.SASLScopeAll)
 
 	// Start server
 	go func() { _ = server.Start() }()
@@ -162,7 +163,7 @@ func TestSASLPlainWithoutInitialResponse(t *testing.T) {
 	defer mockAuth.Close()
 
 	socketPath := helpers.GetTestSocketPath(t, "sasl-plain-continuation")
-	server := sasl.NewServer(socketPath, "", mockAuth.URL+"/auth", "example.com")
+	server := sasl.NewServer(socketPath, "", mockAuth.URL+"/auth", "example.com", conf.SASLScopeAll)
 
 	go func() { _ = server.Start() }()
 	defer func() { _ = server.Shutdown() }()
@@ -198,7 +199,7 @@ func TestSASLInvalidMechanism(t *testing.T) {
 	defer mockAuth.Close()
 
 	socketPath := helpers.GetTestSocketPath(t, "sasl-invalid-mech")
-	server := sasl.NewServer(socketPath, "", mockAuth.URL+"/auth", "example.com")
+	server := sasl.NewServer(socketPath, "", mockAuth.URL+"/auth", "example.com", conf.SASLScopeAll)
 
 	go func() { _ = server.Start() }()
 	defer func() { _ = server.Shutdown() }()
@@ -237,7 +238,7 @@ func TestSASLMalformedCredentials(t *testing.T) {
 	defer mockAuth.Close()
 
 	socketPath := helpers.GetTestSocketPath(t, "sasl-malformed")
-	server := sasl.NewServer(socketPath, "", mockAuth.URL+"/auth", "example.com")
+	server := sasl.NewServer(socketPath, "", mockAuth.URL+"/auth", "example.com", conf.SASLScopeAll)
 
 	go func() { _ = server.Start() }()
 	defer func() { _ = server.Shutdown() }()
@@ -302,7 +303,7 @@ func TestSASLConcurrentConnections(t *testing.T) {
 	defer mockAuth.Close()
 
 	socketPath := helpers.GetTestSocketPath(t, "sasl-concurrent")
-	server := sasl.NewServer(socketPath, "", mockAuth.URL+"/auth", "example.com")
+	server := sasl.NewServer(socketPath, "", mockAuth.URL+"/auth", "example.com", conf.SASLScopeAll)
 
 	go func() { _ = server.Start() }()
 	defer func() { _ = server.Shutdown() }()
@@ -374,7 +375,7 @@ func TestSASLServerShutdownGraceful(t *testing.T) {
 	defer mockAuth.Close()
 
 	socketPath := helpers.GetTestSocketPath(t, "sasl-shutdown")
-	server := sasl.NewServer(socketPath, "", mockAuth.URL+"/auth", "example.com")
+	server := sasl.NewServer(socketPath, "", mockAuth.URL+"/auth", "example.com", conf.SASLScopeAll)
 
 	t.Log("Testing graceful SASL server shutdown...")
 
@@ -447,7 +448,7 @@ func TestSASLAuthenticationServerTimeout(t *testing.T) {
 	defer mockAuth.Close()
 
 	socketPath := helpers.GetTestSocketPath(t, "sasl-timeout")
-	server := sasl.NewServer(socketPath, "", mockAuth.URL+"/auth", "example.com")
+	server := sasl.NewServer(socketPath, "", mockAuth.URL+"/auth", "example.com", conf.SASLScopeAll)
 
 	go func() { _ = server.Start() }()
 	defer func() { _ = server.Shutdown() }()
@@ -500,7 +501,7 @@ func TestSASLDomainHandling(t *testing.T) {
 	defer mockAuth.Close()
 
 	socketPath := helpers.GetTestSocketPath(t, "sasl-domain")
-	server := sasl.NewServer(socketPath, "", mockAuth.URL+"/auth", "example.com")
+	server := sasl.NewServer(socketPath, "", mockAuth.URL+"/auth", "example.com", conf.SASLScopeAll)
 
 	go func() { _ = server.Start() }()
 	defer func() { _ = server.Shutdown() }()
@@ -577,7 +578,7 @@ func TestSASLLoginMechanism(t *testing.T) {
 	defer mockAuth.Close()
 
 	socketPath := helpers.GetTestSocketPath(t, "sasl-login")
-	server := sasl.NewServer(socketPath, "", mockAuth.URL+"/auth", "example.com")
+	server := sasl.NewServer(socketPath, "", mockAuth.URL+"/auth", "example.com", conf.SASLScopeAll)
 
 	go func() { _ = server.Start() }()
 	defer func() { _ = server.Shutdown() }()

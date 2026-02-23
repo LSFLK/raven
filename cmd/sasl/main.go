@@ -28,12 +28,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Validate configuration
-	if cfg.Domain == "" {
-		log.Fatal("Configuration error: domain is required")
-	}
-	if cfg.AuthServerURL == "" {
-		log.Fatal("Configuration error: auth_server_url is required")
+	// Set defaults and validate configuration
+	cfg.SetDefaults()
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("Configuration error: %v", err)
 	}
 
 	log.Printf("Configuration loaded:")
@@ -42,9 +40,10 @@ func main() {
 	log.Printf("  Config path: %s", *configPath)
 	log.Printf("  Domain: %s", cfg.Domain)
 	log.Printf("  Auth URL: %s", cfg.AuthServerURL)
+	log.Printf("  SASL Scope: %s", cfg.SASLScope)
 
-	// Create SASL server
-	server := sasl.NewServer(*socketPath, *tcpAddr, cfg.AuthServerURL, cfg.Domain)
+	// Create SASL server with scope configuration
+	server := sasl.NewServer(*socketPath, *tcpAddr, cfg.AuthServerURL, cfg.Domain, cfg.SASLScope)
 
 	// Setup graceful shutdown
 	sigChan := make(chan os.Signal, 1)

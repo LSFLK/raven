@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"raven/internal/conf"
 	"raven/internal/sasl"
 	"strings"
 	"sync"
@@ -34,7 +35,7 @@ func TestNewServer(t *testing.T) {
 	authURL := "https://example.com/auth"
 	domain := "example.com"
 
-	server := sasl.NewServer(socketPath, tcpAddr, authURL, domain)
+	server := sasl.NewServer(socketPath, tcpAddr, authURL, domain, conf.SASLScopeAll)
 
 	if server == nil {
 		t.Fatal("Expected server to be created, got nil")
@@ -54,7 +55,7 @@ func TestServerStartShutdown(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com")
+	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com", conf.SASLScopeAll)
 
 	// Start server in goroutine
 	errChan := make(chan error, 1)
@@ -95,7 +96,7 @@ func TestServerStartShutdown(t *testing.T) {
 func TestServerShutdownIdempotent(t *testing.T) {
 	socketPath := getSocketPath(t)
 
-	server := sasl.NewServer(socketPath, "", "https://example.com/auth", "example.com")
+	server := sasl.NewServer(socketPath, "", "https://example.com/auth", "example.com", conf.SASLScopeAll)
 
 	// Start server in goroutine
 	go func() { _ = server.Start() }()
@@ -126,7 +127,7 @@ func TestVersionHandshake(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com")
+	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com", conf.SASLScopeAll)
 
 	// Start server
 	go func() { _ = server.Start() }()
@@ -166,7 +167,7 @@ func TestCPIDCommand(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com")
+	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com", conf.SASLScopeAll)
 
 	// Start server
 	go func() { _ = server.Start() }()
@@ -229,7 +230,7 @@ func TestPlainAuthenticationSuccess(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com")
+	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com", conf.SASLScopeAll)
 
 	// Start server
 	errChan := make(chan error, 1)
@@ -298,7 +299,7 @@ func TestPlainAuthenticationWithDomain(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com")
+	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com", conf.SASLScopeAll)
 
 	// Start server
 	go func() { _ = server.Start() }()
@@ -345,7 +346,7 @@ func TestPlainAuthenticationFailure(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com")
+	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com", conf.SASLScopeAll)
 
 	// Start server
 	go func() { _ = server.Start() }()
@@ -392,7 +393,7 @@ func TestPlainAuthenticationWithAuthzid(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com")
+	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com", conf.SASLScopeAll)
 
 	// Start server
 	go func() { _ = server.Start() }()
@@ -439,7 +440,7 @@ func TestPlainAuthenticationInvalidBase64(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com")
+	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com", conf.SASLScopeAll)
 
 	// Start server
 	go func() { _ = server.Start() }()
@@ -482,7 +483,7 @@ func TestPlainAuthenticationMalformedCredentials(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com")
+	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com", conf.SASLScopeAll)
 
 	// Start server
 	go func() { _ = server.Start() }()
@@ -550,7 +551,7 @@ func TestPlainAuthenticationContinuationRequest(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com")
+	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com", conf.SASLScopeAll)
 
 	// Start server
 	go func() { _ = server.Start() }()
@@ -590,7 +591,7 @@ func TestLoginMechanism(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com")
+	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com", conf.SASLScopeAll)
 
 	// Start server
 	go func() { _ = server.Start() }()
@@ -630,7 +631,7 @@ func TestUnsupportedMechanism(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com")
+	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com", conf.SASLScopeAll)
 
 	// Start server
 	go func() { _ = server.Start() }()
@@ -679,7 +680,7 @@ func TestAuthMechanismCaseInsensitive(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com")
+	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com", conf.SASLScopeAll)
 
 	// Start server
 	go func() { _ = server.Start() }()
@@ -724,7 +725,7 @@ func TestInvalidAuthCommand(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com")
+	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com", conf.SASLScopeAll)
 
 	// Start server
 	go func() { _ = server.Start() }()
@@ -763,7 +764,7 @@ func TestConcurrentConnections(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com")
+	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com", conf.SASLScopeAll)
 
 	// Start server
 	go func() { _ = server.Start() }()
@@ -827,7 +828,7 @@ func TestConnectionTimeout(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com")
+	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com", conf.SASLScopeAll)
 
 	// Start server
 	go func() { _ = server.Start() }()
@@ -882,7 +883,7 @@ func TestAuthenticationAPIError(t *testing.T) {
 			}))
 			defer authServer.Close()
 
-			server := sasl.NewServer(socketPath, "", authServer.URL, "example.com")
+			server := sasl.NewServer(socketPath, "", authServer.URL, "example.com", conf.SASLScopeAll)
 
 			// Start server
 			go func() { _ = server.Start() }()
@@ -931,7 +932,7 @@ func TestMultipleCommandsInSession(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com")
+	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com", conf.SASLScopeAll)
 
 	// Start server
 	go func() { _ = server.Start() }()
@@ -995,7 +996,7 @@ func TestTCPListener(t *testing.T) {
 	defer authServer.Close()
 
 	// Use a random port
-	server := sasl.NewServer("", "127.0.0.1:0", authServer.URL, "example.com")
+	server := sasl.NewServer("", "127.0.0.1:0", authServer.URL, "example.com", conf.SASLScopeAll)
 
 	// Start server
 	go func() { _ = server.Start() }()
@@ -1005,7 +1006,7 @@ func TestTCPListener(t *testing.T) {
 	// Find the actual port by attempting to connect
 	// Note: Since we can't get the actual port from the server,
 	// we'll use a fixed port for testing
-	server2 := sasl.NewServer("", "127.0.0.1:12345", authServer.URL, "example.com")
+	server2 := sasl.NewServer("", "127.0.0.1:12345", authServer.URL, "example.com", conf.SASLScopeAll)
 	go func() { _ = server2.Start() }()
 	defer func() { _ = server2.Shutdown() }()
 	time.Sleep(100 * time.Millisecond)
@@ -1041,7 +1042,7 @@ func TestTCPAuthentication(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	server := sasl.NewServer("", "127.0.0.1:12346", authServer.URL, "example.com")
+	server := sasl.NewServer("", "127.0.0.1:12346", authServer.URL, "example.com", conf.SASLScopeAll)
 
 	// Start server
 	go func() { _ = server.Start() }()
@@ -1082,7 +1083,7 @@ func TestBothListeners(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	server := sasl.NewServer(socketPath, "127.0.0.1:12347", authServer.URL, "example.com")
+	server := sasl.NewServer(socketPath, "127.0.0.1:12347", authServer.URL, "example.com", conf.SASLScopeAll)
 
 	// Start server
 	go func() { _ = server.Start() }()
@@ -1133,7 +1134,7 @@ func TestTCPConcurrentConnections(t *testing.T) {
 	}))
 	defer authServer.Close()
 
-	server := sasl.NewServer("", "127.0.0.1:12348", authServer.URL, "example.com")
+	server := sasl.NewServer("", "127.0.0.1:12348", authServer.URL, "example.com", conf.SASLScopeAll)
 
 	// Start server
 	go func() { _ = server.Start() }()
@@ -1188,7 +1189,7 @@ func BenchmarkPlainAuthentication(b *testing.B) {
 	}))
 	defer authServer.Close()
 
-	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com")
+	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com", conf.SASLScopeAll)
 
 	// Start server
 	go func() { _ = server.Start() }()
@@ -1226,5 +1227,108 @@ func BenchmarkBase64EncodeDecode(b *testing.B) {
 		encoded := base64.StdEncoding.EncodeToString([]byte(credentials))
 		decoded, _ := base64.StdEncoding.DecodeString(encoded)
 		_ = strings.Split(string(decoded), "\x00")
+	}
+}
+
+// TestServerWithSASLScope tests server creation with different SASL scopes
+func TestServerWithSASLScope(t *testing.T) {
+	tests := []struct {
+		name      string
+		scope     conf.SASLScope
+		expectErr bool
+	}{
+		{
+			name:      "Server with tcp_only scope",
+			scope:     conf.SASLScopeTCPOnly,
+			expectErr: false,
+		},
+		{
+			name:      "Server with unix_socket_only scope",
+			scope:     conf.SASLScopeUnixSocketOnly,
+			expectErr: false,
+		},
+		{
+			name:      "Server with all scope",
+			scope:     conf.SASLScopeAll,
+			expectErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := sasl.NewServer(
+				"/tmp/test.sock",
+				":12345",
+				"http://localhost",
+				"example.com",
+				tt.scope,
+			)
+
+			if server == nil && !tt.expectErr {
+				t.Error("Expected server to be created, got nil")
+			}
+			if server != nil && tt.expectErr {
+				t.Error("Expected error creating server, but got server")
+			}
+		})
+	}
+}
+
+// TestConnectionTypeConstants tests that connection type constants are distinct
+func TestConnectionTypeConstants(t *testing.T) {
+	// Test that connection types are different
+	tcp := sasl.ConnectionTypeTCP
+	unix := sasl.ConnectionTypeUnixSocket
+
+	if tcp == unix {
+		t.Error("ConnectionTypeTCP and ConnectionTypeUnixSocket should be different")
+	}
+
+	// Test that they can be compared
+	if tcp != sasl.ConnectionTypeTCP {
+		t.Error("ConnectionTypeTCP constant comparison failed")
+	}
+
+	if unix != sasl.ConnectionTypeUnixSocket {
+		t.Error("ConnectionTypeUnixSocket constant comparison failed")
+	}
+}
+
+// TestSASLScopeConfiguration tests SASL scope in real server scenario
+func TestSASLScopeConfiguration(t *testing.T) {
+	// Create mock auth server
+	authServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer authServer.Close()
+
+	socketPath := getSocketPath(t)
+
+	tests := []struct {
+		name  string
+		scope conf.SASLScope
+	}{
+		{"TCPOnly", conf.SASLScopeTCPOnly},
+		{"UnixSocketOnly", conf.SASLScopeUnixSocketOnly},
+		{"All", conf.SASLScopeAll},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := sasl.NewServer(socketPath, "127.0.0.1:0", authServer.URL, "example.com", tt.scope)
+
+			// Start server
+			go func() {
+				_ = server.Start()
+			}()
+
+			// Give server time to start
+			time.Sleep(100 * time.Millisecond)
+
+			// Just verify server starts without error
+			if err := server.Shutdown(); err != nil {
+				t.Errorf("Shutdown error with scope %s: %v", tt.scope, err)
+			}
+		})
 	}
 }

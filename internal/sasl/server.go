@@ -10,9 +10,20 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"raven/internal/conf"
 	"strings"
 	"sync"
 	"time"
+)
+
+// ConnectionType represents the type of connection
+type ConnectionType int
+
+const (
+	// ConnectionTypeTCP represents a TCP connection
+	ConnectionTypeTCP ConnectionType = iota
+	// ConnectionTypeUnixSocket represents a Unix domain socket connection
+	ConnectionTypeUnixSocket
 )
 
 // Server represents a SASL authentication server
@@ -21,6 +32,7 @@ type Server struct {
 	tcpAddr      string
 	authURL      string
 	domain       string
+	saslScope    conf.SASLScope
 	unixListener net.Listener
 	tcpListener  net.Listener
 	mu           sync.Mutex
@@ -30,12 +42,13 @@ type Server struct {
 }
 
 // NewServer creates a new SASL authentication server
-func NewServer(socketPath, tcpAddr, authURL, domain string) *Server {
+func NewServer(socketPath, tcpAddr, authURL, domain string, saslScope conf.SASLScope) *Server {
 	return &Server{
 		socketPath: socketPath,
 		tcpAddr:    tcpAddr,
 		authURL:    authURL,
 		domain:     domain,
+		saslScope:  saslScope,
 		shutdown:   make(chan struct{}),
 	}
 }
@@ -43,6 +56,7 @@ func NewServer(socketPath, tcpAddr, authURL, domain string) *Server {
 // Start starts the SASL server
 func (s *Server) Start() error {
 	log.Println("Starting SASL server...")
+	log.Printf("SASL Scope: %s", s.saslScope)
 
 	// Start UNIX socket listener if configured
 	if s.socketPath != "" {
@@ -93,7 +107,7 @@ func (s *Server) startUnixListener() error {
 	log.Printf("Domain: %s", s.domain)
 
 	s.wg.Add(1)
-	go s.acceptConnections(listener, "unix")
+	go s.acceptConnections(listener, "unix", ConnectionTypeUnixSocket)
 
 	return nil
 }
@@ -120,13 +134,13 @@ func (s *Server) startTCPListener() error {
 	log.Printf("Domain: %s", s.domain)
 
 	s.wg.Add(1)
-	go s.acceptConnections(listener, "tcp")
+	go s.acceptConnections(listener, "tcp", ConnectionTypeTCP)
 
 	return nil
 }
 
 // acceptConnections accepts incoming connections
-func (s *Server) acceptConnections(listener net.Listener, listenerType string) {
+func (s *Server) acceptConnections(listener net.Listener, listenerType string, connType ConnectionType) {
 	defer s.wg.Done()
 
 	for {
@@ -151,7 +165,7 @@ func (s *Server) acceptConnections(listener net.Listener, listenerType string) {
 		log.Printf("New %s connection from: %s", listenerType, conn.RemoteAddr())
 
 		s.wg.Add(1)
-		go s.handleConnection(conn)
+		go s.handleConnection(conn, connType)
 	}
 }
 
@@ -201,7 +215,7 @@ func (s *Server) Shutdown() error {
 }
 
 // handleConnection handles a single SASL authentication connection
-func (s *Server) handleConnection(conn net.Conn) {
+func (s *Server) handleConnection(conn net.Conn, connType ConnectionType) {
 	defer s.wg.Done()
 	defer func() { _ = conn.Close() }()
 

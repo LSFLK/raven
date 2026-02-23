@@ -372,9 +372,89 @@ Auth_Server_URL: https://auth.uppercase.example.com
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
-
 	// Keys with wrong case should not populate fields
 	if cfg.Domain != "" {
 		t.Errorf("Expected empty domain (case mismatch), got '%s'", cfg.Domain)
+	}
+}
+
+// TestSASLScopeValidation tests SASL scope validation
+func TestSASLScopeValidation(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "raven.yaml")
+
+	tests := []struct {
+		name          string
+		configContent string
+		expectedScope SASLScope
+		expectError   bool
+	}{
+		{
+			name: "Config with tcp_only scope",
+			configContent: `domain: test.example.com
+auth_server_url: https://auth.test.example.com
+sasl_scope: tcp_only
+`,
+			expectedScope: SASLScopeTCPOnly,
+			expectError:   false,
+		},
+		{
+			name: "Config with unix_socket_only scope",
+			configContent: `domain: test.example.com
+auth_server_url: https://auth.test.example.com
+sasl_scope: unix_socket_only
+`,
+			expectedScope: SASLScopeUnixSocketOnly,
+			expectError:   false,
+		},
+		{
+			name: "Config with all scope",
+			configContent: `domain: test.example.com
+auth_server_url: https://auth.test.example.com
+sasl_scope: all
+`,
+			expectedScope: SASLScopeAll,
+			expectError:   false,
+		},
+		{
+			name: "Config without sasl_scope (should default)",
+			configContent: `domain: test.example.com
+auth_server_url: https://auth.test.example.com
+`,
+			expectedScope: SASLScopeAll, // Default after SetDefaults()
+			expectError:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := os.WriteFile(configPath, []byte(tt.configContent), 0600)
+			if err != nil {
+				t.Fatalf("Failed to create test config file: %v", err)
+			}
+
+			originalDir, err := os.Getwd()
+			if err != nil {
+				t.Fatalf("Failed to get current directory: %v", err)
+			}
+			defer func() { _ = os.Chdir(originalDir) }()
+
+			err = os.Chdir(tmpDir)
+			if err != nil {
+				t.Fatalf("Failed to change directory: %v", err)
+			}
+
+			cfg, err := LoadConfig()
+			if tt.expectError && err == nil {
+				t.Error("Expected error but got nil")
+			}
+			if !tt.expectError && err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+
+			if !tt.expectError && cfg.SASLScope != tt.expectedScope {
+				t.Errorf("Expected scope %s, got %s", tt.expectedScope, cfg.SASLScope)
+			}
+		})
 	}
 }
