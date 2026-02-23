@@ -63,8 +63,7 @@ func (s *Server) Start() error {
 		if err := s.startUnixListener(); err != nil {
 			return fmt.Errorf("failed to start UNIX listener: %w", err)
 		}
-	} else if s.socketPath != "" && s.saslScope == conf.SASLScopeTCPOnly {
-		log.Printf("Skipping Unix socket listener (scope: %s)", s.saslScope)
+		log.Printf("Skipping Unix socket listener (scope: %s, only TCP connections are allowed)", s.saslScope)
 	}
 
 	// Start TCP listener only if scope allows it
