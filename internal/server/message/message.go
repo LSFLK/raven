@@ -866,8 +866,8 @@ func HandleStore(deps ServerDeps, conn net.Conn, tag string, parts []string, sta
 			cleanedFlags := removeFlagFromSet(updatedFlagsSet, "NonJunk")
 			cleanedFlagsStr := flagSetToString(cleanedFlags)
 
-			// Move to Spam folder
-			err = MoveMessageToMailbox(userDB, messageID, state.SelectedMailboxID, "Spam", state.UserID, cleanedFlagsStr, internalDate)
+			// Move to Spam folder, saving the current mailbox as original
+			err = MoveMessageToMailbox(userDB, messageID, state.SelectedMailboxID, "Spam", state.UserID, cleanedFlagsStr, internalDate, &state.SelectedMailboxID)
 			if err != nil {
 				log.Printf("Failed to move message %d to Spam: %v", messageID, err)
 			} else {
@@ -884,12 +884,25 @@ func HandleStore(deps ServerDeps, conn net.Conn, tag string, parts []string, sta
 			cleanedFlags := removeFlagFromSet(updatedFlagsSet, "Junk")
 			cleanedFlagsStr := flagSetToString(cleanedFlags)
 
-			// Move to INBOX
-			err = MoveMessageToMailbox(userDB, messageID, state.SelectedMailboxID, "INBOX", state.UserID, cleanedFlagsStr, internalDate)
+			// Determine restoration target
+			targetFolder := "INBOX"
+			var prevMailboxID sql.NullInt64
+			err = userDB.QueryRow("SELECT previous_mailbox_id FROM message_mailbox WHERE message_id = ? AND mailbox_id = ?", messageID, state.SelectedMailboxID).Scan(&prevMailboxID)
+			if err == nil && prevMailboxID.Valid {
+				// Try to get the name of the previous mailbox
+				var prevName string
+				err = userDB.QueryRow("SELECT name FROM mailboxes WHERE id = ?", prevMailboxID.Int64).Scan(&prevName)
+				if err == nil {
+					targetFolder = prevName
+				}
+			}
+
+			// Move to target folder (original or INBOX)
+			err = MoveMessageToMailbox(userDB, messageID, state.SelectedMailboxID, targetFolder, state.UserID, cleanedFlagsStr, internalDate, nil)
 			if err != nil {
-				log.Printf("Failed to move message %d to INBOX: %v", messageID, err)
+				log.Printf("Failed to move message %d to %s: %v", messageID, targetFolder, err)
 			} else {
-				log.Printf("Auto-moved message %d to INBOX (NonJunk flag added)", messageID)
+				log.Printf("Auto-moved message %d to %s (NonJunk flag added)", messageID, targetFolder)
 				// Send EXPUNGE notification to tell client the message is gone from this mailbox
 				if !silent {
 					deps.SendResponse(conn, fmt.Sprintf("* %d EXPUNGE", seqNum))
@@ -1126,7 +1139,7 @@ func HandleCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, stat
 
 // MoveMessageToMailbox moves a message from the current mailbox to a destination mailbox
 // Returns the new sequence number in the destination mailbox, or 0 if failed
-func MoveMessageToMailbox(userDB *sql.DB, messageID int64, sourceMailboxID int64, destMailboxName string, userID int64, flags string, internalDate string) error {
+func MoveMessageToMailbox(userDB *sql.DB, messageID int64, sourceMailboxID int64, destMailboxName string, userID int64, flags string, internalDate string, previousMailboxID *int64) error {
 	// Get destination mailbox ID
 	var destMailboxID int64
 	err := userDB.QueryRow(`
@@ -1164,9 +1177,9 @@ func MoveMessageToMailbox(userDB *sql.DB, messageID int64, sourceMailboxID int64
 
 	// Insert message into destination mailbox (preserve flags and internal date)
 	_, err = tx.Exec(`
-		INSERT INTO message_mailbox (message_id, mailbox_id, uid, flags, internal_date)
-		VALUES (?, ?, ?, ?, ?)
-	`, messageID, destMailboxID, nextUID, flags, internalDate)
+		INSERT INTO message_mailbox (message_id, mailbox_id, uid, flags, internal_date, previous_mailbox_id)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, messageID, destMailboxID, nextUID, flags, internalDate, previousMailboxID)
 
 	if err != nil {
 		return fmt.Errorf("failed to insert into destination: %w", err)

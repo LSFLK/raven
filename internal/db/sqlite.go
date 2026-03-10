@@ -323,13 +323,28 @@ func createMessageMailboxTable(db *sql.DB) error {
 		flags TEXT,
 		internal_date TIMESTAMP NOT NULL,
 		added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		previous_mailbox_id INTEGER,
 		FOREIGN KEY (message_id) REFERENCES messages(id),
 		FOREIGN KEY (mailbox_id) REFERENCES mailboxes(id),
+		FOREIGN KEY (previous_mailbox_id) REFERENCES mailboxes(id),
 		UNIQUE(mailbox_id, uid)
 	);
 	`
-	_, err := db.Exec(schema)
-	return err
+	if _, err := db.Exec(schema); err != nil {
+		return err
+	}
+
+	// Migration: Add previous_mailbox_id column if it doesn't exist
+	var count int
+	err := db.QueryRow("SELECT count(*) FROM pragma_table_info('message_mailbox') WHERE name='previous_mailbox_id'").Scan(&count)
+	if err == nil && count == 0 {
+		_, err = db.Exec("ALTER TABLE message_mailbox ADD COLUMN previous_mailbox_id INTEGER REFERENCES mailboxes(id)")
+		if err != nil {
+			return fmt.Errorf("failed to add previous_mailbox_id column: %v", err)
+		}
+	}
+
+	return nil
 }
 
 func createMessageHeadersTable(db *sql.DB) error {
