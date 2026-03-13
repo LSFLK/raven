@@ -1462,7 +1462,7 @@ func GetRoleMailboxAssignedUser(db *sql.DB, roleMailboxID int64) (int64, error) 
 
 // createDefaultMailboxes creates default mailboxes for a new user.
 // Kept here with other schema helpers so migrations and initialization stay together.
-func createDefaultMailboxes(db *sql.DB, userID int64) error {
+func createDefaultMailboxes(db *sql.DB) error {
 	defaultMailboxes := []struct {
 		name       string
 		specialUse string
@@ -1475,7 +1475,7 @@ func createDefaultMailboxes(db *sql.DB, userID int64) error {
 	}
 
 	for _, mbx := range defaultMailboxes {
-		_, err := CreateMailboxPerUser(db, userID, mbx.name, mbx.specialUse)
+		_, err := CreateMailboxPerUser(db, mbx.name, mbx.specialUse)
 		if err != nil {
 			return fmt.Errorf("failed to create mailbox %s: %v", mbx.name, err)
 		}
@@ -1506,7 +1506,6 @@ func createSharedIndexes(db *sql.DB) error {
 // createUserIndexes creates indexes for per-user database tables
 func createUserIndexes(db *sql.DB) error {
 	indexes := []string{
-		"CREATE INDEX IF NOT EXISTS idx_mailboxes_user ON mailboxes(user_id)",
 		"CREATE INDEX IF NOT EXISTS idx_mailboxes_parent ON mailboxes(parent_id)",
 		"CREATE INDEX IF NOT EXISTS idx_messages_date ON messages(date)",
 		"CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id)",
@@ -1521,7 +1520,6 @@ func createUserIndexes(db *sql.DB) error {
 		"CREATE INDEX IF NOT EXISTS idx_deliveries_message ON deliveries(message_id)",
 		"CREATE INDEX IF NOT EXISTS idx_deliveries_status ON deliveries(status)",
 		"CREATE INDEX IF NOT EXISTS idx_outbound_status ON outbound_queue(status, next_retry_at)",
-		"CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id)",
 	}
 
 	for _, idx := range indexes {

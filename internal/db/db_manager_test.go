@@ -96,7 +96,7 @@ func TestGetUserDB(t *testing.T) {
 		t.Fatal("Expected non-nil user database")
 	}
 
-	dbPath := filepath.Join(tmpDir, fmt.Sprintf("user_db_%s.db", testEmailFromID(123)))
+	dbPath := filepath.Join(tmpDir, fmt.Sprintf("user_%s.db", testEmailFromID(123)))
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 		t.Error("Expected user database file to be created")
 	}
@@ -437,7 +437,6 @@ func TestUserDBIndexes(t *testing.T) {
 	}
 
 	expectedIndexes := []string{
-		"idx_mailboxes_user",
 		"idx_mailboxes_parent",
 		"idx_messages_date",
 		"idx_messages_thread",
@@ -452,7 +451,6 @@ func TestUserDBIndexes(t *testing.T) {
 		"idx_deliveries_message",
 		"idx_deliveries_status",
 		"idx_outbound_status",
-		"idx_subscriptions_user",
 	}
 
 	for _, indexName := range expectedIndexes {
@@ -486,7 +484,7 @@ func TestGetUserDB_ExistingDatabase(t *testing.T) {
 		t.Fatalf("First GetUserDB failed: %v", err)
 	}
 
-	_, err = CreateMailboxPerUser(userDB1, userID, "CustomMailbox", "")
+	_, err = CreateMailboxPerUser(userDB1, "CustomMailbox", "")
 	if err != nil {
 		t.Fatalf("Failed to create custom mailbox: %v", err)
 	}

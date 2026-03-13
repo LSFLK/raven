@@ -99,8 +99,8 @@ func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder s
 		}
 	}
 
-	// Get or create the target mailbox (user_id=0 for per-user DBs identified by email/filename)
-	mailboxID, err := db.GetMailboxByNamePerUser(targetDB, 0, targetFolder)
+	// Get or create the target mailbox in the per-user database
+	mailboxID, err := db.GetMailboxByNamePerUser(targetDB, targetFolder)
 	if err != nil {
 		// Mailbox doesn't exist, create it
 		// Determine special use flag for the mailbox
@@ -108,7 +108,7 @@ func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder s
 		if targetFolder == "Spam" {
 			specialUse = "\\Junk"
 		}
-		mailboxID, err = db.CreateMailboxPerUser(targetDB, 0, targetFolder, specialUse)
+		mailboxID, err = db.CreateMailboxPerUser(targetDB, targetFolder, specialUse)
 		if err != nil {
 			return fmt.Errorf("failed to create mailbox: %w", err)
 		}
@@ -139,7 +139,7 @@ func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder s
 	}
 
 	// Record delivery
-	err = db.RecordDeliveryPerUser(targetDB, messageID, recipient, msg.From, "delivered", sql.NullInt64{Valid: false}, "250 OK")
+	err = db.RecordDeliveryPerUser(targetDB, messageID, recipient, msg.From, "delivered", "250 OK")
 	if err != nil {
 		// Log but don't fail - delivery tracking is not critical
 		fmt.Printf("Warning: failed to record delivery: %v\n", err)
@@ -185,13 +185,11 @@ func (s *Storage) GetUserQuota(email string) (int64, error) {
 	}
 
 	// Calculate total size of all messages in the per-user DB
-	// All mailboxes in a per-user DB use user_id=0
 	query := `
 		SELECT COALESCE(SUM(m.size_bytes), 0)
 		FROM messages m
 		JOIN message_mailbox mm ON m.id = mm.message_id
 		JOIN mailboxes mb ON mm.mailbox_id = mb.id
-		WHERE mb.user_id = 0
 	`
 
 	var totalSize int64
@@ -225,12 +223,11 @@ func (s *Storage) GetMessageCount(email string) (int, error) {
 		return 0, fmt.Errorf("failed to get user database: %w", err)
 	}
 
-	// Count messages in all mailboxes; user_id=0 in per-user DBs
+	// Count messages in all mailboxes
 	query := `
 		SELECT COUNT(DISTINCT mm.message_id)
 		FROM message_mailbox mm
 		JOIN mailboxes mb ON mm.mailbox_id = mb.id
-		WHERE mb.user_id = 0
 	`
 
 	var count int
@@ -249,8 +246,8 @@ func (s *Storage) GetMessageCountInFolder(email string, folder string) (int, err
 		return 0, fmt.Errorf("failed to get user database: %w", err)
 	}
 
-	// Get mailbox ID; user_id=0 in per-user DBs
-	mailboxID, err := db.GetMailboxByNamePerUser(userDB, 0, folder)
+	// Get mailbox ID
+	mailboxID, err := db.GetMailboxByNamePerUser(userDB, folder)
 	if err != nil {
 		return 0, nil // Mailbox doesn't exist
 	}

@@ -39,7 +39,6 @@ func HandleSelect(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 
 	// Check if this is a role mailbox path (e.g., "Roles/ceo@openmail.lk/INBOX")
 	var targetDB *sql.DB
-	var targetUserID int64
 	var actualMailboxName string
 
 	// RFC 3501: INBOX is case-insensitive - normalize all variants to "INBOX"
@@ -83,8 +82,6 @@ func HandleSelect(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 			return
 		}
 
-		// Role mailboxes use userID 0
-		targetUserID = 0
 		state.IsRoleMailbox = true
 		state.SelectedRoleMailboxID = roleMailboxID
 	} else {
@@ -95,14 +92,13 @@ func HandleSelect(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 			deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 			return
 		}
-		targetUserID = 0
 		actualMailboxName = normalizeInbox(folder)
 		state.IsRoleMailbox = false
 		state.SelectedRoleMailboxID = 0
 	}
 
 	// Get mailbox ID using new schema
-	mailboxID, err := db.GetMailboxByNamePerUser(targetDB, targetUserID, actualMailboxName)
+	mailboxID, err := db.GetMailboxByNamePerUser(targetDB, actualMailboxName)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Mailbox does not exist", tag))
 		return

@@ -18,7 +18,7 @@ import (
 // ServerDeps defines the dependencies that UID handlers need from the server
 type ServerDeps interface {
 	SendResponse(conn net.Conn, response string)
-	GetSelectedDB(state *models.ClientState) (*sql.DB, int64, error)
+	GetSelectedDB(state *models.ClientState) (*sql.DB, error)
 	GetUserDB(email string) (*sql.DB, error)
 	GetSharedDB() *sql.DB
 	GetDBManager() *db.DBManager
@@ -83,7 +83,7 @@ func handleUIDFetch(deps ServerDeps, conn net.Conn, tag string, parts []string, 
 	}
 
 	// Get appropriate database (user or role mailbox)
-	targetDB, _, err := deps.GetSelectedDB(state)
+	targetDB, err := deps.GetSelectedDB(state)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -115,7 +115,7 @@ func handleUIDSearch(deps ServerDeps, conn net.Conn, tag string, parts []string,
 	}
 
 	// Get appropriate database (user or role mailbox)
-	targetDB, _, err := deps.GetSelectedDB(state)
+	targetDB, err := deps.GetSelectedDB(state)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -211,7 +211,7 @@ func handleUIDStore(deps ServerDeps, conn net.Conn, tag string, parts []string, 
 	}
 
 	// Get appropriate database (user or role mailbox)
-	targetDB, _, err := deps.GetSelectedDB(state)
+	targetDB, err := deps.GetSelectedDB(state)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -285,7 +285,7 @@ func handleUIDStore(deps ServerDeps, conn net.Conn, tag string, parts []string, 
 			cleanedFlagsStr := flagSetToString(cleanedFlags)
 
 			// Move to Spam folder
-			err = message.MoveMessageToMailbox(targetDB, messageID, state.SelectedMailboxID, "Spam", 0, cleanedFlagsStr, internalDate)
+			err = message.MoveMessageToMailbox(targetDB, messageID, state.SelectedMailboxID, "Spam", cleanedFlagsStr, internalDate)
 			if err != nil {
 				log.Printf("Failed to move message %d to Spam: %v", messageID, err)
 			} else {
@@ -303,7 +303,7 @@ func handleUIDStore(deps ServerDeps, conn net.Conn, tag string, parts []string, 
 			cleanedFlagsStr := flagSetToString(cleanedFlags)
 
 			// Move to INBOX
-			err = message.MoveMessageToMailbox(targetDB, messageID, state.SelectedMailboxID, "INBOX", 0, cleanedFlagsStr, internalDate)
+			err = message.MoveMessageToMailbox(targetDB, messageID, state.SelectedMailboxID, "INBOX", cleanedFlagsStr, internalDate)
 			if err != nil {
 				log.Printf("Failed to move message %d to INBOX: %v", messageID, err)
 			} else {
@@ -353,7 +353,7 @@ func handleUIDCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, s
 	}
 
 	// Get appropriate database (user or role mailbox)
-	targetDB, targetUserID, err := deps.GetSelectedDB(state)
+	targetDB, err := deps.GetSelectedDB(state)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -374,8 +374,8 @@ func handleUIDCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, s
 	var destMailboxID int64
 	err = targetDB.QueryRow(`
 		SELECT id FROM mailboxes
-		WHERE name = ? AND user_id = ?
-	`, destMailbox, targetUserID).Scan(&destMailboxID)
+		WHERE name = ?
+	`, destMailbox).Scan(&destMailboxID)
 
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Destination mailbox does not exist", tag))
@@ -496,7 +496,7 @@ func handleUIDExpunge(deps ServerDeps, conn net.Conn, tag string, parts []string
 	}
 
 	// Get appropriate database (user or role mailbox)
-	targetDB, _, err := deps.GetSelectedDB(state)
+	targetDB, err := deps.GetSelectedDB(state)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return

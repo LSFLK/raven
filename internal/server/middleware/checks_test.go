@@ -40,11 +40,11 @@ func (m *MockServer) GetUserDB(email string) (*sql.DB, error) {
 	return m.userDB, nil
 }
 
-func (m *MockServer) GetSelectedDB(state *models.ClientState) (*sql.DB, int64, error) {
+func (m *MockServer) GetSelectedDB(state *models.ClientState) (*sql.DB, error) {
 	if m.getSelectedDBError != nil {
-		return nil, 0, m.getSelectedDBError
+		return nil, m.getSelectedDBError
 	}
-	return m.selectedDB, 0, nil
+	return m.selectedDB, nil
 }
 
 func (m *MockServer) GetSharedDB() *sql.DB {

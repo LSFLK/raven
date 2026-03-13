@@ -33,7 +33,7 @@ func TestDBManagerToSharedDB_SuccessFlow(t *testing.T) {
 	}
 
 	// Verify database file exists
-	helpers.AssertDatabaseExists(t, dbManager.BasePath, "shared", 0)
+	helpers.AssertDatabaseExists(t, dbManager.BasePath, "shared", "")
 }
 
 // TestDBManagerToUserDB_SuccessFlow tests user database creation
@@ -46,7 +46,7 @@ func TestDBManagerToUserDB_SuccessFlow(t *testing.T) {
 	testData := helpers.SeedTestData(t, dbManager.DBManager)
 
 	// Verify user database was created
-	helpers.AssertDatabaseExists(t, dbManager.BasePath, "user", testData.UserID)
+	helpers.AssertDatabaseExists(t, dbManager.BasePath, "user", testData.Email)
 
 	// Verify default mailboxes were created
 	userDB, err := dbManager.GetUserDB(testData.Email)
@@ -55,7 +55,7 @@ func TestDBManagerToUserDB_SuccessFlow(t *testing.T) {
 	}
 
 	// Check for default mailboxes
-	mailboxes, err := db.GetUserMailboxesPerUser(userDB, 0)
+	mailboxes, err := db.GetUserMailboxesPerUser(userDB)
 	if err != nil {
 		t.Fatalf("Failed to get user mailboxes: %v", err)
 	}
@@ -89,37 +89,11 @@ func TestDBManagerToSharedDB_CreateUserFlow(t *testing.T) {
 	// Create test user
 	testData := helpers.CreateTestUser(t, dbManager.DBManager, "alice@example.com")
 
-	if testData.UserID == 0 {
-		t.Error("Expected non-zero user ID")
-	}
-	if testData.DomainID == 0 {
-		t.Error("Expected non-zero domain ID")
+	if testData.Email == "" {
+		t.Error("Expected non-empty email")
 	}
 	if testData.MailboxID == 0 {
 		t.Error("Expected non-zero mailbox ID")
-	}
-
-	// Verify user exists in shared database
-	sharedDB := dbManager.GetSharedDB()
-	var username string
-	err := sharedDB.QueryRow("SELECT username FROM users WHERE id = ?", testData.UserID).Scan(&username)
-	if err != nil {
-		t.Fatalf("Failed to query user: %v", err)
-	}
-
-	if username != "alice" {
-		t.Errorf("Expected username 'alice', got '%s'", username)
-	}
-
-	// Verify domain exists
-	var domainName string
-	err = sharedDB.QueryRow("SELECT domain FROM domains WHERE id = ?", testData.DomainID).Scan(&domainName)
-	if err != nil {
-		t.Fatalf("Failed to query domain: %v", err)
-	}
-
-	if domainName != "example.com" {
-		t.Errorf("Expected domain 'example.com', got '%s'", domainName)
 	}
 }
 
@@ -147,35 +121,15 @@ func TestDBManagerToSharedDB_MultipleUsersAndDomains(t *testing.T) {
 		t.Fatalf("Expected %d users, got %d", len(users), len(testUsers))
 	}
 
-	// Verify users have different IDs
-	for i, user1 := range testUsers {
-		for j, user2 := range testUsers {
-			if i != j && user1.UserID == user2.UserID {
-				t.Errorf("Users %d and %d have the same ID: %d", i, j, user1.UserID)
-			}
-		}
-	}
-
-	// Verify domains are shared correctly
-	// alice and bob should share domain ID
-	if testUsers[0].DomainID != testUsers[1].DomainID {
-		t.Error("alice and bob should share the same domain ID")
-	}
-
-	// charlie should have different domain ID
-	if testUsers[2].DomainID == testUsers[0].DomainID {
-		t.Error("charlie should have a different domain ID")
-	}
-
 	// Added: verify each user has default mailboxes (cross-module consistency)
 	for _, tu := range testUsers {
 		userDB, err := dbManager.GetUserDB(tu.Email)
 		if err != nil {
-			t.Fatalf("Failed to get user DB for user %d: %v", tu.UserID, err)
+			t.Fatalf("Failed to get user DB for user %s: %v", tu.Email, err)
 		}
-		mboxes, err := db.GetUserMailboxesPerUser(userDB, 0)
+		mboxes, err := db.GetUserMailboxesPerUser(userDB)
 		if err != nil {
-			t.Fatalf("Failed to get mailboxes for user %d: %v", tu.UserID, err)
+			t.Fatalf("Failed to get mailboxes for user %s: %v", tu.Email, err)
 		}
 		// expect default set
 		expected := map[string]bool{"Drafts": true, "INBOX": true, "Sent": true, "Spam": true, "Trash": true}
@@ -183,7 +137,7 @@ func TestDBManagerToSharedDB_MultipleUsersAndDomains(t *testing.T) {
 			delete(expected, m)
 		}
 		if len(expected) != 0 {
-			t.Errorf("User %d missing default mailboxes: %v", tu.UserID, expected)
+			t.Errorf("User %s missing default mailboxes: %v", tu.Email, expected)
 		}
 	}
 }
@@ -209,7 +163,7 @@ func TestDBManagerToUserDB_MailboxCRUD(t *testing.T) {
 		t.Fatalf("Failed to get user database: %v", err)
 	}
 
-	retrievedID, err := db.GetMailboxByNamePerUser(userDB, 0, "Work")
+	retrievedID, err := db.GetMailboxByNamePerUser(userDB, "Work")
 	if err != nil {
 		t.Fatalf("Failed to get mailbox: %v", err)
 	}
@@ -219,13 +173,13 @@ func TestDBManagerToUserDB_MailboxCRUD(t *testing.T) {
 	}
 
 	// Delete mailbox
-	err = db.DeleteMailboxPerUser(userDB, 0, "Work")
+	err = db.DeleteMailboxPerUser(userDB, "Work")
 	if err != nil {
 		t.Fatalf("Failed to delete mailbox: %v", err)
 	}
 
 	// Verify mailbox was deleted
-	exists, err := db.MailboxExistsPerUser(userDB, 0, "Work")
+	exists, err := db.MailboxExistsPerUser(userDB, "Work")
 	if err != nil {
 		t.Fatalf("Failed to check mailbox existence: %v", err)
 	}
@@ -271,7 +225,7 @@ func TestDBManagerToUserDB_Concurrency(t *testing.T) {
 			mailboxID := helpers.CreateTestMailbox(t, dbManager.DBManager, email, "Concurrent")
 
 			// Verify mailbox was created
-			retrievedID, err := db.GetMailboxByNamePerUser(userDB, 0, "Concurrent")
+			retrievedID, err := db.GetMailboxByNamePerUser(userDB, "Concurrent")
 			if err != nil {
 				errors <- fmt.Errorf("failed to get mailbox for %s: %v", email, err)
 				return
@@ -320,7 +274,7 @@ func TestDBManagerToSharedDB_Recovery(t *testing.T) {
 	}
 
 	// Verify database is functional
-	mailboxID, err := db.GetMailboxByNamePerUser(userDB, 0, "INBOX")
+	mailboxID, err := db.GetMailboxByNamePerUser(userDB, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX: %v", err)
 	}
@@ -353,7 +307,7 @@ func TestDBManagerToSharedDB_Recovery(t *testing.T) {
 		t.Fatalf("Failed to get user database after recovery: %v", err)
 	}
 
-	mailboxID2, err := db.GetMailboxByNamePerUser(userDB2, 0, "INBOX")
+	mailboxID2, err := db.GetMailboxByNamePerUser(userDB2, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX after recovery: %v", err)
 	}
@@ -363,16 +317,6 @@ func TestDBManagerToSharedDB_Recovery(t *testing.T) {
 	}
 
 	// Verify domain still exists in shared database
-	sharedDB := dbManager2.GetSharedDB()
-	var domainName string
-	err = sharedDB.QueryRow("SELECT domain FROM domains WHERE id = ?", testData.DomainID).Scan(&domainName)
-	if err != nil {
-		t.Fatalf("Failed to query domain after recovery: %v", err)
-	}
-
-	if domainName != "example.com" {
-		t.Errorf("Expected domain 'example.com', got '%s'", domainName)
-	}
 }
 
 // TestDBManagerToUserDB_RollbackAndCommit tests transaction rollback functionality
@@ -389,7 +333,7 @@ func TestDBManagerToUserDB_RollbackAndCommit(t *testing.T) {
 	}
 
 	// Get initial mailbox count
-	initialMailboxes, err := db.GetUserMailboxesPerUser(userDB, 0)
+	initialMailboxes, err := db.GetUserMailboxesPerUser(userDB)
 	if err != nil {
 		t.Fatalf("Failed to get initial mailboxes: %v", err)
 	}
@@ -403,17 +347,17 @@ func TestDBManagerToUserDB_RollbackAndCommit(t *testing.T) {
 
 	// Create mailboxes within transaction
 	_, err = tx.Exec(`
-		INSERT INTO mailboxes (user_id, name, uid_validity, uid_next, created_at)
-		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-	`, testData.UserID, "TransactionTest1", 1, 1)
+		INSERT INTO mailboxes (name, uid_validity, uid_next, created_at)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+	`, "TransactionTest1", 1, 1)
 	if err != nil {
 		t.Fatalf("Failed to insert first mailbox: %v", err)
 	}
 
 	_, err = tx.Exec(`
-		INSERT INTO mailboxes (user_id, name, uid_validity, uid_next, created_at)
-		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-	`, testData.UserID, "TransactionTest2", 1, 1)
+		INSERT INTO mailboxes (name, uid_validity, uid_next, created_at)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+	`, "TransactionTest2", 1, 1)
 	if err != nil {
 		t.Fatalf("Failed to insert second mailbox: %v", err)
 	}
@@ -425,7 +369,7 @@ func TestDBManagerToUserDB_RollbackAndCommit(t *testing.T) {
 	}
 
 	// Verify mailboxes were not created
-	finalMailboxes, err := db.GetUserMailboxesPerUser(userDB, 0)
+	finalMailboxes, err := db.GetUserMailboxesPerUser(userDB)
 	if err != nil {
 		t.Fatalf("Failed to get final mailboxes: %v", err)
 	}
@@ -448,9 +392,9 @@ func TestDBManagerToUserDB_RollbackAndCommit(t *testing.T) {
 	}
 
 	_, err = tx2.Exec(`
-		INSERT INTO mailboxes (user_id, name, uid_validity, uid_next, created_at)
-		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-	`, testData.UserID, "CommitTest", 1, 1)
+		INSERT INTO mailboxes (name, uid_validity, uid_next, created_at)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+	`, "CommitTest", 1, 1)
 	if err != nil {
 		t.Fatalf("Failed to insert mailbox: %v", err)
 	}
@@ -461,7 +405,7 @@ func TestDBManagerToUserDB_RollbackAndCommit(t *testing.T) {
 	}
 
 	// Verify mailbox was created
-	exists, err := db.MailboxExistsPerUser(userDB, 0, "CommitTest")
+	exists, err := db.MailboxExistsPerUser(userDB, "CommitTest")
 	if err != nil {
 		t.Fatalf("Failed to check mailbox existence: %v", err)
 	}

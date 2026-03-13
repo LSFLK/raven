@@ -49,8 +49,7 @@ func TestCreateMailboxPerUser(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-	mailboxID, err := CreateMailboxPerUser(db, userID, "INBOX", "\\Inbox")
+	mailboxID, err := CreateMailboxPerUser(db, "INBOX", "\\Inbox")
 	if err != nil {
 		t.Fatalf("CreateMailboxPerUser failed: %v", err)
 	}
@@ -85,8 +84,7 @@ func TestCreateMailboxPerUser_EmptyName(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-	_, err := CreateMailboxPerUser(db, userID, "", "")
+	_, err := CreateMailboxPerUser(db, "", "")
 	if err == nil {
 		t.Error("Expected error when creating mailbox with empty name")
 	}
@@ -99,13 +97,12 @@ func TestCreateMailboxPerUser_Duplicate(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-	_, err := CreateMailboxPerUser(db, userID, "INBOX", "\\Inbox")
+	_, err := CreateMailboxPerUser(db, "INBOX", "\\Inbox")
 	if err != nil {
 		t.Fatalf("First CreateMailboxPerUser failed: %v", err)
 	}
 
-	_, err = CreateMailboxPerUser(db, userID, "INBOX", "\\Inbox")
+	_, err = CreateMailboxPerUser(db, "INBOX", "\\Inbox")
 	if err == nil {
 		t.Error("Expected error when creating duplicate mailbox")
 	}
@@ -118,10 +115,9 @@ func TestGetMailboxByNamePerUser(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-	createdID, _ := CreateMailboxPerUser(db, userID, "INBOX", "\\Inbox")
+	createdID, _ := CreateMailboxPerUser(db, "INBOX", "\\Inbox")
 
-	retrievedID, err := GetMailboxByNamePerUser(db, userID, "INBOX")
+	retrievedID, err := GetMailboxByNamePerUser(db, "INBOX")
 	if err != nil {
 		t.Fatalf("GetMailboxByNamePerUser failed: %v", err)
 	}
@@ -135,8 +131,7 @@ func TestGetMailboxByNamePerUser_NotFound(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-	_, err := GetMailboxByNamePerUser(db, userID, "NonExistent")
+	_, err := GetMailboxByNamePerUser(db, "NonExistent")
 	if err == nil {
 		t.Error("Expected error when getting non-existent mailbox")
 	}
@@ -149,8 +144,7 @@ func TestGetMailboxInfoPerUser(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-	mailboxID, _ := CreateMailboxPerUser(db, userID, "INBOX", "\\Inbox")
+	mailboxID, _ := CreateMailboxPerUser(db, "INBOX", "\\Inbox")
 
 	uidValidity, uidNext, err := GetMailboxInfoPerUser(db, mailboxID)
 	if err != nil {
@@ -169,8 +163,7 @@ func TestIncrementUIDNextPerUser(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-	mailboxID, _ := CreateMailboxPerUser(db, userID, "INBOX", "\\Inbox")
+	mailboxID, _ := CreateMailboxPerUser(db, "INBOX", "\\Inbox")
 
 	uid1, err := IncrementUIDNextPerUser(db, mailboxID)
 	if err != nil {
@@ -193,9 +186,7 @@ func TestMailboxExistsPerUser(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-
-	exists, err := MailboxExistsPerUser(db, userID, "INBOX")
+	exists, err := MailboxExistsPerUser(db, "INBOX")
 	if err != nil {
 		t.Fatalf("MailboxExistsPerUser failed: %v", err)
 	}
@@ -203,9 +194,9 @@ func TestMailboxExistsPerUser(t *testing.T) {
 		t.Error("Mailbox should not exist yet")
 	}
 
-	_, _ = CreateMailboxPerUser(db, userID, "INBOX", "\\Inbox")
+	_, _ = CreateMailboxPerUser(db, "INBOX", "\\Inbox")
 
-	exists, err = MailboxExistsPerUser(db, userID, "INBOX")
+	exists, err = MailboxExistsPerUser(db, "INBOX")
 	if err != nil {
 		t.Fatalf("MailboxExistsPerUser failed after creating mailbox: %v", err)
 	}
@@ -218,17 +209,15 @@ func TestGetUserMailboxesPerUser(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-
 	mailboxes := []string{"Drafts", "INBOX", "Sent", "Trash"}
 	for _, name := range mailboxes {
-		_, err := CreateMailboxPerUser(db, userID, name, "")
+		_, err := CreateMailboxPerUser(db, name, "")
 		if err != nil {
 			t.Fatalf("Failed to create mailbox %s: %v", name, err)
 		}
 	}
 
-	retrieved, err := GetUserMailboxesPerUser(db, userID)
+	retrieved, err := GetUserMailboxesPerUser(db)
 	if err != nil {
 		t.Fatalf("GetUserMailboxesPerUser failed: %v", err)
 	}
@@ -248,16 +237,15 @@ func TestDeleteMailboxPerUser(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-	_, _ = CreateMailboxPerUser(db, userID, "INBOX", "\\Inbox")
-	_, _ = CreateMailboxPerUser(db, userID, "TestFolder", "")
+	_, _ = CreateMailboxPerUser(db, "INBOX", "\\Inbox")
+	_, _ = CreateMailboxPerUser(db, "TestFolder", "")
 
-	err := DeleteMailboxPerUser(db, userID, "TestFolder")
+	err := DeleteMailboxPerUser(db, "TestFolder")
 	if err != nil {
 		t.Fatalf("DeleteMailboxPerUser failed: %v", err)
 	}
 
-	exists, _ := MailboxExistsPerUser(db, userID, "TestFolder")
+	exists, _ := MailboxExistsPerUser(db, "TestFolder")
 	if exists {
 		t.Error("Mailbox should not exist after deletion")
 	}
@@ -267,10 +255,9 @@ func TestDeleteMailboxPerUser_INBOX(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-	_, _ = CreateMailboxPerUser(db, userID, "INBOX", "\\Inbox")
+	_, _ = CreateMailboxPerUser(db, "INBOX", "\\Inbox")
 
-	err := DeleteMailboxPerUser(db, userID, "INBOX")
+	err := DeleteMailboxPerUser(db, "INBOX")
 	if err == nil {
 		t.Error("Expected error when deleting INBOX")
 	}
@@ -283,11 +270,10 @@ func TestDeleteMailboxPerUser_WithChildren(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-	_, _ = CreateMailboxPerUser(db, userID, "Parent", "")
-	_, _ = CreateMailboxPerUser(db, userID, "Parent/Child", "")
+	_, _ = CreateMailboxPerUser(db, "Parent", "")
+	_, _ = CreateMailboxPerUser(db, "Parent/Child", "")
 
-	err := DeleteMailboxPerUser(db, userID, "Parent")
+	err := DeleteMailboxPerUser(db, "Parent")
 	if err == nil {
 		t.Error("Expected error when deleting mailbox with children")
 	}
@@ -300,20 +286,19 @@ func TestRenameMailboxPerUser(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-	_, _ = CreateMailboxPerUser(db, userID, "OldName", "")
+	_, _ = CreateMailboxPerUser(db, "OldName", "")
 
-	err := RenameMailboxPerUser(db, userID, "OldName", "NewName")
+	err := RenameMailboxPerUser(db, "OldName", "NewName")
 	if err != nil {
 		t.Fatalf("RenameMailboxPerUser failed: %v", err)
 	}
 
-	exists, _ := MailboxExistsPerUser(db, userID, "OldName")
+	exists, _ := MailboxExistsPerUser(db, "OldName")
 	if exists {
 		t.Error("Old mailbox name should not exist")
 	}
 
-	exists, _ = MailboxExistsPerUser(db, userID, "NewName")
+	exists, _ = MailboxExistsPerUser(db, "NewName")
 	if !exists {
 		t.Error("New mailbox name should exist")
 	}
@@ -323,10 +308,9 @@ func TestRenameMailboxPerUser_ToINBOX(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-	_, _ = CreateMailboxPerUser(db, userID, "TestFolder", "")
+	_, _ = CreateMailboxPerUser(db, "TestFolder", "")
 
-	err := RenameMailboxPerUser(db, userID, "TestFolder", "INBOX")
+	err := RenameMailboxPerUser(db, "TestFolder", "INBOX")
 	if err == nil {
 		t.Error("Expected error when renaming to INBOX")
 	}
@@ -339,21 +323,20 @@ func TestRenameMailboxPerUser_WithChildren(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-	_, _ = CreateMailboxPerUser(db, userID, "Parent", "")
-	_, _ = CreateMailboxPerUser(db, userID, "Parent/Child", "")
+	_, _ = CreateMailboxPerUser(db, "Parent", "")
+	_, _ = CreateMailboxPerUser(db, "Parent/Child", "")
 
-	err := RenameMailboxPerUser(db, userID, "Parent", "NewParent")
+	err := RenameMailboxPerUser(db, "Parent", "NewParent")
 	if err != nil {
 		t.Fatalf("RenameMailboxPerUser with children failed: %v", err)
 	}
 
-	exists, _ := MailboxExistsPerUser(db, userID, "NewParent")
+	exists, _ := MailboxExistsPerUser(db, "NewParent")
 	if !exists {
 		t.Error("New parent mailbox should exist")
 	}
 
-	exists, _ = MailboxExistsPerUser(db, userID, "NewParent/Child")
+	exists, _ = MailboxExistsPerUser(db, "NewParent/Child")
 	if !exists {
 		t.Error("Renamed child mailbox should exist")
 	}
@@ -363,8 +346,7 @@ func TestAddMessageToMailboxPerUser(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-	mailboxID, _ := CreateMailboxPerUser(db, userID, "INBOX", "\\Inbox")
+	mailboxID, _ := CreateMailboxPerUser(db, "INBOX", "\\Inbox")
 	messageID, _ := CreateMessage(db, "Test", "", "", time.Now(), 100)
 
 	err := AddMessageToMailboxPerUser(db, messageID, mailboxID, "\\Seen", time.Now())
@@ -392,8 +374,7 @@ func TestGetMessagesByMailboxPerUser(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-	mailboxID, _ := CreateMailboxPerUser(db, userID, "INBOX", "\\Inbox")
+	mailboxID, _ := CreateMailboxPerUser(db, "INBOX", "\\Inbox")
 
 	messageIDs := make([]int64, 3)
 	for i := range 3 {
@@ -416,8 +397,7 @@ func TestGetMessageCountPerUser(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-	mailboxID, _ := CreateMailboxPerUser(db, userID, "INBOX", "\\Inbox")
+	mailboxID, _ := CreateMailboxPerUser(db, "INBOX", "\\Inbox")
 
 	for range 5 {
 		msgID, _ := CreateMessage(db, "Test", "", "", time.Now(), 100)
@@ -438,8 +418,7 @@ func TestGetUnseenCountPerUser(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-	mailboxID, _ := CreateMailboxPerUser(db, userID, "INBOX", "\\Inbox")
+	mailboxID, _ := CreateMailboxPerUser(db, "INBOX", "\\Inbox")
 
 	for range 3 {
 		msgID, _ := CreateMessage(db, "Test", "", "", time.Now(), 100)
@@ -465,8 +444,7 @@ func TestUpdateMessageFlagsPerUser(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-	mailboxID, _ := CreateMailboxPerUser(db, userID, "INBOX", "\\Inbox")
+	mailboxID, _ := CreateMailboxPerUser(db, "INBOX", "\\Inbox")
 	messageID, _ := CreateMessage(db, "Test", "", "", time.Now(), 100)
 	_ = AddMessageToMailboxPerUser(db, messageID, mailboxID, "", time.Now())
 
@@ -489,8 +467,7 @@ func TestGetMessageFlagsPerUser(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-	mailboxID, _ := CreateMailboxPerUser(db, userID, "INBOX", "\\Inbox")
+	mailboxID, _ := CreateMailboxPerUser(db, "INBOX", "\\Inbox")
 	messageID, _ := CreateMessage(db, "Test", "", "", time.Now(), 100)
 	_ = AddMessageToMailboxPerUser(db, messageID, mailboxID, "\\Seen", time.Now())
 
@@ -508,15 +485,13 @@ func TestSubscribeToMailboxPerUser(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-
-	err := SubscribeToMailboxPerUser(db, userID, "INBOX")
+	err := SubscribeToMailboxPerUser(db, "INBOX")
 	if err != nil {
 		t.Fatalf("SubscribeToMailboxPerUser failed: %v", err)
 	}
 
 	var count int
-	err = db.QueryRow("SELECT COUNT(*) FROM subscriptions WHERE user_id = ? AND mailbox_name = ?", userID, "INBOX").Scan(&count)
+	err = db.QueryRow("SELECT COUNT(*) FROM subscriptions WHERE mailbox_name = ?", "INBOX").Scan(&count)
 	if err != nil {
 		t.Fatalf("Failed to verify subscription: %v", err)
 	}
@@ -530,16 +505,15 @@ func TestUnsubscribeFromMailboxPerUser(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-	_ = SubscribeToMailboxPerUser(db, userID, "INBOX")
+	_ = SubscribeToMailboxPerUser(db, "INBOX")
 
-	err := UnsubscribeFromMailboxPerUser(db, userID, "INBOX")
+	err := UnsubscribeFromMailboxPerUser(db, "INBOX")
 	if err != nil {
 		t.Fatalf("UnsubscribeFromMailboxPerUser failed: %v", err)
 	}
 
 	var count int
-	err = db.QueryRow("SELECT COUNT(*) FROM subscriptions WHERE user_id = ? AND mailbox_name = ?", userID, "INBOX").Scan(&count)
+	err = db.QueryRow("SELECT COUNT(*) FROM subscriptions WHERE mailbox_name = ?", "INBOX").Scan(&count)
 	if err != nil {
 		t.Fatalf("Failed to verify unsubscription: %v", err)
 	}
@@ -553,9 +527,7 @@ func TestUnsubscribeFromMailboxPerUser_NonExistent(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-
-	err := UnsubscribeFromMailboxPerUser(db, userID, "INBOX")
+	err := UnsubscribeFromMailboxPerUser(db, "INBOX")
 	if err == nil {
 		t.Error("Expected error when unsubscribing from non-existent subscription")
 	}
@@ -568,14 +540,12 @@ func TestGetUserSubscriptionsPerUser(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-
 	mailboxes := []string{"Drafts", "INBOX", "Sent"}
 	for _, name := range mailboxes {
-		_ = SubscribeToMailboxPerUser(db, userID, name)
+		_ = SubscribeToMailboxPerUser(db, name)
 	}
 
-	subscriptions, err := GetUserSubscriptionsPerUser(db, userID)
+	subscriptions, err := GetUserSubscriptionsPerUser(db)
 	if err != nil {
 		t.Fatalf("GetUserSubscriptionsPerUser failed: %v", err)
 	}
@@ -589,9 +559,7 @@ func TestIsMailboxSubscribedPerUser(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
-
-	subscribed, err := IsMailboxSubscribedPerUser(db, userID, "INBOX")
+	subscribed, err := IsMailboxSubscribedPerUser(db, "INBOX")
 	if err != nil {
 		t.Fatalf("IsMailboxSubscribedPerUser failed: %v", err)
 	}
@@ -599,9 +567,9 @@ func TestIsMailboxSubscribedPerUser(t *testing.T) {
 		t.Error("Mailbox should not be subscribed yet")
 	}
 
-	_ = SubscribeToMailboxPerUser(db, userID, "INBOX")
+	_ = SubscribeToMailboxPerUser(db, "INBOX")
 
-	subscribed, err = IsMailboxSubscribedPerUser(db, userID, "INBOX")
+	subscribed, err = IsMailboxSubscribedPerUser(db, "INBOX")
 	if err != nil {
 		t.Fatalf("IsMailboxSubscribedPerUser failed after subscribing: %v", err)
 	}
@@ -614,10 +582,9 @@ func TestRecordDeliveryPerUser(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
 
-	userID := int64(1)
 	messageID, _ := CreateMessage(db, "Test", "", "", time.Now(), 100)
 
-	err := RecordDeliveryPerUser(db, messageID, "recipient@example.com", "sender@example.com", "delivered", sql.NullInt64{Int64: userID, Valid: true}, "250 OK")
+	err := RecordDeliveryPerUser(db, messageID, "recipient@example.com", "sender@example.com", "delivered", "250 OK")
 	if err != nil {
 		t.Fatalf("RecordDeliveryPerUser failed: %v", err)
 	}

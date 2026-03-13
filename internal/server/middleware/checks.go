@@ -12,7 +12,7 @@ import (
 type ServerInterface interface {
 	SendResponse(conn net.Conn, response string)
 	GetUserDB(email string) (*sql.DB, error)
-	GetSelectedDB(state *models.ClientState) (*sql.DB, int64, error)
+	GetSelectedDB(state *models.ClientState) (*sql.DB, error)
 	GetSharedDB() *sql.DB
 }
 
@@ -63,7 +63,7 @@ type HandlerWithDBFunc func(conn net.Conn, tag string, parts []string, state *mo
 // WithSelectedDB wraps a handler to provide access to the selected mailbox database
 func WithSelectedDB(server ServerInterface, handler HandlerWithDBFunc) HandlerFunc {
 	return func(conn net.Conn, tag string, parts []string, state *models.ClientState) {
-		targetDB, _, err := server.GetSelectedDB(state)
+		targetDB, err := server.GetSelectedDB(state)
 		if err != nil {
 			server.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 			return

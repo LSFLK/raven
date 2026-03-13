@@ -243,8 +243,8 @@ func (m *DBManager) initUserDB(db *sql.DB) error {
 		return fmt.Errorf("failed to create user indexes: %v", err)
 	}
 
-	// Create default mailboxes (use user_id 0 since per-user DBs are identified by email/filename)
-	if err := createDefaultMailboxes(db, 0); err != nil {
+	// Create default mailboxes for this per-user database.
+	if err := createDefaultMailboxes(db); err != nil {
 		return fmt.Errorf("failed to create default mailboxes: %v", err)
 	}
 
@@ -253,7 +253,7 @@ func (m *DBManager) initUserDB(db *sql.DB) error {
 
 // getUserDBPath returns the file path for a user's database
 func (m *DBManager) getUserDBPath(email string) string {
-	return filepath.Join(m.basePath, fmt.Sprintf("user_db_%s.db", email))
+	return filepath.Join(m.basePath, fmt.Sprintf("user_%s.db", email))
 }
 
 // getRoleMailboxDBPath returns the file path for a role mailbox's database

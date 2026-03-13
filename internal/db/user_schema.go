@@ -8,14 +8,12 @@ import (
 )
 
 // Per-user table creation functions
-// Note: These tables store user_id and domain_id as integers without foreign key constraints
-// since they reference tables in the shared database
+// Per-user databases are scoped by email, so they do not store user IDs.
 
 func createMailboxesTablePerUser(db *sql.DB) error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS mailboxes (
 		id INTEGER PRIMARY KEY,
-		user_id INTEGER NOT NULL,
 		name TEXT NOT NULL,
 		parent_id INTEGER,
 		uid_validity INTEGER NOT NULL,
@@ -23,7 +21,7 @@ func createMailboxesTablePerUser(db *sql.DB) error {
 		special_use TEXT,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY (parent_id) REFERENCES mailboxes(id),
-		UNIQUE(user_id, name)
+		UNIQUE(name)
 	);
 	`
 	_, err := db.Exec(schema)
@@ -35,11 +33,10 @@ func createAliasesTablePerUser(db *sql.DB) error {
 	CREATE TABLE IF NOT EXISTS aliases (
 		id INTEGER PRIMARY KEY,
 		alias TEXT NOT NULL,
-		domain_id INTEGER NOT NULL,
-		destination_user_id INTEGER NOT NULL,
+		destination_email TEXT NOT NULL,
 		enabled BOOLEAN DEFAULT TRUE,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		UNIQUE(alias, domain_id)
+		UNIQUE(alias)
 	);
 	`
 	_, err := db.Exec(schema)
@@ -50,10 +47,9 @@ func createSubscriptionsTablePerUser(db *sql.DB) error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS subscriptions (
 		id INTEGER PRIMARY KEY,
-		user_id INTEGER NOT NULL,
 		mailbox_name TEXT NOT NULL,
 		subscribed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		UNIQUE(user_id, mailbox_name)
+		UNIQUE(mailbox_name)
 	);
 	`
 	_, err := db.Exec(schema)
@@ -68,7 +64,6 @@ func createDeliveriesTablePerUser(db *sql.DB) error {
 		recipient TEXT NOT NULL,
 		sender TEXT NOT NULL,
 		status TEXT NOT NULL,
-		user_id INTEGER,
 		delivered_at TIMESTAMP,
 		smtp_response TEXT,
 		FOREIGN KEY (message_id) REFERENCES messages(id)
@@ -101,7 +96,7 @@ func createOutboundQueueTablePerUser(db *sql.DB) error {
 
 // Mailbox management functions for per-user databases
 
-func CreateMailboxPerUser(db *sql.DB, userID int64, name string, specialUse string) (int64, error) {
+func CreateMailboxPerUser(db *sql.DB, name string, specialUse string) (int64, error) {
 	// Validate mailbox name
 	if name == "" {
 		return 0, fmt.Errorf("mailbox name cannot be empty")
@@ -112,9 +107,9 @@ func CreateMailboxPerUser(db *sql.DB, userID int64, name string, specialUse stri
 
 	// Insert mailbox record
 	result, err := db.Exec(`
-		INSERT INTO mailboxes (user_id, name, uid_validity, uid_next, special_use)
-		VALUES (?, ?, ?, ?, ?)
-	`, userID, name, uidValidity, 1, specialUse)
+		INSERT INTO mailboxes (name, uid_validity, uid_next, special_use)
+		VALUES (?, ?, ?, ?)
+	`, name, uidValidity, 1, specialUse)
 
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
@@ -126,9 +121,9 @@ func CreateMailboxPerUser(db *sql.DB, userID int64, name string, specialUse stri
 	return result.LastInsertId()
 }
 
-func GetMailboxByNamePerUser(db *sql.DB, userID int64, name string) (int64, error) {
+func GetMailboxByNamePerUser(db *sql.DB, name string) (int64, error) {
 	var id int64
-	err := db.QueryRow("SELECT id FROM mailboxes WHERE user_id = ? AND name = ?", userID, name).Scan(&id)
+	err := db.QueryRow("SELECT id FROM mailboxes WHERE name = ?", name).Scan(&id)
 	if err == sql.ErrNoRows {
 		return 0, fmt.Errorf("mailbox not found")
 	}
@@ -152,14 +147,14 @@ func IncrementUIDNextPerUser(db *sql.DB, mailboxID int64) (int64, error) {
 	return newUID, err
 }
 
-func MailboxExistsPerUser(db *sql.DB, userID int64, mailboxName string) (bool, error) {
+func MailboxExistsPerUser(db *sql.DB, mailboxName string) (bool, error) {
 	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM mailboxes WHERE user_id = ? AND name = ?", userID, mailboxName).Scan(&count)
+	err := db.QueryRow("SELECT COUNT(*) FROM mailboxes WHERE name = ?", mailboxName).Scan(&count)
 	return count > 0, err
 }
 
-func GetUserMailboxesPerUser(db *sql.DB, userID int64) ([]string, error) {
-	rows, err := db.Query("SELECT name FROM mailboxes WHERE user_id = ? ORDER BY name", userID)
+func GetUserMailboxesPerUser(db *sql.DB) ([]string, error) {
+	rows, err := db.Query("SELECT name FROM mailboxes ORDER BY name")
 	if err != nil {
 		return nil, err
 	}
@@ -176,13 +171,13 @@ func GetUserMailboxesPerUser(db *sql.DB, userID int64) ([]string, error) {
 	return mailboxes, rows.Err()
 }
 
-func DeleteMailboxPerUser(db *sql.DB, userID int64, mailboxName string) error {
+func DeleteMailboxPerUser(db *sql.DB, mailboxName string) error {
 	// Cannot delete INBOX
 	if strings.ToUpper(mailboxName) == "INBOX" {
 		return fmt.Errorf("cannot delete INBOX")
 	}
 
-	mailboxID, err := GetMailboxByNamePerUser(db, userID, mailboxName)
+	mailboxID, err := GetMailboxByNamePerUser(db, mailboxName)
 	if err != nil {
 		return fmt.Errorf("mailbox does not exist")
 	}
@@ -200,7 +195,7 @@ func DeleteMailboxPerUser(db *sql.DB, userID int64, mailboxName string) error {
 
 	// Also check for hierarchical children by naming convention (mailboxName/*)
 	hierarchyPattern := mailboxName + "/%"
-	err = db.QueryRow("SELECT COUNT(*) FROM mailboxes WHERE user_id = ? AND name LIKE ?", userID, hierarchyPattern).Scan(&count)
+	err = db.QueryRow("SELECT COUNT(*) FROM mailboxes WHERE name LIKE ?", hierarchyPattern).Scan(&count)
 	if err != nil {
 		return err
 	}
@@ -239,7 +234,7 @@ func DeleteMailboxPerUser(db *sql.DB, userID int64, mailboxName string) error {
 	return tx.Commit()
 }
 
-func RenameMailboxPerUser(db *sql.DB, userID int64, oldName, newName string) error {
+func RenameMailboxPerUser(db *sql.DB, oldName, newName string) error {
 	// Cannot rename TO INBOX
 	if strings.ToUpper(newName) == "INBOX" {
 		return fmt.Errorf("cannot rename to INBOX")
@@ -247,17 +242,17 @@ func RenameMailboxPerUser(db *sql.DB, userID int64, oldName, newName string) err
 
 	// Handle INBOX renaming (special case)
 	if strings.ToUpper(oldName) == "INBOX" {
-		return renameInboxPerUser(db, userID, newName)
+		return renameInboxPerUser(db, newName)
 	}
 
 	// Check if source mailbox exists
-	mailboxID, err := GetMailboxByNamePerUser(db, userID, oldName)
+	mailboxID, err := GetMailboxByNamePerUser(db, oldName)
 	if err != nil {
 		return fmt.Errorf("source mailbox does not exist")
 	}
 
 	// Check if destination mailbox already exists
-	exists, err := MailboxExistsPerUser(db, userID, newName)
+	exists, err := MailboxExistsPerUser(db, newName)
 	if err != nil {
 		return err
 	}
@@ -270,12 +265,12 @@ func RenameMailboxPerUser(db *sql.DB, userID int64, oldName, newName string) err
 		parts := strings.Split(newName, "/")
 		for i := 0; i < len(parts)-1; i++ {
 			parentPath := strings.Join(parts[:i+1], "/")
-			exists, err := MailboxExistsPerUser(db, userID, parentPath)
+			exists, err := MailboxExistsPerUser(db, parentPath)
 			if err != nil {
 				return err
 			}
 			if !exists {
-				_, err = CreateMailboxPerUser(db, userID, parentPath, "")
+				_, err = CreateMailboxPerUser(db, parentPath, "")
 				if err != nil && !strings.Contains(err.Error(), "already exists") {
 					return fmt.Errorf("failed to create parent hierarchy %s: %v", parentPath, err)
 				}
@@ -298,7 +293,7 @@ func RenameMailboxPerUser(db *sql.DB, userID int64, oldName, newName string) err
 
 	// Rename all hierarchical children
 	hierarchyPattern := oldName + "/%"
-	rows, err := tx.Query("SELECT id, name FROM mailboxes WHERE user_id = ? AND name LIKE ?", userID, hierarchyPattern)
+	rows, err := tx.Query("SELECT id, name FROM mailboxes WHERE name LIKE ?", hierarchyPattern)
 	if err != nil {
 		return err
 	}
@@ -332,9 +327,9 @@ func RenameMailboxPerUser(db *sql.DB, userID int64, oldName, newName string) err
 	return tx.Commit()
 }
 
-func renameInboxPerUser(db *sql.DB, userID int64, newName string) error {
+func renameInboxPerUser(db *sql.DB, newName string) error {
 	// Check if destination mailbox already exists
-	exists, err := MailboxExistsPerUser(db, userID, newName)
+	exists, err := MailboxExistsPerUser(db, newName)
 	if err != nil {
 		return err
 	}
@@ -343,13 +338,13 @@ func renameInboxPerUser(db *sql.DB, userID int64, newName string) error {
 	}
 
 	// Get INBOX mailbox ID
-	inboxID, err := GetMailboxByNamePerUser(db, userID, "INBOX")
+	inboxID, err := GetMailboxByNamePerUser(db, "INBOX")
 	if err != nil {
 		return err
 	}
 
 	// Create new mailbox
-	newMailboxID, err := CreateMailboxPerUser(db, userID, newName, "")
+	newMailboxID, err := CreateMailboxPerUser(db, newName, "")
 	if err != nil {
 		return err
 	}
@@ -440,19 +435,19 @@ func GetMessageFlagsPerUser(db *sql.DB, mailboxID, messageID int64) (string, err
 
 // Subscription management functions for per-user databases
 
-func SubscribeToMailboxPerUser(db *sql.DB, userID int64, mailboxName string) error {
+func SubscribeToMailboxPerUser(db *sql.DB, mailboxName string) error {
 	_, err := db.Exec(`
-		INSERT OR IGNORE INTO subscriptions (user_id, mailbox_name)
-		VALUES (?, ?)
-	`, userID, mailboxName)
+		INSERT OR IGNORE INTO subscriptions (mailbox_name)
+		VALUES (?)
+	`, mailboxName)
 	return err
 }
 
-func UnsubscribeFromMailboxPerUser(db *sql.DB, userID int64, mailboxName string) error {
+func UnsubscribeFromMailboxPerUser(db *sql.DB, mailboxName string) error {
 	result, err := db.Exec(`
 		DELETE FROM subscriptions
-		WHERE user_id = ? AND mailbox_name = ?
-	`, userID, mailboxName)
+		WHERE mailbox_name = ?
+	`, mailboxName)
 	if err != nil {
 		return err
 	}
@@ -469,13 +464,12 @@ func UnsubscribeFromMailboxPerUser(db *sql.DB, userID int64, mailboxName string)
 	return nil
 }
 
-func GetUserSubscriptionsPerUser(db *sql.DB, userID int64) ([]string, error) {
+func GetUserSubscriptionsPerUser(db *sql.DB) ([]string, error) {
 	rows, err := db.Query(`
 		SELECT mailbox_name
 		FROM subscriptions
-		WHERE user_id = ?
 		ORDER BY mailbox_name
-	`, userID)
+	`)
 	if err != nil {
 		return nil, err
 	}
@@ -492,23 +486,23 @@ func GetUserSubscriptionsPerUser(db *sql.DB, userID int64) ([]string, error) {
 	return subscriptions, rows.Err()
 }
 
-func IsMailboxSubscribedPerUser(db *sql.DB, userID int64, mailboxName string) (bool, error) {
+func IsMailboxSubscribedPerUser(db *sql.DB, mailboxName string) (bool, error) {
 	var count int
 	err := db.QueryRow(`
 		SELECT COUNT(*)
 		FROM subscriptions
-		WHERE user_id = ? AND mailbox_name = ?
-	`, userID, mailboxName).Scan(&count)
+		WHERE mailbox_name = ?
+	`, mailboxName).Scan(&count)
 	return count > 0, err
 }
 
 // Delivery management functions for per-user databases
 
-func RecordDeliveryPerUser(db *sql.DB, messageID int64, recipient, sender, status string, userID sql.NullInt64, smtpResponse string) error {
+func RecordDeliveryPerUser(db *sql.DB, messageID int64, recipient, sender, status string, smtpResponse string) error {
 	_, err := db.Exec(`
-		INSERT INTO deliveries (message_id, recipient, sender, status, user_id, delivered_at, smtp_response)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, messageID, recipient, sender, status, userID, time.Now(), smtpResponse)
+		INSERT INTO deliveries (message_id, recipient, sender, status, delivered_at, smtp_response)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, messageID, recipient, sender, status, time.Now(), smtpResponse)
 	return err
 }
 

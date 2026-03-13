@@ -265,8 +265,6 @@ func InsertTestMail(t *testing.T, database interface{}, username, subject, sende
 	if !strings.Contains(email, "@") {
 		email = username + "@localhost"
 	}
-	userID := int64(0)
-
 	// Get user database if using DBManager
 	if dbManager != nil {
 		userDB, err = dbManager.GetUserDB(email)
@@ -278,17 +276,17 @@ func InsertTestMail(t *testing.T, database interface{}, username, subject, sende
 	// Get or create mailbox
 	var mailboxID int64
 	if dbManager != nil {
-		mailboxID, err = db.GetMailboxByNamePerUser(userDB, userID, folder)
+		mailboxID, err = db.GetMailboxByNamePerUser(userDB, folder)
 		if err != nil {
-			mailboxID, err = db.CreateMailboxPerUser(userDB, userID, folder, "")
+			mailboxID, err = db.CreateMailboxPerUser(userDB, folder, "")
 			if err != nil {
 				t.Fatalf("Failed to create mailbox: %v", err)
 			}
 		}
 	} else {
-		mailboxID, err = db.GetMailboxByName(userDB, userID, folder)
+		mailboxID, err = db.GetMailboxByName(userDB, 0, folder)
 		if err != nil {
-			mailboxID, err = db.CreateMailbox(userDB, userID, folder, "")
+			mailboxID, err = db.CreateMailbox(userDB, 0, folder, "")
 			if err != nil {
 				t.Fatalf("Failed to create mailbox: %v", err)
 			}
@@ -573,20 +571,18 @@ func CreateMailbox(t *testing.T, database interface{}, username, mailboxName str
 	if !strings.Contains(email, "@") {
 		email = username + "@localhost"
 	}
-	userID := int64(0)
-
 	// Use per-user DB if we have a DBManager, otherwise use shared DB (legacy)
 	if dbManager != nil {
 		userDB, err := dbManager.GetUserDB(email)
 		if err != nil {
 			t.Fatalf("Failed to get user database: %v", err)
 		}
-		_, err = db.CreateMailboxPerUser(userDB, userID, mailboxName, "")
+		_, err = db.CreateMailboxPerUser(userDB, mailboxName, "")
 		if err != nil && !strings.Contains(err.Error(), "already exists") {
 			t.Fatalf("Failed to create mailbox %s for user %s: %v", mailboxName, username, err)
 		}
 	} else {
-		_, err = db.CreateMailbox(sharedDB, userID, mailboxName, "")
+		_, err = db.CreateMailbox(sharedDB, 0, mailboxName, "")
 		if err != nil && !strings.Contains(err.Error(), "already exists") {
 			t.Fatalf("Failed to create mailbox %s for user %s: %v", mailboxName, username, err)
 		}
@@ -610,17 +606,15 @@ func SubscribeToMailbox(t *testing.T, database interface{}, username, mailboxNam
 	if !strings.Contains(email, "@") {
 		email = username + "@localhost"
 	}
-	userID := int64(0)
-
 	// Get user DB if using DBManager
 	if dbManager, ok := database.(*db.DBManager); ok {
 		userDB, err = dbManager.GetUserDB(email)
 		if err != nil {
 			t.Fatalf("Failed to get user database: %v", err)
 		}
-		err = db.SubscribeToMailboxPerUser(userDB, userID, mailboxName)
+		err = db.SubscribeToMailboxPerUser(userDB, mailboxName)
 	} else {
-		err = db.SubscribeToMailbox(userDB, userID, mailboxName)
+		err = db.SubscribeToMailbox(userDB, 0, mailboxName)
 	}
 
 	if err != nil {
@@ -713,7 +707,7 @@ func GetMailboxID(t *testing.T, dbMgr *db.DBManager, userID int64, mailboxName s
 	if err != nil {
 		return 0, fmt.Errorf("failed to get user database: %v", err)
 	}
-	return db.GetMailboxByNamePerUser(userDB, 0, mailboxName)
+	return db.GetMailboxByNamePerUser(userDB, mailboxName)
 }
 
 // UpdateMessageFlags updates message flags, handling both *sql.DB and *db.DBManager

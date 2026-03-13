@@ -21,7 +21,7 @@ import (
 type ServerDeps interface {
 	SendResponse(conn net.Conn, response string)
 	GetUserDB(email string) (*sql.DB, error)
-	GetSelectedDB(state *models.ClientState) (*sql.DB, int64, error)
+	GetSelectedDB(state *models.ClientState) (*sql.DB, error)
 	GetSharedDB() *sql.DB
 	GetDBManager() *db.DBManager
 	GetS3Storage() *blobstorage.S3BlobStorage
@@ -50,7 +50,7 @@ func HandleSearch(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 	}
 
 	// Get appropriate database (user or role mailbox)
-	targetDB, _, err := deps.GetSelectedDB(state)
+	targetDB, err := deps.GetSelectedDB(state)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -867,7 +867,7 @@ func HandleStore(deps ServerDeps, conn net.Conn, tag string, parts []string, sta
 			cleanedFlagsStr := flagSetToString(cleanedFlags)
 
 			// Move to Spam folder
-			err = MoveMessageToMailbox(userDB, messageID, state.SelectedMailboxID, "Spam", 0, cleanedFlagsStr, internalDate)
+			err = MoveMessageToMailbox(userDB, messageID, state.SelectedMailboxID, "Spam", cleanedFlagsStr, internalDate)
 			if err != nil {
 				log.Printf("Failed to move message %d to Spam: %v", messageID, err)
 			} else {
@@ -885,7 +885,7 @@ func HandleStore(deps ServerDeps, conn net.Conn, tag string, parts []string, sta
 			cleanedFlagsStr := flagSetToString(cleanedFlags)
 
 			// Move to INBOX
-			err = MoveMessageToMailbox(userDB, messageID, state.SelectedMailboxID, "INBOX", 0, cleanedFlagsStr, internalDate)
+			err = MoveMessageToMailbox(userDB, messageID, state.SelectedMailboxID, "INBOX", cleanedFlagsStr, internalDate)
 			if err != nil {
 				log.Printf("Failed to move message %d to INBOX: %v", messageID, err)
 			} else {
@@ -1041,8 +1041,8 @@ func HandleCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, stat
 	var destMailboxID int64
 	err = userDB.QueryRow(`
 		SELECT id FROM mailboxes
-		WHERE name = ? AND user_id = ?
-	`, destMailbox, 0).Scan(&destMailboxID)
+		WHERE name = ?
+	`, destMailbox).Scan(&destMailboxID)
 
 	if err != nil {
 		// Destination mailbox doesn't exist - return NO with [TRYCREATE]
@@ -1126,13 +1126,13 @@ func HandleCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, stat
 
 // MoveMessageToMailbox moves a message from the current mailbox to a destination mailbox
 // Returns the new sequence number in the destination mailbox, or 0 if failed
-func MoveMessageToMailbox(userDB *sql.DB, messageID int64, sourceMailboxID int64, destMailboxName string, userID int64, flags string, internalDate string) error {
+func MoveMessageToMailbox(userDB *sql.DB, messageID int64, sourceMailboxID int64, destMailboxName string, flags string, internalDate string) error {
 	// Get destination mailbox ID
 	var destMailboxID int64
 	err := userDB.QueryRow(`
 		SELECT id FROM mailboxes
-		WHERE name = ? AND user_id = ?
-	`, destMailboxName, userID).Scan(&destMailboxID)
+		WHERE name = ?
+	`, destMailboxName).Scan(&destMailboxID)
 
 	if err != nil {
 		return fmt.Errorf("destination mailbox not found: %w", err)
@@ -1216,7 +1216,7 @@ func HandleAppendWithReader(deps ServerDeps, reader io.Reader, conn net.Conn, ta
 	folder := strings.Trim(parts[2], "\"")
 
 	// Validate folder exists using the database with new schema
-	mailboxID, err := db.GetMailboxByNamePerUser(userDB, 0, folder)
+	mailboxID, err := db.GetMailboxByNamePerUser(userDB, folder)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Folder does not exist", tag))
 		return
@@ -1374,7 +1374,7 @@ func HandleAppend(deps ServerDeps, conn net.Conn, tag string, parts []string, fu
 	folder := strings.Trim(parts[2], "\"")
 
 	// Validate folder exists using the database with new schema
-	mailboxID, err := db.GetMailboxByNamePerUser(userDB, 0, folder)
+	mailboxID, err := db.GetMailboxByNamePerUser(userDB, folder)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Folder does not exist", tag))
 		return

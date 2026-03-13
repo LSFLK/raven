@@ -253,7 +253,7 @@ func TestIMAPServerToClient_DataConsistency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get user DB: %v", err)
 	}
-	inboxID, err := db.GetMailboxByNamePerUser(userDB, td.UserID, "INBOX")
+	inboxID, err := db.GetMailboxByNamePerUser(userDB, "INBOX")
 	if err != nil {
 		t.Fatalf("get INBOX id: %v", err)
 	}

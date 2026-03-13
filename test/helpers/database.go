@@ -87,7 +87,7 @@ func SeedTestData(t *testing.T, dbManager *db.DBManager) TestData {
 	}
 
 	// Get INBOX mailbox ID (created by default)
-	mailboxID, err := db.GetMailboxByNamePerUser(userDB, 0, "INBOX")
+	mailboxID, err := db.GetMailboxByNamePerUser(userDB, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
@@ -120,7 +120,7 @@ func CreateTestUser(t *testing.T, dbManager *db.DBManager, email string) TestDat
 	}
 
 	// Get INBOX mailbox ID
-	mailboxID, err := db.GetMailboxByNamePerUser(userDB, 0, "INBOX")
+	mailboxID, err := db.GetMailboxByNamePerUser(userDB, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
@@ -145,7 +145,7 @@ func CreateTestMailbox(t *testing.T, dbManager *db.DBManager, email string, mail
 		t.Fatalf("Failed to get user database: %v", err)
 	}
 
-	mailboxID, err := db.CreateMailboxPerUser(userDB, 0, mailboxName, "")
+	mailboxID, err := db.CreateMailboxPerUser(userDB, mailboxName, "")
 	if err != nil {
 		t.Fatalf("Failed to create mailbox %s: %v", mailboxName, err)
 	}
@@ -155,7 +155,7 @@ func CreateTestMailbox(t *testing.T, dbManager *db.DBManager, email string, mail
 }
 
 // AssertDatabaseExists verifies that a database file exists at the expected path
-func AssertDatabaseExists(t *testing.T, basePath string, dbType string, id int64) {
+func AssertDatabaseExists(t *testing.T, basePath string, dbType string, identifier string) {
 	t.Helper()
 
 	var dbPath string
@@ -163,9 +163,9 @@ func AssertDatabaseExists(t *testing.T, basePath string, dbType string, id int64
 	case "shared":
 		dbPath = filepath.Join(basePath, "shared.db")
 	case "user":
-		dbPath = filepath.Join(basePath, fmt.Sprintf("user_db_%d.db", id))
+		dbPath = filepath.Join(basePath, fmt.Sprintf("user_%s.db", identifier))
 	case "role":
-		dbPath = filepath.Join(basePath, fmt.Sprintf("role_db_%d.db", id))
+		dbPath = filepath.Join(basePath, fmt.Sprintf("role_db_%s.db", identifier))
 	default:
 		t.Fatalf("Unknown database type: %s", dbType)
 	}

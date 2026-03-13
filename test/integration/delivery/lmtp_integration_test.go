@@ -73,13 +73,13 @@ func TestLMTP_DeliverSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get user DB: %v", err)
 	}
-	t.Logf("Retrieved user database for UserID: %d", td.UserID)
+	t.Logf("Retrieved user database for email: %s", td.Email)
 
-	inboxID, err := db.GetMailboxByNamePerUser(userDB, td.UserID, "INBOX")
+	inboxID, err := db.GetMailboxByNamePerUser(userDB, "INBOX")
 	if err != nil {
 		t.Fatalf("get INBOX id: %v", err)
 	}
-	t.Logf("Found INBOX mailbox with ID: %d for user %d", inboxID, td.UserID)
+	t.Logf("Found INBOX mailbox with ID: %d for user %s", inboxID, td.Email)
 
 	// Count messages
 	count, err := db.GetMessageCountPerUser(userDB, inboxID)
@@ -128,8 +128,8 @@ func TestLMTP_Concurrency(t *testing.T) {
 
 	users := []string{"a@example.com", "b@example.com", "c@example.com", "d@example.com"}
 	for _, u := range users {
-		td := helpers.CreateTestUser(t, dbm.DBManager, u)
-		t.Logf("Created test user: %s (UserID: %d)", u, td.UserID)
+		_ = helpers.CreateTestUser(t, dbm.DBManager, u)
+		t.Logf("Created test user: %s", u)
 	}
 
 	addr, _, cleanup := helpers.StartTestLMTPServer(t, dbm.DBManager)
@@ -186,7 +186,7 @@ func TestLMTP_DataConsistency(t *testing.T) {
 	defer helpers.TeardownTestDatabase(t, dbm)
 
 	td := helpers.CreateTestUser(t, dbm.DBManager, "alice@example.com")
-	t.Logf("Created test user: alice@example.com (UserID: %d)", td.UserID)
+	t.Logf("Created test user: alice@example.com")
 
 	addr, _, cleanup := helpers.StartTestLMTPServer(t, dbm.DBManager)
 	defer cleanup()
@@ -205,7 +205,7 @@ func TestLMTP_DataConsistency(t *testing.T) {
 	t.Log("Message delivered, verifying database consistency...")
 
 	userDB, _ := dbm.GetUserDB(td.Email)
-	inboxID, _ := db.GetMailboxByNamePerUser(userDB, td.UserID, "INBOX")
+	inboxID, _ := db.GetMailboxByNamePerUser(userDB, "INBOX")
 	t.Logf("Using INBOX mailbox ID: %d", inboxID)
 
 	// Verify unseen count increments
