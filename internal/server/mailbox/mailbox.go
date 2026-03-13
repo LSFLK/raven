@@ -15,7 +15,7 @@ import (
 // ServerDeps defines the dependencies that mailbox handlers need from the server
 type ServerDeps interface {
 	SendResponse(conn net.Conn, response string)
-	GetUserDB(userID int64) (*sql.DB, error)
+	GetUserDB(email string) (*sql.DB, error)
 	GetSharedDB() *sql.DB
 	GetDBManager() *db.DBManager
 	GetS3Storage() *blobstorage.S3BlobStorage
@@ -52,14 +52,14 @@ func HandleList(deps ServerDeps, conn net.Conn, tag string, parts []string, stat
 	}
 
 	// Get user database
-	userDB, err := deps.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.Email)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
 
 	// Get all mailboxes for the user
-	mailboxes, err := db.GetUserMailboxesPerUser(userDB, state.UserID)
+	mailboxes, err := db.GetUserMailboxesPerUser(userDB, 0)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO LIST failure: can't list mailboxes", tag))
 		return
@@ -173,14 +173,14 @@ func HandleLsub(deps ServerDeps, conn net.Conn, tag string, parts []string, stat
 	}
 
 	// Get user database
-	userDB, err := deps.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.Email)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
 
 	// Get subscribed mailboxes from database
-	subscriptions, err := db.GetUserSubscriptionsPerUser(userDB, state.UserID)
+	subscriptions, err := db.GetUserSubscriptionsPerUser(userDB, 0)
 	if err != nil {
 		fmt.Printf("Failed to get subscriptions for user %s: %v\n", state.Username, err)
 		deps.SendResponse(conn, fmt.Sprintf("%s NO LSUB failure: can't list that reference or name", tag))
@@ -191,7 +191,7 @@ func HandleLsub(deps ServerDeps, conn net.Conn, tag string, parts []string, stat
 	if len(subscriptions) == 0 {
 		defaultMailboxes := []string{"INBOX", "Sent", "Drafts", "Trash", "Spam"}
 		for _, mailbox := range defaultMailboxes {
-			_ = db.SubscribeToMailboxPerUser(userDB, state.UserID, mailbox)
+			_ = db.SubscribeToMailboxPerUser(userDB, 0, mailbox)
 		}
 		subscriptions = defaultMailboxes
 	}
@@ -343,14 +343,14 @@ func HandleCreate(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 	}
 
 	// Get user database
-	userDB, err := deps.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.Email)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
 
 	// Check if mailbox already exists
-	exists, err := db.MailboxExistsPerUser(userDB, state.UserID, mailboxName)
+	exists, err := db.MailboxExistsPerUser(userDB, 0, mailboxName)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Server error: cannot check mailbox existence", tag))
 		return
@@ -380,16 +380,16 @@ func HandleCreate(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 			}
 
 			// Check if this intermediate mailbox exists
-			intermediateExists, checkErr := db.MailboxExistsPerUser(userDB, state.UserID, currentPath)
+			intermediateExists, checkErr := db.MailboxExistsPerUser(userDB, 0, currentPath)
 			if checkErr == nil && !intermediateExists {
 				// Create intermediate mailbox - ignore errors as per RFC 3501
-				_, _ = db.CreateMailboxPerUser(userDB, state.UserID, currentPath, "")
+				_, _ = db.CreateMailboxPerUser(userDB, 0, currentPath, "")
 			}
 		}
 	}
 
 	// Create the target mailbox
-	_, err = db.CreateMailboxPerUser(userDB, state.UserID, mailboxName, "")
+	_, err = db.CreateMailboxPerUser(userDB, 0, mailboxName, "")
 	if err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			deps.SendResponse(conn, fmt.Sprintf("%s NO Mailbox already exists", tag))
@@ -431,14 +431,14 @@ func HandleDelete(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 	}
 
 	// Get user database
-	userDB, err := deps.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.Email)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
 
 	// Attempt to delete the mailbox
-	err = db.DeleteMailboxPerUser(userDB, state.UserID, mailboxName)
+	err = db.DeleteMailboxPerUser(userDB, 0, mailboxName)
 	if err != nil {
 		if strings.Contains(err.Error(), "does not exist") {
 			deps.SendResponse(conn, fmt.Sprintf("%s NO Mailbox does not exist", tag))
@@ -479,14 +479,14 @@ func HandleRename(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 	}
 
 	// Get user database
-	userDB, err := deps.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.Email)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
 
 	// Attempt to rename the mailbox
-	err = db.RenameMailboxPerUser(userDB, state.UserID, oldName, newName)
+	err = db.RenameMailboxPerUser(userDB, 0, oldName, newName)
 	if err != nil {
 		if strings.Contains(err.Error(), "source mailbox does not exist") {
 			deps.SendResponse(conn, fmt.Sprintf("%s NO Source mailbox does not exist", tag))
@@ -531,14 +531,14 @@ func HandleSubscribe(deps ServerDeps, conn net.Conn, tag string, parts []string,
 	}
 
 	// Get user database
-	userDB, err := deps.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.Email)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
 
 	// Subscribe to the mailbox
-	err = db.SubscribeToMailboxPerUser(userDB, state.UserID, mailboxName)
+	err = db.SubscribeToMailboxPerUser(userDB, 0, mailboxName)
 	if err != nil {
 		fmt.Printf("Failed to subscribe to mailbox %s for user %s: %v\n", mailboxName, state.Username, err)
 		deps.SendResponse(conn, fmt.Sprintf("%s NO SUBSCRIBE failure: server error", tag))
@@ -575,14 +575,14 @@ func HandleUnsubscribe(deps ServerDeps, conn net.Conn, tag string, parts []strin
 	}
 
 	// Get user database
-	userDB, err := deps.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.Email)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
 
 	// Unsubscribe from the mailbox
-	err = db.UnsubscribeFromMailboxPerUser(userDB, state.UserID, mailboxName)
+	err = db.UnsubscribeFromMailboxPerUser(userDB, 0, mailboxName)
 	if err != nil {
 		if strings.Contains(err.Error(), "subscription does not exist") {
 			deps.SendResponse(conn, fmt.Sprintf("%s NO UNSUBSCRIBE failure: can't unsubscribe that name", tag))
@@ -610,7 +610,7 @@ func HandleStatus(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 	}
 
 	// Get user database
-	userDB, err := deps.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.Email)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -626,7 +626,7 @@ func HandleStatus(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 	}
 
 	// Get mailbox ID using new schema
-	mailboxID, err := db.GetMailboxByNamePerUser(userDB, state.UserID, mailboxName)
+	mailboxID, err := db.GetMailboxByNamePerUser(userDB, 0, mailboxName)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO STATUS failure: no status for that name", tag))
 		return

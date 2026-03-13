@@ -15,7 +15,7 @@ import (
 // ServerDeps defines the dependencies that extension handlers need from the server
 type ServerDeps interface {
 	SendResponse(conn net.Conn, response string)
-	GetUserDB(userID int64) (*sql.DB, error)
+	GetUserDB(email string) (*sql.DB, error)
 	GetS3Storage() *blobstorage.S3BlobStorage
 }
 
@@ -27,7 +27,7 @@ func HandleNoop(deps ServerDeps, conn net.Conn, tag string, state *models.Client
 	// and send untagged responses per RFC 3501
 	if state.Authenticated && state.SelectedMailboxID > 0 {
 		// Get user database
-		userDB, err := deps.GetUserDB(state.UserID)
+		userDB, err := deps.GetUserDB(state.Email)
 		if err != nil {
 			deps.SendResponse(conn, fmt.Sprintf("%s OK NOOP completed", tag))
 			return
@@ -109,7 +109,7 @@ func HandleIdle(deps ServerDeps, conn net.Conn, tag string, state *models.Client
 	buf := make([]byte, 4096)
 
 	// Get user database
-	userDB, err := deps.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.Email)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return

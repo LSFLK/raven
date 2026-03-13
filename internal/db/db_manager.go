@@ -14,7 +14,7 @@ import (
 type DBManager struct {
 	basePath    string
 	sharedDB    *sql.DB
-	userDBCache map[int64]*sql.DB
+	userDBCache map[string]*sql.DB
 	roleDBCache map[int64]*sql.DB
 	cacheMutex  sync.RWMutex
 }
@@ -28,7 +28,7 @@ func NewDBManager(basePath string) (*DBManager, error) {
 
 	manager := &DBManager{
 		basePath:    basePath,
-		userDBCache: make(map[int64]*sql.DB),
+		userDBCache: make(map[string]*sql.DB),
 		roleDBCache: make(map[int64]*sql.DB),
 	}
 
@@ -45,11 +45,11 @@ func (m *DBManager) GetSharedDB() *sql.DB {
 	return m.sharedDB
 }
 
-// GetUserDB returns a database connection for a specific user
-func (m *DBManager) GetUserDB(userID int64) (*sql.DB, error) {
+// GetUserDB returns a database connection for a specific user identified by email
+func (m *DBManager) GetUserDB(email string) (*sql.DB, error) {
 	// Check cache first
 	m.cacheMutex.RLock()
-	if db, exists := m.userDBCache[userID]; exists {
+	if db, exists := m.userDBCache[email]; exists {
 		m.cacheMutex.RUnlock()
 		return db, nil
 	}
@@ -60,11 +60,11 @@ func (m *DBManager) GetUserDB(userID int64) (*sql.DB, error) {
 	defer m.cacheMutex.Unlock()
 
 	// Double-check after acquiring write lock
-	if db, exists := m.userDBCache[userID]; exists {
+	if db, exists := m.userDBCache[email]; exists {
 		return db, nil
 	}
 
-	dbPath := m.getUserDBPath(userID)
+	dbPath := m.getUserDBPath(email)
 
 	// Check if database file exists
 	exists := false
@@ -86,14 +86,14 @@ func (m *DBManager) GetUserDB(userID int64) (*sql.DB, error) {
 
 	// Initialize schema if this is a new database
 	if !exists {
-		if err := m.initUserDB(db, userID); err != nil {
+		if err := m.initUserDB(db); err != nil {
 			_ = db.Close()
 			return nil, fmt.Errorf("failed to initialize user database: %v", err)
 		}
 	}
 
 	// Cache the connection
-	m.userDBCache[userID] = db
+	m.userDBCache[email] = db
 
 	return db, nil
 }
@@ -139,7 +139,7 @@ func (m *DBManager) GetRoleMailboxDB(roleMailboxID int64) (*sql.DB, error) {
 
 	// Initialize schema if this is a new database (use userID 0 for role mailbox)
 	if !exists {
-		if err := m.initUserDB(db, 0); err != nil {
+		if err := m.initUserDB(db); err != nil {
 			_ = db.Close()
 			return nil, fmt.Errorf("failed to initialize role mailbox database: %v", err)
 		}
@@ -167,16 +167,6 @@ func (m *DBManager) initSharedDB() error {
 	}
 
 	// Create shared tables
-	if err := createDomainsTable(db); err != nil {
-		_ = db.Close()
-		return fmt.Errorf("failed to create domains table: %v", err)
-	}
-
-	if err := createUsersTable(db); err != nil {
-		_ = db.Close()
-		return fmt.Errorf("failed to create users table: %v", err)
-	}
-
 	if err := createRoleMailboxesTable(db); err != nil {
 		_ = db.Close()
 		return fmt.Errorf("failed to create role_mailboxes table: %v", err)
@@ -204,7 +194,7 @@ func (m *DBManager) initSharedDB() error {
 }
 
 // initUserDB initializes a per-user database
-func (m *DBManager) initUserDB(db *sql.DB, userID int64) error {
+func (m *DBManager) initUserDB(db *sql.DB) error {
 	// Create user tables
 	// Note: blobs table is now in shared database for cross-user deduplication
 	
@@ -253,8 +243,8 @@ func (m *DBManager) initUserDB(db *sql.DB, userID int64) error {
 		return fmt.Errorf("failed to create user indexes: %v", err)
 	}
 
-	// Create default mailboxes
-	if err := createDefaultMailboxes(db, userID); err != nil {
+	// Create default mailboxes (use user_id 0 since per-user DBs are identified by email/filename)
+	if err := createDefaultMailboxes(db, 0); err != nil {
 		return fmt.Errorf("failed to create default mailboxes: %v", err)
 	}
 
@@ -262,8 +252,8 @@ func (m *DBManager) initUserDB(db *sql.DB, userID int64) error {
 }
 
 // getUserDBPath returns the file path for a user's database
-func (m *DBManager) getUserDBPath(userID int64) string {
-	return filepath.Join(m.basePath, fmt.Sprintf("user_db_%d.db", userID))
+func (m *DBManager) getUserDBPath(email string) string {
+	return filepath.Join(m.basePath, fmt.Sprintf("user_db_%s.db", email))
 }
 
 // getRoleMailboxDBPath returns the file path for a role mailbox's database
@@ -286,11 +276,11 @@ func (m *DBManager) Close() error {
 	m.cacheMutex.Lock()
 	defer m.cacheMutex.Unlock()
 
-	for userID, db := range m.userDBCache {
+	for email, db := range m.userDBCache {
 		if err := db.Close(); err != nil {
 			lastErr = err
 		}
-		delete(m.userDBCache, userID)
+		delete(m.userDBCache, email)
 	}
 
 	// Close all role mailbox databases

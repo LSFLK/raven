@@ -49,13 +49,13 @@ func TestDBManagerToUserDB_SuccessFlow(t *testing.T) {
 	helpers.AssertDatabaseExists(t, dbManager.BasePath, "user", testData.UserID)
 
 	// Verify default mailboxes were created
-	userDB, err := dbManager.GetUserDB(testData.UserID)
+	userDB, err := dbManager.GetUserDB(testData.Email)
 	if err != nil {
 		t.Fatalf("Failed to get user database: %v", err)
 	}
 
 	// Check for default mailboxes
-	mailboxes, err := db.GetUserMailboxesPerUser(userDB, testData.UserID)
+	mailboxes, err := db.GetUserMailboxesPerUser(userDB, 0)
 	if err != nil {
 		t.Fatalf("Failed to get user mailboxes: %v", err)
 	}
@@ -169,11 +169,11 @@ func TestDBManagerToSharedDB_MultipleUsersAndDomains(t *testing.T) {
 
 	// Added: verify each user has default mailboxes (cross-module consistency)
 	for _, tu := range testUsers {
-		userDB, err := dbManager.GetUserDB(tu.UserID)
+		userDB, err := dbManager.GetUserDB(tu.Email)
 		if err != nil {
 			t.Fatalf("Failed to get user DB for user %d: %v", tu.UserID, err)
 		}
-		mboxes, err := db.GetUserMailboxesPerUser(userDB, tu.UserID)
+		mboxes, err := db.GetUserMailboxesPerUser(userDB, 0)
 		if err != nil {
 			t.Fatalf("Failed to get mailboxes for user %d: %v", tu.UserID, err)
 		}
@@ -197,19 +197,19 @@ func TestDBManagerToUserDB_MailboxCRUD(t *testing.T) {
 	testData := helpers.CreateTestUser(t, dbManager.DBManager, "alice@example.com")
 
 	// Create custom mailbox
-	customMailboxID := helpers.CreateTestMailbox(t, dbManager.DBManager, testData.UserID, "Work")
+	customMailboxID := helpers.CreateTestMailbox(t, dbManager.DBManager, testData.Email, "Work")
 
 	if customMailboxID == 0 {
 		t.Error("Expected non-zero mailbox ID")
 	}
 
 	// Verify mailbox was created
-	userDB, err := dbManager.GetUserDB(testData.UserID)
+	userDB, err := dbManager.GetUserDB(testData.Email)
 	if err != nil {
 		t.Fatalf("Failed to get user database: %v", err)
 	}
 
-	retrievedID, err := db.GetMailboxByNamePerUser(userDB, testData.UserID, "Work")
+	retrievedID, err := db.GetMailboxByNamePerUser(userDB, 0, "Work")
 	if err != nil {
 		t.Fatalf("Failed to get mailbox: %v", err)
 	}
@@ -219,13 +219,13 @@ func TestDBManagerToUserDB_MailboxCRUD(t *testing.T) {
 	}
 
 	// Delete mailbox
-	err = db.DeleteMailboxPerUser(userDB, testData.UserID, "Work")
+	err = db.DeleteMailboxPerUser(userDB, 0, "Work")
 	if err != nil {
 		t.Fatalf("Failed to delete mailbox: %v", err)
 	}
 
 	// Verify mailbox was deleted
-	exists, err := db.MailboxExistsPerUser(userDB, testData.UserID, "Work")
+	exists, err := db.MailboxExistsPerUser(userDB, 0, "Work")
 	if err != nil {
 		t.Fatalf("Failed to check mailbox existence: %v", err)
 	}
@@ -243,12 +243,12 @@ func TestDBManagerToUserDB_Concurrency(t *testing.T) {
 
 	// Create multiple users
 	numUsers := 10
-	userIDs := make([]int64, numUsers)
+	emails := make([]string, numUsers)
 
 	for i := 0; i < numUsers; i++ {
 		email := fmt.Sprintf("user%d@example.com", i)
-		testData := helpers.CreateTestUser(t, dbManager.DBManager, email)
-		userIDs[i] = testData.UserID
+		_ = helpers.CreateTestUser(t, dbManager.DBManager, email)
+		emails[i] = email
 	}
 
 	// Concurrently access user databases
@@ -257,31 +257,31 @@ func TestDBManagerToUserDB_Concurrency(t *testing.T) {
 
 	for i := 0; i < numUsers; i++ {
 		wg.Add(1)
-		go func(userID int64) {
+		go func(email string) {
 			defer wg.Done()
 
 			// Get user database
-			userDB, err := dbManager.GetUserDB(userID)
+			userDB, err := dbManager.GetUserDB(email)
 			if err != nil {
-				errors <- fmt.Errorf("failed to get user DB for user %d: %v", userID, err)
+				errors <- fmt.Errorf("failed to get user DB for %s: %v", email, err)
 				return
 			}
 
 			// Perform database operations
-			mailboxID := helpers.CreateTestMailbox(t, dbManager.DBManager, userID, "Concurrent")
+			mailboxID := helpers.CreateTestMailbox(t, dbManager.DBManager, email, "Concurrent")
 
 			// Verify mailbox was created
-			retrievedID, err := db.GetMailboxByNamePerUser(userDB, userID, "Concurrent")
+			retrievedID, err := db.GetMailboxByNamePerUser(userDB, 0, "Concurrent")
 			if err != nil {
-				errors <- fmt.Errorf("failed to get mailbox for user %d: %v", userID, err)
+				errors <- fmt.Errorf("failed to get mailbox for %s: %v", email, err)
 				return
 			}
 
 			if retrievedID != mailboxID {
-				errors <- fmt.Errorf("mailbox ID mismatch for user %d: expected %d, got %d", userID, mailboxID, retrievedID)
+				errors <- fmt.Errorf("mailbox ID mismatch for %s: expected %d, got %d", email, mailboxID, retrievedID)
 				return
 			}
-		}(userIDs[i])
+		}(emails[i])
 	}
 
 	wg.Wait()
@@ -293,13 +293,13 @@ func TestDBManagerToUserDB_Concurrency(t *testing.T) {
 	}
 
 	// Verify all user databases can still be accessed (test cache)
-	for _, userID := range userIDs {
-		userDB, err := dbManager.GetUserDB(userID)
+	for _, email := range emails {
+		userDB, err := dbManager.GetUserDB(email)
 		if err != nil {
 			t.Errorf("Failed to get user DB after concurrent access: %v", err)
 		}
 		if userDB == nil {
-			t.Errorf("Got nil user DB for user %d", userID)
+			t.Errorf("Got nil user DB for %s", email)
 		}
 	}
 }
@@ -314,13 +314,13 @@ func TestDBManagerToSharedDB_Recovery(t *testing.T) {
 	testData := helpers.CreateTestUser(t, dbManager.DBManager, "alice@example.com")
 
 	// Get user database to ensure it's created
-	userDB, err := dbManager.GetUserDB(testData.UserID)
+	userDB, err := dbManager.GetUserDB(testData.Email)
 	if err != nil {
 		t.Fatalf("Failed to get user database: %v", err)
 	}
 
 	// Verify database is functional
-	mailboxID, err := db.GetMailboxByNamePerUser(userDB, testData.UserID, "INBOX")
+	mailboxID, err := db.GetMailboxByNamePerUser(userDB, 0, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX: %v", err)
 	}
@@ -348,12 +348,12 @@ func TestDBManagerToSharedDB_Recovery(t *testing.T) {
 	}(dbManager2)
 
 	// Verify we can access the same data
-	userDB2, err := dbManager2.GetUserDB(testData.UserID)
+	userDB2, err := dbManager2.GetUserDB(testData.Email)
 	if err != nil {
 		t.Fatalf("Failed to get user database after recovery: %v", err)
 	}
 
-	mailboxID2, err := db.GetMailboxByNamePerUser(userDB2, testData.UserID, "INBOX")
+	mailboxID2, err := db.GetMailboxByNamePerUser(userDB2, 0, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX after recovery: %v", err)
 	}
@@ -383,13 +383,13 @@ func TestDBManagerToUserDB_RollbackAndCommit(t *testing.T) {
 
 	// Create test user
 	testData := helpers.CreateTestUser(t, dbManager.DBManager, "alice@example.com")
-	userDB, err := dbManager.GetUserDB(testData.UserID)
+	userDB, err := dbManager.GetUserDB(testData.Email)
 	if err != nil {
 		t.Fatalf("Failed to get user database: %v", err)
 	}
 
 	// Get initial mailbox count
-	initialMailboxes, err := db.GetUserMailboxesPerUser(userDB, testData.UserID)
+	initialMailboxes, err := db.GetUserMailboxesPerUser(userDB, 0)
 	if err != nil {
 		t.Fatalf("Failed to get initial mailboxes: %v", err)
 	}
@@ -425,7 +425,7 @@ func TestDBManagerToUserDB_RollbackAndCommit(t *testing.T) {
 	}
 
 	// Verify mailboxes were not created
-	finalMailboxes, err := db.GetUserMailboxesPerUser(userDB, testData.UserID)
+	finalMailboxes, err := db.GetUserMailboxesPerUser(userDB, 0)
 	if err != nil {
 		t.Fatalf("Failed to get final mailboxes: %v", err)
 	}
@@ -461,7 +461,7 @@ func TestDBManagerToUserDB_RollbackAndCommit(t *testing.T) {
 	}
 
 	// Verify mailbox was created
-	exists, err := db.MailboxExistsPerUser(userDB, testData.UserID, "CommitTest")
+	exists, err := db.MailboxExistsPerUser(userDB, 0, "CommitTest")
 	if err != nil {
 		t.Fatalf("Failed to check mailbox existence: %v", err)
 	}

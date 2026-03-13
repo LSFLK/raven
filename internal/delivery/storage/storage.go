@@ -75,31 +75,14 @@ func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder s
 			msg.Headers["X-Rspamd-Action"], msg.Headers["X-Spam-Status"])
 	}
 
-	// Extract username and domain from email address
-	username, err := parser.ExtractLocalPart(recipient)
-	if err != nil {
-		return fmt.Errorf("failed to extract username: %w", err)
-	}
-
-	domain, err := parser.ExtractDomain(recipient)
-	if err != nil {
-		return fmt.Errorf("failed to extract domain: %w", err)
-	}
-
-	// Get shared database for domain and user operations
+	// Get shared database for role mailbox check
 	sharedDB := s.dbManager.GetSharedDB()
-
-	// Get or create domain
-	domainID, err := db.GetOrCreateDomain(sharedDB, domain)
-	if err != nil {
-		return fmt.Errorf("failed to get/create domain: %w", err)
-	}
 
 	// Check if this is a role mailbox
 	roleMailboxID, _, roleErr := db.GetRoleMailboxByEmail(sharedDB, recipient)
 
 	var targetDB *sql.DB
-	var targetUserID int64
+	var err error
 
 	if roleErr == nil {
 		// This is a role mailbox - deliver to role mailbox database
@@ -107,26 +90,17 @@ func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder s
 		if err != nil {
 			return fmt.Errorf("failed to get role mailbox database: %w", err)
 		}
-		targetUserID = 0 // Role mailboxes use userID 0
 		log.Printf("Delivering to role mailbox: %s (ID: %d)", recipient, roleMailboxID)
 	} else {
-		// Not a role mailbox - deliver to regular user mailbox
-		// Get or create user
-		userID, err := db.GetOrCreateUser(sharedDB, username, domainID)
-		if err != nil {
-			return fmt.Errorf("failed to get/create user: %w", err)
-		}
-
-		// Get user database
-		targetDB, err = s.dbManager.GetUserDB(userID)
+		// Not a role mailbox - deliver to regular user mailbox (identified by email from IDP)
+		targetDB, err = s.dbManager.GetUserDB(recipient)
 		if err != nil {
 			return fmt.Errorf("failed to get user database: %w", err)
 		}
-		targetUserID = userID
 	}
 
-	// Get or create the target mailbox
-	mailboxID, err := db.GetMailboxByNamePerUser(targetDB, targetUserID, targetFolder)
+	// Get or create the target mailbox (user_id=0 for per-user DBs identified by email/filename)
+	mailboxID, err := db.GetMailboxByNamePerUser(targetDB, 0, targetFolder)
 	if err != nil {
 		// Mailbox doesn't exist, create it
 		// Determine special use flag for the mailbox
@@ -134,7 +108,7 @@ func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder s
 		if targetFolder == "Spam" {
 			specialUse = "\\Junk"
 		}
-		mailboxID, err = db.CreateMailboxPerUser(targetDB, targetUserID, targetFolder, specialUse)
+		mailboxID, err = db.CreateMailboxPerUser(targetDB, 0, targetFolder, specialUse)
 		if err != nil {
 			return fmt.Errorf("failed to create mailbox: %w", err)
 		}
@@ -165,13 +139,7 @@ func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder s
 	}
 
 	// Record delivery
-	var userIDNull sql.NullInt64
-	if targetUserID > 0 {
-		userIDNull = sql.NullInt64{Valid: true, Int64: targetUserID}
-	} else {
-		userIDNull = sql.NullInt64{Valid: false}
-	}
-	err = db.RecordDeliveryPerUser(targetDB, messageID, recipient, msg.From, "delivered", userIDNull, "250 OK")
+	err = db.RecordDeliveryPerUser(targetDB, messageID, recipient, msg.From, "delivered", sql.NullInt64{Valid: false}, "250 OK")
 	if err != nil {
 		// Log but don't fail - delivery tracking is not critical
 		fmt.Printf("Warning: failed to record delivery: %v\n", err)
@@ -196,69 +164,38 @@ func (s *Storage) DeliverToMultipleRecipients(recipients []string, msg *parser.M
 	return results
 }
 
-// CheckUserExists checks if a user exists in the system
+// CheckUserExists checks if a user exists in the system.
+// Since user identity is managed by the IDP, we always return true here.
+// Actual validation of credentials is done by the IDP at authentication time.
 func (s *Storage) CheckUserExists(username string) (bool, error) {
-	sharedDB := s.dbManager.GetSharedDB()
-	var count int
-	err := sharedDB.QueryRow(
-		"SELECT COUNT(*) FROM users WHERE username = ?",
-		username,
-	).Scan(&count)
-
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return false, nil
-		}
-		return false, err
-	}
-
-	return count > 0, nil
+	return true, nil
 }
 
-// CheckRecipientExists checks if a recipient email address is valid for delivery
+// CheckRecipientExists checks if a recipient email address is valid for delivery.
+// Since user identity is managed by the IDP, we always return true here.
 func (s *Storage) CheckRecipientExists(recipient string) (bool, error) {
-	username, err := parser.ExtractLocalPart(recipient)
-	if err != nil {
-		return false, err
-	}
-
-	// In multi-domain mode, we should also check the domain
-	// For now, just check if the username exists in any domain
-	return s.CheckUserExists(username)
+	return true, nil
 }
 
-// GetUserQuota retrieves the current quota usage for a user
-func (s *Storage) GetUserQuota(username string) (int64, error) {
-	sharedDB := s.dbManager.GetSharedDB()
-
-	// Get user ID (from any domain - we'll sum across all)
-	var userID int64
-	err := sharedDB.QueryRow("SELECT id FROM users WHERE username = ? LIMIT 1", username).Scan(&userID)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return 0, nil // User doesn't exist yet
-		}
-		return 0, err
-	}
-
-	// Get user database
-	userDB, err := s.dbManager.GetUserDB(userID)
+// GetUserQuota retrieves the current quota usage for a user (by email address)
+func (s *Storage) GetUserQuota(email string) (int64, error) {
+	userDB, err := s.dbManager.GetUserDB(email)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get user database: %w", err)
 	}
 
-	// Calculate total size of all messages for this user
-	// This sums up the size of all messages in all mailboxes for this user
+	// Calculate total size of all messages in the per-user DB
+	// All mailboxes in a per-user DB use user_id=0
 	query := `
 		SELECT COALESCE(SUM(m.size_bytes), 0)
 		FROM messages m
 		JOIN message_mailbox mm ON m.id = mm.message_id
 		JOIN mailboxes mb ON mm.mailbox_id = mb.id
-		WHERE mb.user_id = ?
+		WHERE mb.user_id = 0
 	`
 
 	var totalSize int64
-	err = userDB.QueryRow(query, userID).Scan(&totalSize)
+	err = userDB.QueryRow(query).Scan(&totalSize)
 	if err != nil {
 		return 0, fmt.Errorf("failed to calculate quota: %w", err)
 	}
@@ -281,36 +218,23 @@ func (s *Storage) CheckQuota(username string, messageSize int64, quotaLimit int6
 	return nil
 }
 
-// GetMessageCount returns the total number of messages for a user
-func (s *Storage) GetMessageCount(username string) (int, error) {
-	sharedDB := s.dbManager.GetSharedDB()
-
-	// Get user ID (from any domain)
-	var userID int64
-	err := sharedDB.QueryRow("SELECT id FROM users WHERE username = ? LIMIT 1", username).Scan(&userID)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return 0, nil
-		}
-		return 0, err
-	}
-
-	// Get user database
-	userDB, err := s.dbManager.GetUserDB(userID)
+// GetMessageCount returns the total number of messages for a user (by email address)
+func (s *Storage) GetMessageCount(email string) (int, error) {
+	userDB, err := s.dbManager.GetUserDB(email)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get user database: %w", err)
 	}
 
-	// Count messages in all mailboxes for this user
+	// Count messages in all mailboxes; user_id=0 in per-user DBs
 	query := `
 		SELECT COUNT(DISTINCT mm.message_id)
 		FROM message_mailbox mm
 		JOIN mailboxes mb ON mm.mailbox_id = mb.id
-		WHERE mb.user_id = ?
+		WHERE mb.user_id = 0
 	`
 
 	var count int
-	err = userDB.QueryRow(query, userID).Scan(&count)
+	err = userDB.QueryRow(query).Scan(&count)
 	if err != nil {
 		return 0, err
 	}
@@ -318,28 +242,15 @@ func (s *Storage) GetMessageCount(username string) (int, error) {
 	return count, nil
 }
 
-// GetMessageCountInFolder returns the number of messages in a specific folder
-func (s *Storage) GetMessageCountInFolder(username string, folder string) (int, error) {
-	sharedDB := s.dbManager.GetSharedDB()
-
-	// Get user ID (from any domain)
-	var userID int64
-	err := sharedDB.QueryRow("SELECT id FROM users WHERE username = ? LIMIT 1", username).Scan(&userID)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return 0, nil
-		}
-		return 0, err
-	}
-
-	// Get user database
-	userDB, err := s.dbManager.GetUserDB(userID)
+// GetMessageCountInFolder returns the number of messages in a specific folder for a user (by email address)
+func (s *Storage) GetMessageCountInFolder(email string, folder string) (int, error) {
+	userDB, err := s.dbManager.GetUserDB(email)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get user database: %w", err)
 	}
 
-	// Get mailbox ID
-	mailboxID, err := db.GetMailboxByNamePerUser(userDB, userID, folder)
+	// Get mailbox ID; user_id=0 in per-user DBs
+	mailboxID, err := db.GetMailboxByNamePerUser(userDB, 0, folder)
 	if err != nil {
 		return 0, nil // Mailbox doesn't exist
 	}
@@ -353,35 +264,13 @@ func (s *Storage) GetMessageCountInFolder(username string, folder string) (int, 
 	return count, nil
 }
 
-// CreateUserIfNotExists creates a user if they don't exist
-func (s *Storage) CreateUserIfNotExists(username string) error {
-	sharedDB := s.dbManager.GetSharedDB()
-
-	// Use "localhost" as default domain if none specified
-	domain := "localhost"
-	if strings.Contains(username, "@") {
-		parts := strings.Split(username, "@")
-		username = parts[0]
-		domain = parts[1]
-	}
-
-	// Get or create domain
-	domainID, err := db.GetOrCreateDomain(sharedDB, domain)
-	if err != nil {
-		return fmt.Errorf("failed to get/create domain: %w", err)
-	}
-
-	// Get or create user
-	userID, err := db.GetOrCreateUser(sharedDB, username, domainID)
-	if err != nil {
-		return fmt.Errorf("failed to get/create user: %w", err)
-	}
-
-	// Initialize user database (will create default mailboxes)
-	_, err = s.dbManager.GetUserDB(userID)
+// CreateUserIfNotExists initializes a user database if it doesn't exist yet.
+// Email should be the full email address (from IDP).
+func (s *Storage) CreateUserIfNotExists(email string) error {
+	// GetUserDB creates the DB and default mailboxes on first access
+	_, err := s.dbManager.GetUserDB(email)
 	if err != nil {
 		return fmt.Errorf("failed to initialize user database: %w", err)
 	}
-
 	return nil
 }

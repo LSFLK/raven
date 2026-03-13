@@ -20,7 +20,7 @@ import (
 // ServerDeps defines the dependencies that message handlers need from the server
 type ServerDeps interface {
 	SendResponse(conn net.Conn, response string)
-	GetUserDB(userID int64) (*sql.DB, error)
+	GetUserDB(email string) (*sql.DB, error)
 	GetSelectedDB(state *models.ClientState) (*sql.DB, int64, error)
 	GetSharedDB() *sql.DB
 	GetDBManager() *db.DBManager
@@ -50,7 +50,7 @@ func HandleSearch(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 	}
 
 	// Get appropriate database (user or role mailbox)
-	targetDB, targetUserID, err := deps.GetSelectedDB(state)
+	targetDB, _, err := deps.GetSelectedDB(state)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -118,7 +118,7 @@ func HandleSearch(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 
 	// Parse and evaluate search criteria
 	criteria := strings.Join(parts[searchStart:], " ")
-	matchingSeqNums := evaluateSearchCriteria(messages, criteria, charset, targetUserID, deps)
+	matchingSeqNums := evaluateSearchCriteria(messages, criteria, charset, state.Email, deps)
 
 	// Build response
 	if len(matchingSeqNums) > 0 {
@@ -134,7 +134,7 @@ func HandleSearch(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 }
 
 // evaluateSearchCriteria evaluates search criteria against messages
-func evaluateSearchCriteria(messages []messageInfo, criteria string, charset string, userID int64, deps ServerDeps) []int {
+func evaluateSearchCriteria(messages []messageInfo, criteria string, charset string, email string, deps ServerDeps) []int {
 	var matchingSeqNums []int
 
 	// Default to ALL if no criteria specified
@@ -147,7 +147,7 @@ func evaluateSearchCriteria(messages []messageInfo, criteria string, charset str
 
 	// Evaluate each message
 	for _, msg := range messages {
-		if matchesSearchCriteria(msg, tokens, charset, userID, deps) {
+		if matchesSearchCriteria(msg, tokens, charset, email, deps) {
 			matchingSeqNums = append(matchingSeqNums, msg.seqNum)
 		}
 	}
@@ -199,18 +199,18 @@ func parseSearchTokens(criteria string) []string {
 }
 
 // matchesSearchCriteria checks if a message matches the search criteria
-func matchesSearchCriteria(msg messageInfo, tokens []string, charset string, userID int64, deps ServerDeps) bool {
+func matchesSearchCriteria(msg messageInfo, tokens []string, charset string, email string, deps ServerDeps) bool {
 	// Default to ALL - match everything
 	if len(tokens) == 0 {
 		return true
 	}
 
 	// Process tokens (AND logic by default)
-	return evaluateTokens(msg, tokens, charset, userID, deps)
+	return evaluateTokens(msg, tokens, charset, email, deps)
 }
 
 // evaluateTokens evaluates a list of search tokens
-func evaluateTokens(msg messageInfo, tokens []string, charset string, userID int64, deps ServerDeps) bool {
+func evaluateTokens(msg messageInfo, tokens []string, charset string, email string, deps ServerDeps) bool {
 	i := 0
 	for i < len(tokens) {
 		token := strings.ToUpper(tokens[i])
@@ -322,7 +322,7 @@ func evaluateTokens(msg messageInfo, tokens []string, charset string, userID int
 				i++
 				nextTokens = append(nextTokens, tokens[i])
 			}
-			if evaluateTokens(msg, nextTokens, charset, userID, deps) {
+			if evaluateTokens(msg, nextTokens, charset, email, deps) {
 				return false
 			}
 			i++
@@ -344,7 +344,7 @@ func evaluateTokens(msg messageInfo, tokens []string, charset string, userID int
 				i++
 				key2Tokens = append(key2Tokens, tokens[i])
 			}
-			if !evaluateTokens(msg, key1Tokens, charset, userID, deps) && !evaluateTokens(msg, key2Tokens, charset, userID, deps) {
+			if !evaluateTokens(msg, key1Tokens, charset, email, deps) && !evaluateTokens(msg, key2Tokens, charset, email, deps) {
 				return false
 			}
 			i++
@@ -356,7 +356,7 @@ func evaluateTokens(msg messageInfo, tokens []string, charset string, userID int
 			}
 			i++
 			searchStr := unquote(tokens[i])
-			if !matchesHeaderOrBody(msg, token, searchStr, charset, userID, deps) {
+			if !matchesHeaderOrBody(msg, token, searchStr, charset, email, deps) {
 				return false
 			}
 			i++
@@ -370,7 +370,7 @@ func evaluateTokens(msg messageInfo, tokens []string, charset string, userID int
 			fieldName := unquote(tokens[i])
 			i++
 			searchStr := unquote(tokens[i])
-			if !matchesHeader(msg, fieldName, searchStr, charset, userID, deps) {
+			if !matchesHeader(msg, fieldName, searchStr, charset, email, deps) {
 				return false
 			}
 			i++
@@ -406,7 +406,7 @@ func evaluateTokens(msg messageInfo, tokens []string, charset string, userID int
 			}
 			i++
 			size, err := strconv.Atoi(tokens[i])
-			if err != nil || !matchesSize(msg, size, true, userID, deps) {
+			if err != nil || !matchesSize(msg, size, true, email, deps) {
 				return false
 			}
 			i++
@@ -418,7 +418,7 @@ func evaluateTokens(msg messageInfo, tokens []string, charset string, userID int
 			}
 			i++
 			size, err := strconv.Atoi(tokens[i])
-			if err != nil || !matchesSize(msg, size, false, userID, deps) {
+			if err != nil || !matchesSize(msg, size, false, email, deps) {
 				return false
 			}
 			i++
@@ -453,7 +453,7 @@ func evaluateTokens(msg messageInfo, tokens []string, charset string, userID int
 			}
 			i++
 			dateStr := unquote(tokens[i])
-			if !matchesSentDate(msg, dateStr, token, userID, deps) {
+			if !matchesSentDate(msg, dateStr, token, email, deps) {
 				return false
 			}
 			i++
@@ -521,9 +521,9 @@ func matchesUIDSet(uid int, set string) bool {
 	return matchesSequenceSet(uid, set)
 }
 
-func matchesHeaderOrBody(msg messageInfo, field string, searchStr string, charset string, userID int64, deps ServerDeps) bool {
+func matchesHeaderOrBody(msg messageInfo, field string, searchStr string, charset string, email string, deps ServerDeps) bool {
 	// Get user database
-	userDB, err := deps.GetUserDB(userID)
+	userDB, err := deps.GetUserDB(email)
 	if err != nil {
 		return false
 	}
@@ -570,9 +570,9 @@ func matchesHeaderOrBody(msg messageInfo, field string, searchStr string, charse
 	return false
 }
 
-func matchesHeader(msg messageInfo, fieldName string, searchStr string, charset string, userID int64, deps ServerDeps) bool {
+func matchesHeader(msg messageInfo, fieldName string, searchStr string, charset string, email string, deps ServerDeps) bool {
 	// Get user database
-	userDB, err := deps.GetUserDB(userID)
+	userDB, err := deps.GetUserDB(email)
 	if err != nil {
 		return false
 	}
@@ -648,9 +648,9 @@ func headerContains(rawMsg string, fieldName string, searchStr string) bool {
 	return strings.Contains(strings.ToUpper(headerValue.String()), searchStrUpper)
 }
 
-func matchesSize(msg messageInfo, size int, larger bool, userID int64, deps ServerDeps) bool {
+func matchesSize(msg messageInfo, size int, larger bool, email string, deps ServerDeps) bool {
 	// Get user database
-	userDB, err := deps.GetUserDB(userID)
+	userDB, err := deps.GetUserDB(email)
 	if err != nil {
 		return false
 	}
@@ -694,9 +694,9 @@ func matchesDate(internalDate time.Time, dateStr string, comparison string) bool
 	return false
 }
 
-func matchesSentDate(msg messageInfo, dateStr string, comparison string, userID int64, deps ServerDeps) bool {
+func matchesSentDate(msg messageInfo, dateStr string, comparison string, email string, deps ServerDeps) bool {
 	// Get user database
-	userDB, err := deps.GetUserDB(userID)
+	userDB, err := deps.GetUserDB(email)
 	if err != nil {
 		return false
 	}
@@ -818,7 +818,7 @@ func HandleStore(deps ServerDeps, conn net.Conn, tag string, parts []string, sta
 	}
 
 	// Get user database
-	userDB, err := deps.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.Email)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -867,7 +867,7 @@ func HandleStore(deps ServerDeps, conn net.Conn, tag string, parts []string, sta
 			cleanedFlagsStr := flagSetToString(cleanedFlags)
 
 			// Move to Spam folder
-			err = MoveMessageToMailbox(userDB, messageID, state.SelectedMailboxID, "Spam", state.UserID, cleanedFlagsStr, internalDate)
+			err = MoveMessageToMailbox(userDB, messageID, state.SelectedMailboxID, "Spam", 0, cleanedFlagsStr, internalDate)
 			if err != nil {
 				log.Printf("Failed to move message %d to Spam: %v", messageID, err)
 			} else {
@@ -885,7 +885,7 @@ func HandleStore(deps ServerDeps, conn net.Conn, tag string, parts []string, sta
 			cleanedFlagsStr := flagSetToString(cleanedFlags)
 
 			// Move to INBOX
-			err = MoveMessageToMailbox(userDB, messageID, state.SelectedMailboxID, "INBOX", state.UserID, cleanedFlagsStr, internalDate)
+			err = MoveMessageToMailbox(userDB, messageID, state.SelectedMailboxID, "INBOX", 0, cleanedFlagsStr, internalDate)
 			if err != nil {
 				log.Printf("Failed to move message %d to INBOX: %v", messageID, err)
 			} else {
@@ -1024,7 +1024,7 @@ func HandleCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, stat
 	destMailbox := strings.Trim(strings.Join(parts[2:], " "), "\"")
 
 	// Get user database
-	userDB, err := deps.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.Email)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -1042,7 +1042,7 @@ func HandleCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, stat
 	err = userDB.QueryRow(`
 		SELECT id FROM mailboxes
 		WHERE name = ? AND user_id = ?
-	`, destMailbox, state.UserID).Scan(&destMailboxID)
+	`, destMailbox, 0).Scan(&destMailboxID)
 
 	if err != nil {
 		// Destination mailbox doesn't exist - return NO with [TRYCREATE]
@@ -1206,7 +1206,7 @@ func HandleAppendWithReader(deps ServerDeps, reader io.Reader, conn net.Conn, ta
 	}
 
 	// Get user database
-	userDB, err := deps.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.Email)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -1216,7 +1216,7 @@ func HandleAppendWithReader(deps ServerDeps, reader io.Reader, conn net.Conn, ta
 	folder := strings.Trim(parts[2], "\"")
 
 	// Validate folder exists using the database with new schema
-	mailboxID, err := db.GetMailboxByNamePerUser(userDB, state.UserID, folder)
+	mailboxID, err := db.GetMailboxByNamePerUser(userDB, 0, folder)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Folder does not exist", tag))
 		return
@@ -1364,7 +1364,7 @@ func HandleAppend(deps ServerDeps, conn net.Conn, tag string, parts []string, fu
 	}
 
 	// Get user database
-	userDB, err := deps.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.Email)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -1374,7 +1374,7 @@ func HandleAppend(deps ServerDeps, conn net.Conn, tag string, parts []string, fu
 	folder := strings.Trim(parts[2], "\"")
 
 	// Validate folder exists using the database with new schema
-	mailboxID, err := db.GetMailboxByNamePerUser(userDB, state.UserID, folder)
+	mailboxID, err := db.GetMailboxByNamePerUser(userDB, 0, folder)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Folder does not exist", tag))
 		return
@@ -1535,7 +1535,7 @@ func HandleExpunge(deps ServerDeps, conn net.Conn, tag string, state *models.Cli
 	// TODO: Add ReadOnly field to ClientState to properly handle EXAMINE
 
 	// Get user database
-	userDB, err := deps.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.Email)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -1648,7 +1648,7 @@ func HandleCheck(deps ServerDeps, conn net.Conn, tag string, state *models.Clien
 	}
 
 	// Get user database
-	userDB, err := deps.GetUserDB(state.UserID)
+	userDB, err := deps.GetUserDB(state.Email)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s OK CHECK completed", tag))
 		return

@@ -19,7 +19,7 @@ import (
 type ServerDeps interface {
 	SendResponse(conn net.Conn, response string)
 	GetSelectedDB(state *models.ClientState) (*sql.DB, int64, error)
-	GetUserDB(userID int64) (*sql.DB, error)
+	GetUserDB(email string) (*sql.DB, error)
 	GetSharedDB() *sql.DB
 	GetDBManager() *db.DBManager
 	GetS3Storage() *blobstorage.S3BlobStorage
@@ -285,7 +285,7 @@ func handleUIDStore(deps ServerDeps, conn net.Conn, tag string, parts []string, 
 			cleanedFlagsStr := flagSetToString(cleanedFlags)
 
 			// Move to Spam folder
-			err = message.MoveMessageToMailbox(targetDB, messageID, state.SelectedMailboxID, "Spam", state.UserID, cleanedFlagsStr, internalDate)
+			err = message.MoveMessageToMailbox(targetDB, messageID, state.SelectedMailboxID, "Spam", 0, cleanedFlagsStr, internalDate)
 			if err != nil {
 				log.Printf("Failed to move message %d to Spam: %v", messageID, err)
 			} else {
@@ -303,7 +303,7 @@ func handleUIDStore(deps ServerDeps, conn net.Conn, tag string, parts []string, 
 			cleanedFlagsStr := flagSetToString(cleanedFlags)
 
 			// Move to INBOX
-			err = message.MoveMessageToMailbox(targetDB, messageID, state.SelectedMailboxID, "INBOX", state.UserID, cleanedFlagsStr, internalDate)
+			err = message.MoveMessageToMailbox(targetDB, messageID, state.SelectedMailboxID, "INBOX", 0, cleanedFlagsStr, internalDate)
 			if err != nil {
 				log.Printf("Failed to move message %d to INBOX: %v", messageID, err)
 			} else {

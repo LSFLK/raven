@@ -69,7 +69,7 @@ func TestLMTP_DeliverSuccess(t *testing.T) {
 	t.Log("LMTP session completed successfully, verifying message delivery...")
 
 	// Verify message count increased in INBOX
-	userDB, err := dbm.GetUserDB(td.UserID)
+	userDB, err := dbm.GetUserDB(td.Email)
 	if err != nil {
 		t.Fatalf("get user DB: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestLMTP_DataConsistency(t *testing.T) {
 
 	t.Log("Message delivered, verifying database consistency...")
 
-	userDB, _ := dbm.GetUserDB(td.UserID)
+	userDB, _ := dbm.GetUserDB(td.Email)
 	inboxID, _ := db.GetMailboxByNamePerUser(userDB, td.UserID, "INBOX")
 	t.Logf("Using INBOX mailbox ID: %d", inboxID)
 

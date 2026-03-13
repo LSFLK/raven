@@ -21,7 +21,7 @@ type ServerDeps interface {
 	SendResponse(conn net.Conn, response string)
 	ExtractUsername(username string) string
 	GetUserDomain(username string) string
-	EnsureUserAndMailboxes(username, domain string) (userID int64, domainID int64, err error)
+	EnsureUserAndMailboxes(email string) error
 	GetDBManager() *db.DBManager
 	GetCertPath() string
 	GetKeyPath() string
@@ -318,29 +318,28 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 		// Extract username and domain
 		actualUsername := deps.ExtractUsername(username)
 		domain := deps.GetUserDomain(username)
+		email := actualUsername + "@" + domain
 
-		// Ensure user exists in database and has default mailboxes
-		userID, domainID, err := deps.EnsureUserAndMailboxes(actualUsername, domain)
-		if err != nil {
-			log.Printf("Failed to create user and mailboxes: %v", err)
+		// Ensure user database exists and has default mailboxes
+		if err := deps.EnsureUserAndMailboxes(email); err != nil {
+			log.Printf("Failed to initialize user database: %v", err)
 			deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Server error", tag))
 			return
 		}
 
 		state.Authenticated = true
 		state.Username = actualUsername
-		state.UserID = userID
-		state.DomainID = domainID
+		state.Email = email
 
 		// Load role mailbox assignments for this user
-		roleMailboxIDs, err := db.GetUserRoleAssignments(deps.GetDBManager().GetSharedDB(), userID)
+		roleMailboxIDs, err := db.GetUserRoleAssignments(deps.GetDBManager().GetSharedDB(), email)
 		if err != nil {
-			log.Printf("Failed to load role assignments for user %d: %v", userID, err)
+			log.Printf("Failed to load role assignments for user %s: %v", email, err)
 			// Don't fail authentication, just continue without role mailboxes
 			state.RoleMailboxIDs = []int64{}
 		} else {
 			state.RoleMailboxIDs = roleMailboxIDs
-			log.Printf("User %s has %d role mailbox assignments", actualUsername, len(roleMailboxIDs))
+			log.Printf("User %s has %d role mailbox assignments", email, len(roleMailboxIDs))
 		}
 
 		// Detect if TLS is active
