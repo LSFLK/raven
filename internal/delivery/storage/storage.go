@@ -12,6 +12,24 @@ import (
 	"raven/internal/delivery/parser"
 )
 
+func isValidRecipient(recipient string) bool {
+	recipient = strings.TrimSpace(recipient)
+	if recipient == "" {
+		return false
+	}
+	if strings.Count(recipient, "@") != 1 {
+		return false
+	}
+	parts := strings.SplitN(recipient, "@", 2)
+	if parts[0] == "" || parts[1] == "" {
+		return false
+	}
+	if strings.ContainsAny(recipient, " \t\r\n") {
+		return false
+	}
+	return true
+}
+
 // isSpamByHeaders checks if a message should be classified as spam based on Rspamd headers
 func isSpamByHeaders(headers map[string]string) bool {
 	// Primary check: X-Rspamd-Action header
@@ -68,6 +86,10 @@ func NewStorageWithS3(dbManager *db.DBManager, s3Storage *blobstorage.S3BlobStor
 
 // DeliverMessage stores a message for a recipient
 func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder string) error {
+	if !isValidRecipient(recipient) {
+		return fmt.Errorf("invalid recipient: %q", recipient)
+	}
+
 	// Determine target folder based on spam detection
 	targetFolder := determineTargetFolder(msg.Headers, folder)
 	if targetFolder == "Spam" && folder != "Spam" {
