@@ -171,12 +171,6 @@ func (s *Storage) CheckUserExists(username string) (bool, error) {
 	return true, nil
 }
 
-// CheckRecipientExists checks if a recipient email address is valid for delivery.
-// Since user identity is managed by the IDP, we always return true here.
-func (s *Storage) CheckRecipientExists(recipient string) (bool, error) {
-	return true, nil
-}
-
 // GetUserQuota retrieves the current quota usage for a user (by email address)
 func (s *Storage) GetUserQuota(email string) (int64, error) {
 	userDB, err := s.dbManager.GetUserDB(email)
