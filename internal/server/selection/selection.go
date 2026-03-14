@@ -20,6 +20,19 @@ type ServerDeps interface {
 	GetS3Storage() *blobstorage.S3BlobStorage
 }
 
+func resolveStateEmail(state *models.ClientState) string {
+	if state.Email != "" {
+		return state.Email
+	}
+	if state.Username == "" {
+		return ""
+	}
+	if strings.Contains(state.Username, "@") {
+		return state.Username
+	}
+	return state.Username + "@localhost"
+}
+
 // ===== SELECT / EXAMINE =====
 
 func HandleSelect(deps ServerDeps, conn net.Conn, tag string, parts []string, state *models.ClientState) {
@@ -36,6 +49,7 @@ func HandleSelect(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 
 	folder := strings.Trim(parts[2], "\"")
 	state.SelectedFolder = folder
+	stateEmail := resolveStateEmail(state)
 
 	// Check if this is a role mailbox path (e.g., "Roles/ceo@openmail.lk/INBOX")
 	var targetDB *sql.DB
@@ -69,7 +83,7 @@ func HandleSelect(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 		}
 
 		// Check if user is assigned to this role mailbox
-		isAssigned, err := db.IsUserAssignedToRoleMailbox(sharedDB, state.Email, roleMailboxID)
+		isAssigned, err := db.IsUserAssignedToRoleMailbox(sharedDB, stateEmail, roleMailboxID)
 		if err != nil || !isAssigned {
 			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHORIZATIONFAILED] Not authorized to access this role mailbox", tag))
 			return
@@ -87,7 +101,7 @@ func HandleSelect(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 	} else {
 		// Regular user mailbox
 		var err error
-		targetDB, err = deps.GetUserDB(state.Email)
+		targetDB, err = deps.GetUserDB(stateEmail)
 		if err != nil {
 			deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 			return
@@ -213,7 +227,13 @@ func HandleClose(deps ServerDeps, conn net.Conn, tag string, state *models.Clien
 	// TODO: Add ReadOnly field to ClientState to properly handle EXAMINE
 
 	// Get user database
-	userDB, err := deps.GetUserDB(state.Email)
+	var userDB *sql.DB
+	var err error
+	if state.IsRoleMailbox {
+		userDB, err = deps.GetDBManager().GetRoleMailboxDB(state.SelectedRoleMailboxID)
+	} else {
+		userDB, err = deps.GetUserDB(resolveStateEmail(state))
+	}
 	if err != nil {
 		// Clear selection and return
 		state.SelectedMailboxID = 0
