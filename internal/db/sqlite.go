@@ -1360,7 +1360,7 @@ func normalizeUserIdentity(user interface{}) string {
 	}
 }
 
-func AssignUserToRoleMailbox(db *sql.DB, user interface{}, roleMailboxID int64, assignedBy ...int64) error {
+func AssignUserToRoleMailbox(db *sql.DB, user interface{}, roleMailboxID int64) error {
 	userEmail := normalizeUserIdentity(user)
 	// Start transaction to ensure consistency
 	tx, err := db.Begin()
