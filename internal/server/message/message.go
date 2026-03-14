@@ -38,6 +38,19 @@ type messageInfo struct {
 	seqNum       int
 }
 
+func resolveStateEmail(state *models.ClientState) string {
+	if state.Email != "" {
+		return state.Email
+	}
+	if state.Username == "" {
+		return ""
+	}
+	if strings.Contains(state.Username, "@") {
+		return state.Username
+	}
+	return state.Username + "@localhost"
+}
+
 func HandleSearch(deps ServerDeps, conn net.Conn, tag string, parts []string, state *models.ClientState) {
 	if !state.Authenticated {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Please authenticate first", tag))
@@ -82,6 +95,8 @@ func HandleSearch(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 		return
 	}
 
+	email := resolveStateEmail(state)
+
 	// Get all messages in the mailbox with their metadata
 	query := `
 		SELECT mm.message_id, mm.uid, mm.flags, mm.internal_date,
@@ -118,7 +133,7 @@ func HandleSearch(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 
 	// Parse and evaluate search criteria
 	criteria := strings.Join(parts[searchStart:], " ")
-	matchingSeqNums := evaluateSearchCriteria(messages, criteria, charset, state.Email, deps)
+	matchingSeqNums := evaluateSearchCriteria(messages, criteria, charset, email, deps)
 
 	// Build response
 	if len(matchingSeqNums) > 0 {
@@ -818,7 +833,7 @@ func HandleStore(deps ServerDeps, conn net.Conn, tag string, parts []string, sta
 	}
 
 	// Get user database
-	userDB, err := deps.GetUserDB(state.Email)
+	userDB, err := deps.GetUserDB(resolveStateEmail(state))
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -1024,7 +1039,7 @@ func HandleCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, stat
 	destMailbox := strings.Trim(strings.Join(parts[2:], " "), "\"")
 
 	// Get user database
-	userDB, err := deps.GetUserDB(state.Email)
+	userDB, err := deps.GetUserDB(resolveStateEmail(state))
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -1206,7 +1221,7 @@ func HandleAppendWithReader(deps ServerDeps, reader io.Reader, conn net.Conn, ta
 	}
 
 	// Get user database
-	userDB, err := deps.GetUserDB(state.Email)
+	userDB, err := deps.GetUserDB(resolveStateEmail(state))
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -1364,7 +1379,7 @@ func HandleAppend(deps ServerDeps, conn net.Conn, tag string, parts []string, fu
 	}
 
 	// Get user database
-	userDB, err := deps.GetUserDB(state.Email)
+	userDB, err := deps.GetUserDB(resolveStateEmail(state))
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -1535,7 +1550,7 @@ func HandleExpunge(deps ServerDeps, conn net.Conn, tag string, state *models.Cli
 	// TODO: Add ReadOnly field to ClientState to properly handle EXAMINE
 
 	// Get user database
-	userDB, err := deps.GetUserDB(state.Email)
+	userDB, err := deps.GetUserDB(resolveStateEmail(state))
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -1648,7 +1663,7 @@ func HandleCheck(deps ServerDeps, conn net.Conn, tag string, state *models.Clien
 	}
 
 	// Get user database
-	userDB, err := deps.GetUserDB(state.Email)
+	userDB, err := deps.GetUserDB(resolveStateEmail(state))
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s OK CHECK completed", tag))
 		return
