@@ -1030,23 +1030,31 @@ func HandleCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, stat
 	}
 
 	// Parse command: COPY sequence-set mailbox-name
-	if len(parts) < 3 {
+	// Some tests call handler directly with parts starting at COPY,
+	// while server command dispatch includes the tag as parts[0].
+	var sequenceSet string
+	var destMailbox string
+	switch {
+	case len(parts) >= 3 && strings.EqualFold(parts[0], "COPY"):
+		sequenceSet = parts[1]
+		destMailbox = strings.Trim(strings.Join(parts[2:], " "), "\"")
+	case len(parts) >= 4 && strings.EqualFold(parts[1], "COPY"):
+		sequenceSet = parts[2]
+		destMailbox = strings.Trim(strings.Join(parts[3:], " "), "\"")
+	default:
 		deps.SendResponse(conn, fmt.Sprintf("%s BAD Invalid COPY command syntax", tag))
 		return
 	}
 
-	sequenceSet := parts[1]
-	destMailbox := strings.Trim(strings.Join(parts[2:], " "), "\"")
-
-	// Get user database
-	userDB, err := deps.GetUserDB(resolveStateEmail(state))
+	// Use selected database so COPY works for both regular and role mailboxes
+	targetDB, err := deps.GetSelectedDB(state)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
 	}
 
 	// Parse sequence set
-	sequences := utils.ParseSequenceSetWithDB(sequenceSet, state.SelectedMailboxID, userDB)
+	sequences := utils.ParseSequenceSetWithDB(sequenceSet, state.SelectedMailboxID, targetDB)
 	if len(sequences) == 0 {
 		deps.SendResponse(conn, fmt.Sprintf("%s BAD Invalid sequence set", tag))
 		return
@@ -1054,7 +1062,7 @@ func HandleCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, stat
 
 	// Check if destination mailbox exists
 	var destMailboxID int64
-	err = userDB.QueryRow(`
+	err = targetDB.QueryRow(`
 		SELECT id FROM mailboxes
 		WHERE name = ?
 	`, destMailbox).Scan(&destMailboxID)
@@ -1066,7 +1074,7 @@ func HandleCopy(deps ServerDeps, conn net.Conn, tag string, parts []string, stat
 	}
 
 	// Begin transaction to ensure atomicity
-	tx, err := userDB.Begin()
+	tx, err := targetDB.Begin()
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO COPY failed: %v", tag, err))
 		return

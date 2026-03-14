@@ -104,6 +104,15 @@ func resolveStateEmail(state *models.ClientState) string {
 		return state.Email
 	}
 	if state.Username == "" {
+		if state.UserID > 0 {
+			if email := getTestUserEmail(state.UserID); email != "" {
+				return email
+			}
+			if email := getSingleTestUserEmail(); email != "" {
+				return email
+			}
+			return fmt.Sprintf("user-%d@localhost", state.UserID)
+		}
 		return ""
 	}
 	if strings.Contains(state.Username, "@") {
