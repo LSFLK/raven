@@ -14,6 +14,11 @@ import (
 	"raven/internal/server"
 )
 
+func writeAuthOK(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"id":"test-user-id","type":"test-user","organization_unit":"test-org"}`))
+}
+
 // setupTestConfig creates a temporary config file and returns cleanup function
 func setupTestConfig(t *testing.T, domain, authServerURL string) func() {
 	// LoadConfig looks for config in these paths:
@@ -162,6 +167,7 @@ func TestAuthenticateUser_UsernameWithDomain(t *testing.T) {
 	authServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify the request contains the full email
 		w.WriteHeader(http.StatusOK)
+		writeAuthOK(w)
 	}))
 	defer authServer.Close()
 
@@ -196,6 +202,7 @@ func TestAuthenticateUser_UsernameWithoutDomain(t *testing.T) {
 	// Create mock auth server
 	authServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
+		writeAuthOK(w)
 	}))
 	defer authServer.Close()
 
@@ -268,6 +275,7 @@ func TestAuthenticateUser_AuthenticationSuccess(t *testing.T) {
 			t.Errorf("Expected application/json content type, got %s", r.Header.Get("Content-Type"))
 		}
 		w.WriteHeader(http.StatusOK)
+		writeAuthOK(w)
 	}))
 	defer authServer.Close()
 
@@ -368,6 +376,9 @@ func TestAuthenticateUser_VariousStatusCodes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			authServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tc.statusCode)
+				if tc.statusCode == http.StatusOK {
+					writeAuthOK(w)
+				}
 			}))
 			defer authServer.Close()
 
@@ -409,6 +420,7 @@ func TestAuthenticateUser_VariousStatusCodes(t *testing.T) {
 func TestAuthenticateUser_TLSConnectionCapabilities(t *testing.T) {
 	authServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
+		writeAuthOK(w)
 	}))
 	defer authServer.Close()
 
@@ -451,6 +463,7 @@ func TestAuthenticateUser_TLSConnectionCapabilities(t *testing.T) {
 func TestAuthenticateUser_PlainConnectionCapabilities(t *testing.T) {
 	authServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
+		writeAuthOK(w)
 	}))
 	defer authServer.Close()
 
