@@ -3,7 +3,9 @@ package auth
 import (
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -276,20 +278,30 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 		return
 	}
 
-	// Determine the email address to use for authentication
-	var email string
-	if strings.Contains(username, "@") {
-		email = username
-	} else {
-		// Username doesn't contain domain - append configured domain
-		email = username + "@" + cfg.Domain
+	// Determine the username to use for authentication
+	authUsername := deps.ExtractUsername(username)
+	if authUsername == "" {
+		authUsername = username
 	}
 
 	// Prepare JSON body
-	requestBody := fmt.Sprintf(`{"email":"%s","password":"%s"}`, email, password)
+	requestPayload := map[string]any{
+		"identifiers": map[string]string{
+			"username": authUsername,
+		},
+		"credentials": map[string]string{
+			"password": password,
+		},
+		"skip_assertion": true,
+	}
+	requestBodyBytes, err := json.Marshal(requestPayload)
+	if err != nil {
+		deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Internal error", tag))
+		return
+	}
 
 	// Create HTTP request
-	req, err := http.NewRequest("POST", cfg.AuthServerURL, strings.NewReader(requestBody))
+	req, err := http.NewRequest("POST", cfg.AuthServerURL, strings.NewReader(string(requestBodyBytes)))
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Internal error", tag))
 		return
@@ -313,7 +325,23 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == 200 {
-		log.Printf("Accepting login for user: %s", username)
+		var authResp struct {
+			ID               string `json:"id"`
+			Type             string `json:"type"`
+			OrganizationUnit string `json:"organization_unit"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&authResp); err != nil {
+			log.Printf("LOGIN: failed to decode auth response: %v", err)
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
+			return
+		}
+		if authResp.ID == "" {
+			log.Printf("LOGIN: auth response missing id for user: %s", username)
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
+			return
+		}
+
+		log.Printf("Accepting login for user: %s (type=%s)", username, authResp.Type)
 
 		// Extract username and domain
 		actualUsername := deps.ExtractUsername(username)
@@ -363,6 +391,8 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 		}
 		deps.SendResponse(conn, fmt.Sprintf("%s OK [CAPABILITY %s] Authenticated", tag, capabilities))
 	} else {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("LOGIN: auth server rejected login for %s (status=%d, body=%s)", username, resp.StatusCode, strings.TrimSpace(string(body)))
 		deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
 	}
 }
