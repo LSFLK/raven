@@ -94,8 +94,22 @@ func (s *IMAPServer) GetSelectedDB(state *models.ClientState) (*sql.DB, error) {
 		roleDB, err := s.dbManager.GetRoleMailboxDB(state.SelectedRoleMailboxID)
 		return roleDB, err
 	}
-	userDB, err := s.dbManager.GetUserDB(state.Email)
+	email := resolveStateEmail(state)
+	userDB, err := s.dbManager.GetUserDB(email)
 	return userDB, err
+}
+
+func resolveStateEmail(state *models.ClientState) string {
+	if state.Email != "" {
+		return state.Email
+	}
+	if state.Username == "" {
+		return ""
+	}
+	if strings.Contains(state.Username, "@") {
+		return state.Username
+	}
+	return state.Username + "@localhost"
 }
 
 // GetSharedDB returns the shared database connection (exported for commands)

@@ -27,6 +27,63 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+var (
+	testUserMu       sync.Mutex
+	testUserNextID   int64 = 1
+	testUserIDByEmail       = map[string]int64{}
+	testUserEmailByID       = map[int64]string{}
+)
+
+func registerTestUser(email string) int64 {
+	testUserMu.Lock()
+	defer testUserMu.Unlock()
+
+	if userID, ok := testUserIDByEmail[email]; ok {
+		return userID
+	}
+
+	userID := testUserNextID
+	testUserNextID++
+
+	testUserIDByEmail[email] = userID
+	testUserEmailByID[userID] = email
+
+	return userID
+}
+
+func getTestUserID(email string) int64 {
+	testUserMu.Lock()
+	defer testUserMu.Unlock()
+
+	if userID, ok := testUserIDByEmail[email]; ok {
+		return userID
+	}
+	return 0
+}
+
+func getTestUserEmail(userID int64) string {
+	testUserMu.Lock()
+	defer testUserMu.Unlock()
+
+	if email, ok := testUserEmailByID[userID]; ok {
+		return email
+	}
+	return ""
+}
+
+func getSingleTestUserEmail() string {
+	testUserMu.Lock()
+	defer testUserMu.Unlock()
+
+	if len(testUserEmailByID) != 1 {
+		return ""
+	}
+	for _, email := range testUserEmailByID {
+		return email
+	}
+	return ""
+}
+
 // MockConn implements net.Conn for testing
 type MockConn struct {
 	readBuffer  []byte
@@ -208,13 +265,14 @@ func CreateTestUser(t *testing.T, database interface{}, username string) (userID
 	if !strings.Contains(email, "@") {
 		email = username + "@localhost"
 	}
+	userID = registerTestUser(email)
 
 	switch v := database.(type) {
 	case *db.DBManager:
 		if _, err := v.GetUserDB(email); err != nil {
 			t.Fatalf("Failed to initialize user database: %v", err)
 		}
-		return 0
+		return userID
 	case *sql.DB:
 		defaultMailboxes := []struct {
 			name       string
@@ -232,7 +290,7 @@ func CreateTestUser(t *testing.T, database interface{}, username string) (userID
 				t.Fatalf("Failed to create mailbox %s: %v", mbx.name, err)
 			}
 		}
-		return 0
+		return userID
 	default:
 		t.Fatalf("CreateTestUser: unsupported database type: %T", database)
 		return 0
@@ -625,7 +683,11 @@ func SubscribeToMailbox(t *testing.T, database interface{}, username, mailboxNam
 // GetUserID is kept for compatibility with legacy tests.
 // Per-user DBs no longer use numeric user IDs, so this returns 0.
 func GetUserID(t *testing.T, database *sql.DB, username string) int64 {
-	return 0
+	email := username
+	if !strings.Contains(email, "@") {
+		email = username + "@localhost"
+	}
+	return getTestUserID(email)
 }
 
 // SetupAuthenticatedState creates an authenticated state with proper user setup in database
@@ -646,11 +708,13 @@ func SetupAuthenticatedState(t *testing.T, server *TestInterface, username strin
 	if err != nil {
 		t.Fatalf("Failed to initialize user database: %v", err)
 	}
+	userID := registerTestUser(email)
 
 	return &models.ClientState{
 		Authenticated: true,
 		Username:      localPart,
 		Email:         email,
+		UserID:        userID,
 	}
 }
 
@@ -702,7 +766,13 @@ func GetDatabaseFromServer(srv interface{}) *db.DBManager {
 // GetMailboxID is a helper function that gets a mailbox ID for a user
 // Works with both old and new database architecture
 func GetMailboxID(t *testing.T, dbMgr *db.DBManager, userID int64, mailboxName string) (int64, error) {
-	email := fmt.Sprintf("user-%d@localhost", userID)
+	email := getTestUserEmail(userID)
+	if email == "" && userID == 0 {
+		email = getSingleTestUserEmail()
+	}
+	if email == "" {
+		email = fmt.Sprintf("user-%d@localhost", userID)
+	}
 	userDB, err := dbMgr.GetUserDB(email)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get user database: %v", err)
@@ -764,7 +834,14 @@ func GetUserDBByID(t *testing.T, database interface{}, userID int64) *sql.DB {
 	case *sql.DB:
 		return v
 	case *db.DBManager:
-		userDB, err := v.GetUserDB(fmt.Sprintf("user-%d@localhost", userID))
+		email := getTestUserEmail(userID)
+		if email == "" && userID == 0 {
+			email = getSingleTestUserEmail()
+		}
+		if email == "" {
+			email = fmt.Sprintf("user-%d@localhost", userID)
+		}
+		userDB, err := v.GetUserDB(email)
 		if err != nil {
 			t.Fatalf("Failed to get user database: %v", err)
 		}
