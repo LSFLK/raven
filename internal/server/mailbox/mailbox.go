@@ -83,7 +83,7 @@ func HandleList(deps ServerDeps, conn net.Conn, tag string, parts []string, stat
 
 		for _, roleMailboxID := range state.RoleMailboxIDs {
 			// Get role mailbox email
-			roleEmail, _, err := db.GetRoleMailboxByID(sharedDB, roleMailboxID)
+			roleEmail, err := db.GetRoleMailboxByID(sharedDB, roleMailboxID)
 			if err != nil {
 				continue
 			}
@@ -252,7 +252,7 @@ func HandleLsub(deps ServerDeps, conn net.Conn, tag string, parts []string, stat
 
 		for _, roleMailboxID := range state.RoleMailboxIDs {
 			// Get role mailbox email
-			roleEmail, _, err := db.GetRoleMailboxByID(sharedDB, roleMailboxID)
+			roleEmail, err := db.GetRoleMailboxByID(sharedDB, roleMailboxID)
 			if err != nil {
 				continue
 			}

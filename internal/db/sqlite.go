@@ -1289,11 +1289,11 @@ func GetMessageHeaders(db *sql.DB, messageID int64) ([]map[string]string, error)
 
 // Role mailbox management functions
 
-func CreateRoleMailbox(db *sql.DB, email string, domainID int64, description string) (int64, error) {
+func CreateRoleMailbox(db *sql.DB, email string, description string) (int64, error) {
 	result, err := db.Exec(`
-		INSERT INTO role_mailboxes (email, domain_id, description, enabled)
-		VALUES (?, ?, ?, ?)
-	`, email, domainID, description, true)
+		INSERT INTO role_mailboxes (email, description, enabled)
+		VALUES (?, ?, ?)
+	`, email, description, true)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
 			return 0, fmt.Errorf("role mailbox already exists")
@@ -1303,37 +1303,36 @@ func CreateRoleMailbox(db *sql.DB, email string, domainID int64, description str
 	return result.LastInsertId()
 }
 
-func GetRoleMailboxByEmail(db *sql.DB, email string) (int64, int64, error) {
-	var id, domainID int64
+func GetRoleMailboxByEmail(db *sql.DB, email string) (int64, error) {
+	var id int64
 	err := db.QueryRow(`
-		SELECT id, domain_id FROM role_mailboxes
+		SELECT id FROM role_mailboxes
 		WHERE email = ? AND enabled = ?
-	`, email, true).Scan(&id, &domainID)
+	`, email, true).Scan(&id)
 	if err == sql.ErrNoRows {
-		return 0, 0, fmt.Errorf("role mailbox not found")
+		return 0, fmt.Errorf("role mailbox not found")
 	}
-	return id, domainID, err
+	return id, err
 }
 
-func GetRoleMailboxByID(db *sql.DB, roleMailboxID int64) (string, int64, error) {
+func GetRoleMailboxByID(db *sql.DB, roleMailboxID int64) (string, error) {
 	var email string
-	var domainID int64
 	err := db.QueryRow(`
-		SELECT email, domain_id FROM role_mailboxes
+		SELECT email FROM role_mailboxes
 		WHERE id = ? AND enabled = ?
-	`, roleMailboxID, true).Scan(&email, &domainID)
+	`, roleMailboxID, true).Scan(&email)
 	if err == sql.ErrNoRows {
-		return "", 0, fmt.Errorf("role mailbox not found")
+		return "", fmt.Errorf("role mailbox not found")
 	}
-	return email, domainID, err
+	return email, err
 }
 
-func GetOrCreateRoleMailbox(db *sql.DB, email string, domainID int64, description string) (int64, error) {
-	id, _, err := GetRoleMailboxByEmail(db, email)
+func GetOrCreateRoleMailbox(db *sql.DB, email string, description string) (int64, error) {
+	id, err := GetRoleMailboxByEmail(db, email)
 	if err == nil {
 		return id, nil
 	}
-	return CreateRoleMailbox(db, email, domainID, description)
+	return CreateRoleMailbox(db, email, description)
 }
 
 func RoleMailboxExists(db *sql.DB, email string) (bool, error) {

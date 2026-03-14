@@ -63,13 +63,13 @@ func TestGetSharedDB(t *testing.T) {
 	}
 
 	var count int
-	err = sharedDB.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='domains'").Scan(&count)
+	err = sharedDB.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='role_mailboxes'").Scan(&count)
 	if err != nil {
-		t.Fatalf("Failed to query domains table: %v", err)
+		t.Fatalf("Failed to query role_mailboxes table: %v", err)
 	}
 
 	if count != 1 {
-		t.Error("Expected domains table to exist in shared database")
+		t.Error("Expected role_mailboxes table to exist in shared database")
 	}
 }
 
@@ -328,7 +328,7 @@ func TestSharedDBTables(t *testing.T) {
 
 	sharedDB := manager.GetSharedDB()
 
-	expectedTables := []string{"domains", "users", "role_mailboxes", "user_role_assignments", "blobs"}
+	expectedTables := []string{"role_mailboxes", "user_role_assignments", "blobs"}
 	for _, tableName := range expectedTables {
 		var count int
 		err = sharedDB.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", tableName).Scan(&count)
@@ -395,9 +395,6 @@ func TestSharedDBIndexes(t *testing.T) {
 	sharedDB := manager.GetSharedDB()
 
 	expectedIndexes := []string{
-		"idx_users_username_domain",
-		"idx_users_domain",
-		"idx_role_mailboxes_domain",
 		"idx_role_mailboxes_email",
 		"idx_role_assignments_user",
 		"idx_role_assignments_role",

@@ -62,7 +62,7 @@ func HandleSelect(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 
 		// Get role mailbox ID from email
 		sharedDB := deps.GetSharedDB()
-		roleMailboxID, _, err := db.GetRoleMailboxByEmail(sharedDB, roleEmail)
+		roleMailboxID, err := db.GetRoleMailboxByEmail(sharedDB, roleEmail)
 		if err != nil {
 			deps.SendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Role mailbox does not exist", tag))
 			return

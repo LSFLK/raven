@@ -79,7 +79,7 @@ func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder s
 	sharedDB := s.dbManager.GetSharedDB()
 
 	// Check if this is a role mailbox
-	roleMailboxID, _, roleErr := db.GetRoleMailboxByEmail(sharedDB, recipient)
+	roleMailboxID, roleErr := db.GetRoleMailboxByEmail(sharedDB, recipient)
 
 	var targetDB *sql.DB
 	var err error
