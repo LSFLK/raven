@@ -26,7 +26,11 @@ func TestDBManagerToSharedDB_SuccessFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to query shared database tables: %v", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil {
+			t.Errorf("Failed to close rows: %v", closeErr)
+		}
+	}()
 
 	tables := make(map[string]bool)
 	for rows.Next() {
