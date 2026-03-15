@@ -696,7 +696,8 @@ type MockAuthServer struct {
 
 // MockAuthRequest captures details of an authentication request
 type MockAuthRequest struct {
-	Email string
+	Email    string
+	Username string
 	// #nosec G117 -- Test fixture field, not a real secret
 	Password string
 	Headers  http.Header
@@ -719,12 +720,29 @@ func SetupMockAuthServerWithResponse(t *testing.T, statusCode int, response stri
 		if r.Body != nil {
 			bodyBytes, err := io.ReadAll(r.Body)
 			if err == nil {
-				var authReq map[string]string
+				var authReq map[string]any
 				if json.Unmarshal(bodyBytes, &authReq) == nil {
+					email, _ := authReq["email"].(string)
+					password, _ := authReq["password"].(string)
+					username := ""
+
+					if identifiers, ok := authReq["identifiers"].(map[string]any); ok {
+						if parsedUsername, ok := identifiers["username"].(string); ok {
+							username = parsedUsername
+						}
+					}
+
+					if credentials, ok := authReq["credentials"].(map[string]any); ok {
+						if parsedPassword, ok := credentials["password"].(string); ok {
+							password = parsedPassword
+						}
+					}
+
 					mock.mu.Lock()
 					mock.Requests = append(mock.Requests, MockAuthRequest{
-						Email:    authReq["email"],
-						Password: authReq["password"],
+						Email:    email,
+						Username: username,
+						Password: password,
 						Headers:  r.Header.Clone(),
 						Time:     time.Now(),
 					})
