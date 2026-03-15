@@ -22,14 +22,29 @@ func TestDBManagerToSharedDB_SuccessFlow(t *testing.T) {
 	}
 
 	// Verify we can query shared database
-	var count int
-	err := sharedDB.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table'").Scan(&count)
+	rows, err := sharedDB.Query("SELECT name FROM sqlite_master WHERE type='table'")
 	if err != nil {
-		t.Fatalf("Failed to query shared database: %v", err)
+		t.Fatalf("Failed to query shared database tables: %v", err)
+	}
+	defer rows.Close()
+
+	tables := make(map[string]bool)
+	for rows.Next() {
+		var name string
+		if scanErr := rows.Scan(&name); scanErr != nil {
+			t.Fatalf("Failed to scan shared database table name: %v", scanErr)
+		}
+		tables[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("Error iterating shared database tables: %v", err)
 	}
 
-	if count < 4 {
-		t.Errorf("Expected at least 4 tables in shared database, got %d", count)
+	requiredTables := []string{"role_mailboxes", "user_role_assignments", "blobs"}
+	for _, table := range requiredTables {
+		if !tables[table] {
+			t.Errorf("Expected shared table %q to exist", table)
+		}
 	}
 
 	// Verify database file exists

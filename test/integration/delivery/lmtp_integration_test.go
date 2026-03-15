@@ -95,7 +95,7 @@ func TestLMTP_DeliverSuccess(t *testing.T) {
 	t.Logf("✓ Message delivery verified: %d message(s) found in INBOX", count)
 }
 
-// TestLMTP_ErrorPropagation verifies RCPT failure for unknown user
+// TestLMTP_ErrorPropagation verifies RCPT acceptance for unknown user under IDP-managed identity.
 func TestLMTP_ErrorPropagation(t *testing.T) {
 	dbm := helpers.SetupTestDatabase(t)
 	defer helpers.TeardownTestDatabase(t, dbm)
@@ -112,9 +112,9 @@ func TestLMTP_ErrorPropagation(t *testing.T) {
 	if _, err := client.MAILFROM("sender@example.com"); err != nil {
 		t.Fatalf("MAIL FROM failed: %v", err)
 	}
-	// RCPT to a non-existent user should fail
-	if _, err := client.RCPTTO("nouser@example.com"); err == nil {
-		t.Fatalf("expected RCPT TO failure for unknown user")
+	// Recipient existence is managed by the IDP, so LMTP accepts the recipient at RCPT time.
+	if _, err := client.RCPTTO("nouser@example.com"); err != nil {
+		t.Fatalf("expected RCPT TO acceptance for unknown user, got: %v", err)
 	}
 	if _, err := client.QUIT(); err != nil {
 		t.Fatalf("QUIT failed: %v", err)
