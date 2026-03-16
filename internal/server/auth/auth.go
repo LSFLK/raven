@@ -348,8 +348,33 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 		log.Printf("Accepting login for user: %s (type=%s)", username, authResp.Type)
 
 		derivedDomain := ""
-		if !strings.Contains(username, "@") && !strings.Contains(authResp.ID, "@") && authResp.OrganizationUnit != "" {
-			derivedDomain = resolveDomainFromOrganizationUnit(cfg.AuthServerURL, authResp.OrganizationUnit, authUsername, password)
+		if authResp.OrganizationUnit != "" {
+			if strings.Contains(username, "@") {
+				derivedDomain = resolveDomainFromOrganizationUnit(cfg.AuthServerURL, authResp.OrganizationUnit, authUsername, password)
+				if derivedDomain == "" {
+					log.Printf("LOGIN: unable to resolve OU-derived domain for login '%s'", username)
+					deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
+					return
+				}
+
+				loginEmail := normalizeEmail(username)
+				if loginEmail == "" {
+					log.Printf("LOGIN: invalid login identity format: %s", username)
+					deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
+					return
+				}
+
+				parts := strings.SplitN(loginEmail, "@", 2)
+				loginDomain := strings.Trim(strings.TrimSpace(parts[1]), ".")
+				expectedDomain := strings.Trim(strings.TrimSpace(derivedDomain), ".")
+				if !strings.EqualFold(loginDomain, expectedDomain) {
+					log.Printf("LOGIN: login domain '%s' does not match OU-derived domain '%s' for user '%s'", loginDomain, expectedDomain, username)
+					deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
+					return
+				}
+			} else if !strings.Contains(authResp.ID, "@") {
+				derivedDomain = resolveDomainFromOrganizationUnit(cfg.AuthServerURL, authResp.OrganizationUnit, authUsername, password)
+			}
 		}
 
 		email := resolveMailboxEmail(username, authResp.ID, derivedDomain)

@@ -17,7 +17,7 @@ import (
 
 func writeAuthOK(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"id":"testuser@example.com","type":"test-user","organization_unit":"test-org"}`))
+	_, _ = w.Write([]byte(`{"id":"testuser@example.com","type":"test-user","organization_unit":""}`))
 }
 
 // setupTestConfig creates a temporary config file and returns cleanup function
@@ -381,6 +381,144 @@ func TestAuthenticateUser_SubdomainEmailFromOrgUnitHierarchy(t *testing.T) {
 
 	if flowExecuteCalls != 2 {
 		t.Fatalf("Expected flow execute to be called twice, got %d", flowExecuteCalls)
+	}
+}
+
+// TestAuthenticateUser_UsernameWithDomainMismatchFromOrgUnit rejects email logins
+// when the login domain does not match the OU-derived domain.
+func TestAuthenticateUser_UsernameWithDomainMismatchFromOrgUnit(t *testing.T) {
+	t.Setenv("IDP_SYSTEM_USERNAME", "svc-admin")
+	t.Setenv("IDP_SYSTEM_PASSWORD", "svc-secret")
+
+	authServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/credentials/authenticate":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"silveruser","organization_unit":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
+		case "/flow/execute":
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("Failed to decode flow payload: %v", err)
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			if _, ok := payload["applicationId"]; ok {
+				_, _ = w.Write([]byte(`{"flowId":"019cf0fe-2f92-77c9-b613-01e2638b4b2e","flowStatus":"INCOMPLETE","type":"VIEW","data":{"actions":[{"ref":"action_009"}]}}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"flowId":"019cf0fe-2f92-77c9-b613-01e2638b4b2e","flowStatus":"COMPLETE","data":{},"assertion":"test-assertion"}`))
+		case "/organization-units/019cf0a5-4109-79ac-857b-07fc7b5c19ac":
+			if r.Header.Get("Authorization") != "Bearer test-assertion" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"019cf0a5-4109-79ac-857b-07fc7b5c19ac","handle":"silver","parent":"019cf0a3-c234-7190-a4c9-d5f6860a44e9"}`))
+		case "/organization-units/019cf0a3-c234-7190-a4c9-d5f6860a44e9":
+			if r.Header.Get("Authorization") != "Bearer test-assertion" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"019cf0a3-c234-7190-a4c9-d5f6860a44e9","handle":"example.com","parent":null}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer authServer.Close()
+
+	cleanup := setupTestConfig(t, "", authServer.URL+"/auth/credentials/authenticate")
+	defer cleanup()
+
+	err := os.WriteFile(".env", []byte("applicationId=019cf09f-8956-7534-ab59-88622ff2ad97\n"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write .env file: %v", err)
+	}
+
+	s, cleanupServer := server.SetupTestServer(t)
+	defer cleanupServer()
+
+	conn := server.NewMockTLSConn()
+	state := &models.ClientState{}
+
+	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user2@sil.example.com", "password"}, state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "NO [AUTHENTICATIONFAILED]") {
+		t.Fatalf("Expected domain mismatch authentication failure, got: %s", response)
+	}
+}
+
+// TestAuthenticateUser_UsernameWithDomainMatchesOrgUnit accepts email logins
+// when the login domain matches the OU-derived domain.
+func TestAuthenticateUser_UsernameWithDomainMatchesOrgUnit(t *testing.T) {
+	t.Setenv("IDP_SYSTEM_USERNAME", "svc-admin")
+	t.Setenv("IDP_SYSTEM_PASSWORD", "svc-secret")
+
+	authServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/credentials/authenticate":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"silveruser","organization_unit":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
+		case "/flow/execute":
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("Failed to decode flow payload: %v", err)
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			if _, ok := payload["applicationId"]; ok {
+				_, _ = w.Write([]byte(`{"flowId":"019cf0fe-2f92-77c9-b613-01e2638b4b2e","flowStatus":"INCOMPLETE","type":"VIEW","data":{"actions":[{"ref":"action_009"}]}}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"flowId":"019cf0fe-2f92-77c9-b613-01e2638b4b2e","flowStatus":"COMPLETE","data":{},"assertion":"test-assertion"}`))
+		case "/organization-units/019cf0a5-4109-79ac-857b-07fc7b5c19ac":
+			if r.Header.Get("Authorization") != "Bearer test-assertion" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"019cf0a5-4109-79ac-857b-07fc7b5c19ac","handle":"silver","parent":"019cf0a3-c234-7190-a4c9-d5f6860a44e9"}`))
+		case "/organization-units/019cf0a3-c234-7190-a4c9-d5f6860a44e9":
+			if r.Header.Get("Authorization") != "Bearer test-assertion" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"019cf0a3-c234-7190-a4c9-d5f6860a44e9","handle":"example.com","parent":null}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer authServer.Close()
+
+	cleanup := setupTestConfig(t, "", authServer.URL+"/auth/credentials/authenticate")
+	defer cleanup()
+
+	err := os.WriteFile(".env", []byte("applicationId=019cf09f-8956-7534-ab59-88622ff2ad97\n"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write .env file: %v", err)
+	}
+
+	s, cleanupServer := server.SetupTestServer(t)
+	defer cleanupServer()
+
+	conn := server.NewMockTLSConn()
+	state := &models.ClientState{}
+
+	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user2@silver.example.com", "password"}, state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "A001 OK") {
+		t.Fatalf("Expected successful authentication, got: %s", response)
 	}
 }
 
