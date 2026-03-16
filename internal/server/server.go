@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"raven/internal/blobstorage"
-	"raven/internal/conf"
 	"raven/internal/db"
 	"raven/internal/models"
 	"raven/internal/server/auth"
@@ -141,24 +140,17 @@ func (s *IMAPServer) GetKeyPath() string {
 	return s.keyPath
 }
 
-// GetUserDomain extracts domain from username or uses default from config (exported for commands)
+// GetUserDomain extracts domain only from an explicit email value (exported for commands)
 func (s *IMAPServer) GetUserDomain(username string) string {
 	// If username contains @, extract domain
 	if strings.Contains(username, "@") {
 		parts := strings.Split(username, "@")
 		if len(parts) == 2 {
-			return parts[1]
+			return strings.Trim(parts[1], ".")
 		}
 	}
 
-	// Use domain from config
-	cfg, err := conf.LoadConfig()
-	if err == nil && cfg.Domain != "" {
-		return cfg.Domain
-	}
-
-	// Fallback to localhost
-	return "localhost"
+	return ""
 }
 
 // ExtractUsername removes domain from username if present (exported for commands)

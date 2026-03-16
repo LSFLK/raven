@@ -1,6 +1,7 @@
 package auth_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -16,7 +17,7 @@ import (
 
 func writeAuthOK(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"id":"test-user-id","type":"test-user","organization_unit":"test-org"}`))
+	_, _ = w.Write([]byte(`{"id":"testuser@example.com","type":"test-user","organization_unit":"test-org"}`))
 }
 
 // setupTestConfig creates a temporary config file and returns cleanup function
@@ -109,9 +110,15 @@ func TestAuthenticateUser_ConfigLoadError(t *testing.T) {
 	}
 }
 
-// TestAuthenticateUser_MissingDomain tests authentication with missing domain in config
+// TestAuthenticateUser_MissingDomain tests authentication works without domain in config.
 func TestAuthenticateUser_MissingDomain(t *testing.T) {
-	cleanup := setupTestConfig(t, "", "https://auth.example.com")
+	authServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		writeAuthOK(w)
+	}))
+	defer authServer.Close()
+
+	cleanup := setupTestConfig(t, "", authServer.URL)
 	defer cleanup()
 
 	_, err := conf.LoadConfig()
@@ -129,9 +136,9 @@ func TestAuthenticateUser_MissingDomain(t *testing.T) {
 
 	response := conn.GetWrittenData()
 
-	// Should get configuration error
-	if !strings.Contains(response, "NO") || !strings.Contains(response, "SERVERBUG") {
-		t.Errorf("Expected NO SERVERBUG response for missing domain, got: %s", response)
+	// Domain is no longer required in config. Authentication should succeed.
+	if !strings.Contains(response, "A001 OK") {
+		t.Errorf("Expected successful auth without configured domain, got: %s", response)
 	}
 }
 
@@ -220,15 +227,160 @@ func TestAuthenticateUser_UsernameWithoutDomain(t *testing.T) {
 	conn := server.NewMockTLSConn()
 	state := &models.ClientState{}
 
-	// Login with bare username (should append domain)
+	// Login with bare username (domain should come from IdP email identity)
 	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "bareuser", "password"}, state)
 
 	response := conn.GetWrittenData()
 	t.Logf("Response: %s", response)
 
-	// The auth server should receive bareuser@testdomain.com
+	// Successful login proves domain is resolved without relying on config domain.
 	if strings.Contains(response, "OK") {
 		t.Log("Authentication succeeded as expected")
+	}
+}
+
+// TestAuthenticateUser_SubdomainEmailFromIDP prevents split mailboxes for subdomain users.
+func TestAuthenticateUser_SubdomainEmailFromIDP(t *testing.T) {
+	authServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"user2@silver.aravindahwk.org","type":"test-user","organization_unit":"silver"}`))
+	}))
+	defer authServer.Close()
+
+	cleanup := setupTestConfig(t, ".aravindahwk.org", authServer.URL)
+	defer cleanup()
+
+	_, err := conf.LoadConfig()
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	s, cleanupServer := server.SetupTestServer(t)
+	defer cleanupServer()
+
+	conn := server.NewMockTLSConn()
+	state := &models.ClientState{}
+
+	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user2", "password"}, state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "A001 OK") {
+		t.Fatalf("Expected successful login, got: %s", response)
+	}
+
+	if state.Email != "user2@silver.aravindahwk.org" {
+		t.Fatalf("Expected canonical subdomain email, got: %s", state.Email)
+	}
+}
+
+// TestAuthenticateUser_SubdomainEmailFromOrgUnitHierarchy verifies domain construction
+// from organization-unit handles when auth response doesn't include an email id.
+func TestAuthenticateUser_SubdomainEmailFromOrgUnitHierarchy(t *testing.T) {
+	flowExecuteCalls := 0
+	t.Setenv("IDP_SYSTEM_USERNAME", "svc-admin")
+	t.Setenv("IDP_SYSTEM_PASSWORD", "svc-secret")
+	authServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/credentials/authenticate":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"silveruser","organization_unit":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
+		case "/flow/execute":
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("Failed to decode flow payload: %v", err)
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+
+			if _, ok := payload["applicationId"]; ok {
+				flowExecuteCalls++
+				if payload["flowType"] != "AUTHENTICATION" {
+					t.Fatalf("Expected AUTHENTICATION flow type, got %#v", payload["flowType"])
+				}
+				_, _ = w.Write([]byte(`{"flowId":"019cf0fe-2f92-77c9-b613-01e2638b4b2e","flowStatus":"INCOMPLETE","type":"VIEW","data":{"actions":[{"ref":"action_009","nextNode":"basic_auth"}]}}`))
+				return
+			}
+
+			flowExecuteCalls++
+			if payload["flowId"] != "019cf0fe-2f92-77c9-b613-01e2638b4b2e" {
+				t.Fatalf("Expected returned flow id, got %#v", payload["flowId"])
+			}
+			if payload["action"] != "action_009" {
+				t.Fatalf("Expected returned action ref, got %#v", payload["action"])
+			}
+
+			inputs, ok := payload["inputs"].(map[string]any)
+			if !ok {
+				t.Fatalf("Expected inputs map in flow execute payload, got %#v", payload["inputs"])
+			}
+			if inputs["username"] != "svc-admin" {
+				t.Fatalf("Expected system username svc-admin, got %#v", inputs["username"])
+			}
+			if inputs["password"] != "svc-secret" {
+				t.Fatalf("Expected system password to be forwarded, got %#v", inputs["password"])
+			}
+			if inputs["requested_permissions"] != "system" {
+				t.Fatalf("Expected requested_permissions=system, got %#v", inputs["requested_permissions"])
+			}
+
+			_, _ = w.Write([]byte(`{"flowId":"019cf0fe-2f92-77c9-b613-01e2638b4b2e","flowStatus":"COMPLETE","data":{},"assertion":"test-assertion"}`))
+		case "/organization-units/019cf0a5-4109-79ac-857b-07fc7b5c19ac":
+			if r.Header.Get("Authorization") != "Bearer test-assertion" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"019cf0a5-4109-79ac-857b-07fc7b5c19ac","handle":"silver","parent":"019cf0a3-c234-7190-a4c9-d5f6860a44e9"}`))
+		case "/organization-units/019cf0a3-c234-7190-a4c9-d5f6860a44e9":
+			if r.Header.Get("Authorization") != "Bearer test-assertion" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"019cf0a3-c234-7190-a4c9-d5f6860a44e9","handle":"aravindahwk.org","parent":null}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer authServer.Close()
+
+	cleanup := setupTestConfig(t, "", authServer.URL+"/auth/credentials/authenticate")
+	defer cleanup()
+
+	err := os.WriteFile(".env", []byte("applicationId=019cf09f-8956-7534-ab59-88622ff2ad97\n"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write .env file: %v", err)
+	}
+
+	_, err = conf.LoadConfig()
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	s, cleanupServer := server.SetupTestServer(t)
+	defer cleanupServer()
+
+	conn := server.NewMockTLSConn()
+	state := &models.ClientState{}
+
+	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user2", "password"}, state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "A001 OK") {
+		t.Fatalf("Expected successful login, got: %s", response)
+	}
+
+	if state.Email != "user2@silver.aravindahwk.org" {
+		t.Fatalf("Expected OU-derived subdomain email, got: %s", state.Email)
+	}
+
+	if flowExecuteCalls != 2 {
+		t.Fatalf("Expected flow execute to be called twice, got %d", flowExecuteCalls)
 	}
 }
 

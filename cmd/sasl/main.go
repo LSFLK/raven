@@ -24,7 +24,7 @@ func main() {
 	cfg, err := conf.LoadConfig()
 	if err != nil {
 		log.Printf("Warning: Failed to load config: %v", err)
-		log.Println("Please ensure raven.yaml is configured with domain and auth_server_url")
+		log.Println("Please ensure raven.yaml is configured with auth_server_url")
 		os.Exit(1)
 	}
 
@@ -37,7 +37,6 @@ func main() {
 	log.Printf("  Socket path: %s", *socketPath)
 	log.Printf("  TCP address: %s", *tcpAddr)
 	log.Printf("  Config path: %s", *configPath)
-	log.Printf("  Domain: %s", cfg.Domain)
 	log.Printf("  Auth URL: %s", cfg.AuthServerURL)
 	log.Printf("  SASL Scope: %s", cfg.SASLScope)
 
