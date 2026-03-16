@@ -244,23 +244,88 @@ func TestAuthenticateCancellation(t *testing.T) {
 
 	conn := server.NewMockTLSConn()
 	state := &models.ClientState{Authenticated: false}
+	conn.AddReadData("*\r\n")
 
 	// Send AUTHENTICATE PLAIN command
 	s.HandleAuthenticate(conn, "A001", []string{"A001", "AUTHENTICATE", "PLAIN"}, state)
 
-	// Check continuation response
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "+ ") {
 		t.Errorf("Expected continuation response, got: %s", response)
 	}
+	if !strings.Contains(response, "A001 BAD Authentication exchange cancelled") {
+		t.Errorf("Expected BAD cancellation response, got: %s", response)
+	}
+}
 
-	// Clear buffer and send cancellation
-	conn.ClearWriteBuffer()
-	conn.AddReadData("*\r\n")
+// TestAuthenticatePlainReadFailure tests connection read failures during AUTHENTICATE PLAIN.
+func TestAuthenticatePlainReadFailure(t *testing.T) {
+	s, cleanup := server.SetupTestServer(t)
+	defer cleanup()
 
-	// This would need to be handled by reading the response
-	// Note: In real implementation, the server reads the cancellation in the same handler
-	// For this test, we verify the continuation was sent
+	conn := server.NewMockTLSConn()
+	state := &models.ClientState{Authenticated: false}
+
+	s.HandleAuthenticate(conn, "A002", []string{"A002", "AUTHENTICATE", "PLAIN"}, state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "A002 NO Authentication failed") {
+		t.Errorf("Expected read failure response, got: %s", response)
+	}
+}
+
+// TestAuthenticatePlainInvalidCredentialsFormat tests malformed SASL PLAIN payloads.
+func TestAuthenticatePlainInvalidCredentialsFormat(t *testing.T) {
+	s, cleanup := server.SetupTestServer(t)
+	defer cleanup()
+
+	conn := server.NewMockTLSConn()
+	state := &models.ClientState{Authenticated: false}
+	conn.AddReadData(base64.StdEncoding.EncodeToString([]byte("usernamepassword")) + "\r\n")
+
+	s.HandleAuthenticate(conn, "A003", []string{"A003", "AUTHENTICATE", "PLAIN"}, state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "A003 NO [AUTHENTICATIONFAILED] Invalid credentials format") {
+		t.Errorf("Expected invalid format response, got: %s", response)
+	}
+}
+
+// TestAuthenticatePlainEmptyCredentialsResponse tests empty username/password rejection.
+func TestAuthenticatePlainEmptyCredentialsResponse(t *testing.T) {
+	s, cleanup := server.SetupTestServer(t)
+	defer cleanup()
+
+	conn := server.NewMockTLSConn()
+	state := &models.ClientState{Authenticated: false}
+	conn.AddReadData(base64.StdEncoding.EncodeToString([]byte("\x00\x00")) + "\r\n")
+
+	s.HandleAuthenticate(conn, "A004", []string{"A004", "AUTHENTICATE", "PLAIN"}, state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "A004 NO [AUTHENTICATIONFAILED] Invalid credentials") {
+		t.Errorf("Expected invalid credentials response, got: %s", response)
+	}
+}
+
+// TestAuthenticatePlainTwoPartFallback tests the non-standard username\x00password fallback path.
+func TestAuthenticatePlainTwoPartFallback(t *testing.T) {
+	s, cleanup := server.SetupTestServer(t)
+	defer cleanup()
+
+	conn := server.NewMockTLSConn()
+	state := &models.ClientState{Authenticated: false}
+	conn.AddReadData("user\x00pass\r\n")
+
+	s.HandleAuthenticate(conn, "A005", []string{"A005", "AUTHENTICATE", "PLAIN"}, state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "+ ") {
+		t.Errorf("Expected continuation response, got: %s", response)
+	}
+	if !strings.Contains(response, "A005") {
+		t.Errorf("Expected tagged auth response after fallback parsing, got: %s", response)
+	}
 }
 
 // TestAuthenticatePlainSuccessResponse tests CAPABILITY in OK response
