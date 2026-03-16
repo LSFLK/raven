@@ -77,9 +77,9 @@ func StartTestIMAPServer(t *testing.T, dbManager *db.DBManager) *TestIMAPServer 
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(fmt.Sprintf(`{"id":%q,"type":"test-user","organization_unit":""}`,
+		_, _ = fmt.Fprintf(w, `{"id":%q,"type":"test-user","organization_unit":""}`,
 			emailID,
-		)))
+		)
 	})
 
 	// Create TLS config for auth server using the same test certs
