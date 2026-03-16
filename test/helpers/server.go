@@ -56,10 +56,30 @@ func StartTestIMAPServer(t *testing.T, dbManager *db.DBManager) *TestIMAPServer 
 	// Start an auth stub HTTPS server that accepts any credentials
 	authMux := http.NewServeMux()
 	authMux.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
-		_ = r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
+
+		username := "test-user"
+		var payload struct {
+			Identifiers struct {
+				Username string `json:"username"`
+			} `json:"identifiers"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
+			if parsed := strings.TrimSpace(payload.Identifiers.Username); parsed != "" {
+				username = parsed
+			}
+		}
+
+		emailID := username
+		if !strings.Contains(emailID, "@") {
+			emailID = emailID + "@example.com"
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"id":"test-user-id","type":"test-user","organization_unit":"test-org"}`))
+		_, _ = w.Write([]byte(fmt.Sprintf(`{"id":%q,"type":"test-user","organization_unit":""}`,
+			emailID,
+		)))
 	})
 
 	// Create TLS config for auth server using the same test certs
