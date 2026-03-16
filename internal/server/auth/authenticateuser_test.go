@@ -244,11 +244,11 @@ func TestAuthenticateUser_SubdomainEmailFromIDP(t *testing.T) {
 	authServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"id":"user2@silver.aravindahwk.org","type":"test-user","organization_unit":"silver"}`))
+		_, _ = w.Write([]byte(`{"id":"user2@silver.example.com","type":"test-user","organization_unit":"silver"}`))
 	}))
 	defer authServer.Close()
 
-	cleanup := setupTestConfig(t, ".aravindahwk.org", authServer.URL)
+	cleanup := setupTestConfig(t, ".example.com", authServer.URL)
 	defer cleanup()
 
 	_, err := conf.LoadConfig()
@@ -269,7 +269,7 @@ func TestAuthenticateUser_SubdomainEmailFromIDP(t *testing.T) {
 		t.Fatalf("Expected successful login, got: %s", response)
 	}
 
-	if state.Email != "user2@silver.aravindahwk.org" {
+	if state.Email != "user2@silver.example.com" {
 		t.Fatalf("Expected canonical subdomain email, got: %s", state.Email)
 	}
 }
@@ -342,7 +342,7 @@ func TestAuthenticateUser_SubdomainEmailFromOrgUnitHierarchy(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":"019cf0a3-c234-7190-a4c9-d5f6860a44e9","handle":"aravindahwk.org","parent":null}`))
+			_, _ = w.Write([]byte(`{"id":"019cf0a3-c234-7190-a4c9-d5f6860a44e9","handle":"example.com","parent":null}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -375,7 +375,7 @@ func TestAuthenticateUser_SubdomainEmailFromOrgUnitHierarchy(t *testing.T) {
 		t.Fatalf("Expected successful login, got: %s", response)
 	}
 
-	if state.Email != "user2@silver.aravindahwk.org" {
+	if state.Email != "user2@silver.example.com" {
 		t.Fatalf("Expected OU-derived subdomain email, got: %s", state.Email)
 	}
 
