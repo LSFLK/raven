@@ -72,8 +72,8 @@ func TestIMAPServerToClient_ListMailboxes(t *testing.T) {
 	testData := helpers.CreateTestUser(t, dbManager.DBManager, "alice@example.com")
 
 	// Create additional mailboxes
-	_ = helpers.CreateTestMailbox(t, dbManager.DBManager, testData.UserID, "Work")
-	_ = helpers.CreateTestMailbox(t, dbManager.DBManager, testData.UserID, "Personal")
+	_ = helpers.CreateTestMailbox(t, dbManager.DBManager, testData.Email, "Work")
+	_ = helpers.CreateTestMailbox(t, dbManager.DBManager, testData.Email, "Personal")
 
 	// Start IMAP server
 	imapServer := helpers.StartTestIMAPServer(t, dbManager.DBManager)
@@ -249,11 +249,11 @@ func TestIMAPServerToClient_DataConsistency(t *testing.T) {
 	td := helpers.CreateTestUser(t, dbManager.DBManager, "alice@example.com")
 
 	// Create messages in DB and link to INBOX BEFORE starting IMAP server
-	userDB, err := dbManager.GetUserDB(td.UserID)
+	userDB, err := dbManager.GetUserDB(td.Email)
 	if err != nil {
 		t.Fatalf("get user DB: %v", err)
 	}
-	inboxID, err := db.GetMailboxByNamePerUser(userDB, td.UserID, "INBOX")
+	inboxID, err := db.GetMailboxByNamePerUser(userDB, "INBOX")
 	if err != nil {
 		t.Fatalf("get INBOX id: %v", err)
 	}

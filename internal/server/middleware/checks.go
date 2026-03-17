@@ -11,8 +11,8 @@ import (
 // ServerInterface defines methods needed from IMAPServer for middleware
 type ServerInterface interface {
 	SendResponse(conn net.Conn, response string)
-	GetUserDB(userID int64) (*sql.DB, error)
-	GetSelectedDB(state *models.ClientState) (*sql.DB, int64, error)
+	GetUserDB(email string) (*sql.DB, error)
+	GetSelectedDB(state *models.ClientState) (*sql.DB, error)
 	GetSharedDB() *sql.DB
 }
 
@@ -63,7 +63,7 @@ type HandlerWithDBFunc func(conn net.Conn, tag string, parts []string, state *mo
 // WithSelectedDB wraps a handler to provide access to the selected mailbox database
 func WithSelectedDB(server ServerInterface, handler HandlerWithDBFunc) HandlerFunc {
 	return func(conn net.Conn, tag string, parts []string, state *models.ClientState) {
-		targetDB, _, err := server.GetSelectedDB(state)
+		targetDB, err := server.GetSelectedDB(state)
 		if err != nil {
 			server.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 			return
@@ -75,7 +75,7 @@ func WithSelectedDB(server ServerInterface, handler HandlerWithDBFunc) HandlerFu
 // WithUserDB wraps a handler to provide access to the user database
 func WithUserDB(server ServerInterface, handler HandlerWithDBFunc) HandlerFunc {
 	return func(conn net.Conn, tag string, parts []string, state *models.ClientState) {
-		userDB, err := server.GetUserDB(state.UserID)
+		userDB, err := server.GetUserDB(state.Email)
 		if err != nil {
 			server.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 			return

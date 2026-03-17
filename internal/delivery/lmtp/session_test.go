@@ -772,16 +772,10 @@ func TestSession_Integration_BasicFlow(t *testing.T) {
 	}
 	defer func() { _ = dbManager.Close() }()
 
-	// Create domain and user
-	sharedDB := dbManager.GetSharedDB()
-	domainID, err := db.CreateDomain(sharedDB, "example.com")
+	// Initialize user DB for the test recipient
+	_, err = dbManager.GetUserDB("testuser@example.com")
 	if err != nil {
-		t.Fatalf("Failed to create domain: %v", err)
-	}
-
-	_, err = db.CreateUser(sharedDB, "testuser", domainID)
-	if err != nil {
-		t.Fatalf("Failed to create user: %v", err)
+		t.Fatalf("Failed to initialize user DB: %v", err)
 	}
 
 	// Setup session with real storage

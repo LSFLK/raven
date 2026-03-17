@@ -33,18 +33,18 @@ func (m *MockServer) SendResponse(conn net.Conn, response string) {
 	_, _ = conn.Write([]byte(response + "\r\n"))
 }
 
-func (m *MockServer) GetUserDB(userID int64) (*sql.DB, error) {
+func (m *MockServer) GetUserDB(email string) (*sql.DB, error) {
 	if m.getUserDBError != nil {
 		return nil, m.getUserDBError
 	}
 	return m.userDB, nil
 }
 
-func (m *MockServer) GetSelectedDB(state *models.ClientState) (*sql.DB, int64, error) {
+func (m *MockServer) GetSelectedDB(state *models.ClientState) (*sql.DB, error) {
 	if m.getSelectedDBError != nil {
-		return nil, 0, m.getSelectedDBError
+		return nil, m.getSelectedDBError
 	}
-	return m.selectedDB, state.UserID, nil
+	return m.selectedDB, nil
 }
 
 func (m *MockServer) GetSharedDB() *sql.DB {

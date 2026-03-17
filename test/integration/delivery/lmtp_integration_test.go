@@ -69,17 +69,17 @@ func TestLMTP_DeliverSuccess(t *testing.T) {
 	t.Log("LMTP session completed successfully, verifying message delivery...")
 
 	// Verify message count increased in INBOX
-	userDB, err := dbm.GetUserDB(td.UserID)
+	userDB, err := dbm.GetUserDB(td.Email)
 	if err != nil {
 		t.Fatalf("get user DB: %v", err)
 	}
-	t.Logf("Retrieved user database for UserID: %d", td.UserID)
+	t.Logf("Retrieved user database for email: %s", td.Email)
 
-	inboxID, err := db.GetMailboxByNamePerUser(userDB, td.UserID, "INBOX")
+	inboxID, err := db.GetMailboxByNamePerUser(userDB, "INBOX")
 	if err != nil {
 		t.Fatalf("get INBOX id: %v", err)
 	}
-	t.Logf("Found INBOX mailbox with ID: %d for user %d", inboxID, td.UserID)
+	t.Logf("Found INBOX mailbox with ID: %d for user %s", inboxID, td.Email)
 
 	// Count messages
 	count, err := db.GetMessageCountPerUser(userDB, inboxID)
@@ -95,7 +95,7 @@ func TestLMTP_DeliverSuccess(t *testing.T) {
 	t.Logf("✓ Message delivery verified: %d message(s) found in INBOX", count)
 }
 
-// TestLMTP_ErrorPropagation verifies RCPT failure for unknown user
+// TestLMTP_ErrorPropagation verifies RCPT acceptance for unknown user under IDP-managed identity.
 func TestLMTP_ErrorPropagation(t *testing.T) {
 	dbm := helpers.SetupTestDatabase(t)
 	defer helpers.TeardownTestDatabase(t, dbm)
@@ -112,9 +112,9 @@ func TestLMTP_ErrorPropagation(t *testing.T) {
 	if _, err := client.MAILFROM("sender@example.com"); err != nil {
 		t.Fatalf("MAIL FROM failed: %v", err)
 	}
-	// RCPT to a non-existent user should fail
-	if _, err := client.RCPTTO("nouser@example.com"); err == nil {
-		t.Fatalf("expected RCPT TO failure for unknown user")
+	// Recipient existence is managed by the IDP, so LMTP accepts the recipient at RCPT time.
+	if _, err := client.RCPTTO("nouser@example.com"); err != nil {
+		t.Fatalf("expected RCPT TO acceptance for unknown user, got: %v", err)
 	}
 	if _, err := client.QUIT(); err != nil {
 		t.Fatalf("QUIT failed: %v", err)
@@ -128,8 +128,8 @@ func TestLMTP_Concurrency(t *testing.T) {
 
 	users := []string{"a@example.com", "b@example.com", "c@example.com", "d@example.com"}
 	for _, u := range users {
-		td := helpers.CreateTestUser(t, dbm.DBManager, u)
-		t.Logf("Created test user: %s (UserID: %d)", u, td.UserID)
+		_ = helpers.CreateTestUser(t, dbm.DBManager, u)
+		t.Logf("Created test user: %s", u)
 	}
 
 	addr, _, cleanup := helpers.StartTestLMTPServer(t, dbm.DBManager)
@@ -186,7 +186,7 @@ func TestLMTP_DataConsistency(t *testing.T) {
 	defer helpers.TeardownTestDatabase(t, dbm)
 
 	td := helpers.CreateTestUser(t, dbm.DBManager, "alice@example.com")
-	t.Logf("Created test user: alice@example.com (UserID: %d)", td.UserID)
+	t.Logf("Created test user: alice@example.com")
 
 	addr, _, cleanup := helpers.StartTestLMTPServer(t, dbm.DBManager)
 	defer cleanup()
@@ -204,8 +204,8 @@ func TestLMTP_DataConsistency(t *testing.T) {
 
 	t.Log("Message delivered, verifying database consistency...")
 
-	userDB, _ := dbm.GetUserDB(td.UserID)
-	inboxID, _ := db.GetMailboxByNamePerUser(userDB, td.UserID, "INBOX")
+	userDB, _ := dbm.GetUserDB(td.Email)
+	inboxID, _ := db.GetMailboxByNamePerUser(userDB, "INBOX")
 	t.Logf("Using INBOX mailbox ID: %d", inboxID)
 
 	// Verify unseen count increments

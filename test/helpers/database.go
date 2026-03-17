@@ -13,6 +13,7 @@ import (
 
 // TestData contains test fixtures for integration tests
 type TestData struct {
+	Email     string
 	DomainID  int64
 	UserID    int64
 	MailboxID int64
@@ -77,38 +78,26 @@ func TeardownTestDatabase(t *testing.T, dbManager *TestDBManager) {
 // Creates a test domain, user, mailbox, and optionally a test message
 func SeedTestData(t *testing.T, dbManager *db.DBManager) TestData {
 	t.Helper()
-
-	sharedDB := dbManager.GetSharedDB()
-
-	// Create test domain
-	domainID, err := db.CreateDomain(sharedDB, "example.com")
-	if err != nil {
-		t.Fatalf("Failed to create test domain: %v", err)
-	}
-
-	// Create test user
-	userID, err := db.CreateUser(sharedDB, "testuser", domainID)
-	if err != nil {
-		t.Fatalf("Failed to create test user: %v", err)
-	}
+	email := "testuser@example.com"
 
 	// Get user database
-	userDB, err := dbManager.GetUserDB(userID)
+	userDB, err := dbManager.GetUserDB(email)
 	if err != nil {
 		t.Fatalf("Failed to get user database: %v", err)
 	}
 
 	// Get INBOX mailbox ID (created by default)
-	mailboxID, err := db.GetMailboxByNamePerUser(userDB, userID, "INBOX")
+	mailboxID, err := db.GetMailboxByNamePerUser(userDB, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
 
-	t.Logf("Test data seeded: domain=%d, user=%d, mailbox=%d", domainID, userID, mailboxID)
+	t.Logf("Test data seeded: email=%s, mailbox=%d", email, mailboxID)
 
 	return TestData{
-		DomainID:  domainID,
-		UserID:    userID,
+		Email:     email,
+		DomainID:  0,
+		UserID:    0,
 		MailboxID: mailboxID,
 		MessageID: 0, // No message created by default
 	}
@@ -118,58 +107,45 @@ func SeedTestData(t *testing.T, dbManager *db.DBManager) TestData {
 func CreateTestUser(t *testing.T, dbManager *db.DBManager, email string) TestData {
 	t.Helper()
 
-	// Parse email to extract username and domain
+	// Validate email format
 	username, domain := parseEmail(email)
 	if username == "" || domain == "" {
 		t.Fatalf("Invalid email format: %s", email)
 	}
 
-	sharedDB := dbManager.GetSharedDB()
-
-	// Create or get domain
-	domainID, err := db.GetOrCreateDomain(sharedDB, domain)
-	if err != nil {
-		t.Fatalf("Failed to create/get domain %s: %v", domain, err)
-	}
-
-	// Create or get user
-	userID, err := db.GetOrCreateUser(sharedDB, username, domainID)
-	if err != nil {
-		t.Fatalf("Failed to create/get user %s: %v", username, err)
-	}
-
 	// Get user database
-	userDB, err := dbManager.GetUserDB(userID)
+	userDB, err := dbManager.GetUserDB(email)
 	if err != nil {
 		t.Fatalf("Failed to get user database: %v", err)
 	}
 
 	// Get INBOX mailbox ID
-	mailboxID, err := db.GetMailboxByNamePerUser(userDB, userID, "INBOX")
+	mailboxID, err := db.GetMailboxByNamePerUser(userDB, "INBOX")
 	if err != nil {
 		t.Fatalf("Failed to get INBOX mailbox: %v", err)
 	}
 
-	t.Logf("Test user created: %s (domain=%d, user=%d)", email, domainID, userID)
+	t.Logf("Test user created: %s", email)
 
 	return TestData{
-		DomainID:  domainID,
-		UserID:    userID,
+		Email:     email,
+		DomainID:  0,
+		UserID:    0,
 		MailboxID: mailboxID,
 		MessageID: 0,
 	}
 }
 
 // CreateTestMailbox creates a mailbox for a user
-func CreateTestMailbox(t *testing.T, dbManager *db.DBManager, userID int64, mailboxName string) int64 {
+func CreateTestMailbox(t *testing.T, dbManager *db.DBManager, email string, mailboxName string) int64 {
 	t.Helper()
 
-	userDB, err := dbManager.GetUserDB(userID)
+	userDB, err := dbManager.GetUserDB(email)
 	if err != nil {
 		t.Fatalf("Failed to get user database: %v", err)
 	}
 
-	mailboxID, err := db.CreateMailboxPerUser(userDB, userID, mailboxName, "")
+	mailboxID, err := db.CreateMailboxPerUser(userDB, mailboxName, "")
 	if err != nil {
 		t.Fatalf("Failed to create mailbox %s: %v", mailboxName, err)
 	}
@@ -179,7 +155,7 @@ func CreateTestMailbox(t *testing.T, dbManager *db.DBManager, userID int64, mail
 }
 
 // AssertDatabaseExists verifies that a database file exists at the expected path
-func AssertDatabaseExists(t *testing.T, basePath string, dbType string, id int64) {
+func AssertDatabaseExists(t *testing.T, basePath string, dbType string, identifier string) {
 	t.Helper()
 
 	var dbPath string
@@ -187,9 +163,9 @@ func AssertDatabaseExists(t *testing.T, basePath string, dbType string, id int64
 	case "shared":
 		dbPath = filepath.Join(basePath, "shared.db")
 	case "user":
-		dbPath = filepath.Join(basePath, fmt.Sprintf("user_db_%d.db", id))
+		dbPath = filepath.Join(basePath, fmt.Sprintf("user_%s.db", identifier))
 	case "role":
-		dbPath = filepath.Join(basePath, fmt.Sprintf("role_db_%d.db", id))
+		dbPath = filepath.Join(basePath, fmt.Sprintf("role_db_%s.db", identifier))
 	default:
 		t.Fatalf("Unknown database type: %s", dbType)
 	}

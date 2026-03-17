@@ -19,6 +19,7 @@ func TestAuthenticatePlain_SuccessfulAuthWithServer(t *testing.T) {
 	// Create a mock auth server that returns 200 OK
 	authServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
+		writeAuthOK(w)
 	}))
 	defer authServer.Close()
 

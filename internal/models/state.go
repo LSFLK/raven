@@ -7,9 +7,10 @@ type ClientState struct {
 	SelectedFolder     string
 	SelectedMailboxID  int64  // Database ID of selected mailbox
 	Conn               net.Conn
-	Username           string
-	UserID             int64  // Database ID of authenticated user
-	DomainID           int64  // Database ID of user's domain
+	Username           string // Local part of the email address (before @)
+	Email              string // Full email address from IDP (username@domain)
+	UserID             int64  // Deprecated: kept for backward-compatible tests
+	DomainID           int64  // Deprecated: kept for backward-compatible tests
 	// Mailbox state tracking for NOOP and other commands
 	LastMessageCount   int    // Last known message count in selected folder
 	LastRecentCount    int    // Last known recent (unseen) message count

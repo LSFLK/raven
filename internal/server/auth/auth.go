@@ -1,12 +1,18 @@
 package auth
 
 import (
+	"bufio"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,7 +27,7 @@ type ServerDeps interface {
 	SendResponse(conn net.Conn, response string)
 	ExtractUsername(username string) string
 	GetUserDomain(username string) string
-	EnsureUserAndMailboxes(username, domain string) (userID int64, domainID int64, err error)
+	EnsureUserAndMailboxes(email string) error
 	GetDBManager() *db.DBManager
 	GetCertPath() string
 	GetKeyPath() string
@@ -263,7 +269,7 @@ func HandleLogout(deps ServerDeps, conn net.Conn, tag string) {
 
 // Extract common authentication logic
 func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username string, password string, state *models.ClientState) {
-	// Load domain from config file
+	// Load authentication service configuration
 	cfg, err := conf.LoadConfig()
 	if err != nil {
 		log.Printf("LoadConfig error: %v", err)
@@ -271,25 +277,35 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 		return
 	}
 
-	if cfg.Domain == "" || cfg.AuthServerURL == "" {
+	if cfg.AuthServerURL == "" {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Configuration error", tag))
 		return
 	}
 
-	// Determine the email address to use for authentication
-	var email string
-	if strings.Contains(username, "@") {
-		email = username
-	} else {
-		// Username doesn't contain domain - append configured domain
-		email = username + "@" + cfg.Domain
+	// Determine the username to use for authentication
+	authUsername := deps.ExtractUsername(username)
+	if authUsername == "" {
+		authUsername = username
 	}
 
 	// Prepare JSON body
-	requestBody := fmt.Sprintf(`{"email":"%s","password":"%s"}`, email, password)
+	requestPayload := map[string]any{
+		"identifiers": map[string]string{
+			"username": authUsername,
+		},
+		"credentials": map[string]string{
+			"password": password,
+		},
+		"skip_assertion": true,
+	}
+	requestBodyBytes, err := json.Marshal(requestPayload)
+	if err != nil {
+		deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Internal error", tag))
+		return
+	}
 
 	// Create HTTP request
-	req, err := http.NewRequest("POST", cfg.AuthServerURL, strings.NewReader(requestBody))
+	req, err := http.NewRequest("POST", cfg.AuthServerURL, strings.NewReader(string(requestBodyBytes)))
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Internal error", tag))
 		return
@@ -313,34 +329,83 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == 200 {
-		log.Printf("Accepting login for user: %s", username)
+		var authResp struct {
+			ID               string `json:"id"`
+			Type             string `json:"type"`
+			OrganizationUnit string `json:"organization_unit"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&authResp); err != nil {
+			log.Printf("LOGIN: failed to decode auth response: %v", err)
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
+			return
+		}
+		if authResp.ID == "" {
+			log.Printf("LOGIN: auth response missing id for user: %s", username)
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
+			return
+		}
 
-		// Extract username and domain
-		actualUsername := deps.ExtractUsername(username)
-		domain := deps.GetUserDomain(username)
+		log.Printf("Accepting login for user: %s (type=%s)", username, authResp.Type)
 
-		// Ensure user exists in database and has default mailboxes
-		userID, domainID, err := deps.EnsureUserAndMailboxes(actualUsername, domain)
-		if err != nil {
-			log.Printf("Failed to create user and mailboxes: %v", err)
+		derivedDomain := ""
+		if authResp.OrganizationUnit != "" {
+			if strings.Contains(username, "@") {
+				derivedDomain = resolveDomainFromOrganizationUnit(cfg.AuthServerURL, authResp.OrganizationUnit, authUsername, password)
+				if derivedDomain == "" {
+					log.Printf("LOGIN: unable to resolve OU-derived domain for login '%s'", username)
+					deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
+					return
+				}
+
+				loginEmail := normalizeEmail(username)
+				if loginEmail == "" {
+					log.Printf("LOGIN: invalid login identity format: %s", username)
+					deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
+					return
+				}
+
+				parts := strings.SplitN(loginEmail, "@", 2)
+				loginDomain := strings.Trim(strings.TrimSpace(parts[1]), ".")
+				expectedDomain := strings.Trim(strings.TrimSpace(derivedDomain), ".")
+				if !strings.EqualFold(loginDomain, expectedDomain) {
+					log.Printf("LOGIN: login domain '%s' does not match OU-derived domain '%s' for user '%s'", loginDomain, expectedDomain, username)
+					deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
+					return
+				}
+			} else if !strings.Contains(authResp.ID, "@") {
+				derivedDomain = resolveDomainFromOrganizationUnit(cfg.AuthServerURL, authResp.OrganizationUnit, authUsername, password)
+			}
+		}
+
+		email := resolveMailboxEmail(username, authResp.ID, derivedDomain)
+		if email == "" {
+			log.Printf("LOGIN: unable to resolve mailbox email from login '%s' and auth id '%s'", username, authResp.ID)
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
+			return
+		}
+
+		actualUsername := deps.ExtractUsername(email)
+
+		// Ensure user database exists and has default mailboxes
+		if err := deps.EnsureUserAndMailboxes(email); err != nil {
+			log.Printf("Failed to initialize user database: %v", err)
 			deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Server error", tag))
 			return
 		}
 
 		state.Authenticated = true
 		state.Username = actualUsername
-		state.UserID = userID
-		state.DomainID = domainID
+		state.Email = email
 
 		// Load role mailbox assignments for this user
-		roleMailboxIDs, err := db.GetUserRoleAssignments(deps.GetDBManager().GetSharedDB(), userID)
+		roleMailboxIDs, err := db.GetUserRoleAssignments(deps.GetDBManager().GetSharedDB(), email)
 		if err != nil {
-			log.Printf("Failed to load role assignments for user %d: %v", userID, err)
+			log.Printf("Failed to load role assignments for user %s: %v", email, err)
 			// Don't fail authentication, just continue without role mailboxes
 			state.RoleMailboxIDs = []int64{}
 		} else {
 			state.RoleMailboxIDs = roleMailboxIDs
-			log.Printf("User %s has %d role mailbox assignments", actualUsername, len(roleMailboxIDs))
+			log.Printf("User %s has %d role mailbox assignments", email, len(roleMailboxIDs))
 		}
 
 		// Detect if TLS is active
@@ -364,8 +429,345 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 		}
 		deps.SendResponse(conn, fmt.Sprintf("%s OK [CAPABILITY %s] Authenticated", tag, capabilities))
 	} else {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("LOGIN: auth server rejected login for %s (status=%d, body=%s)", username, resp.StatusCode, strings.TrimSpace(string(body)))
 		deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
 	}
+}
+
+func resolveMailboxEmail(loginIdentity, authID, derivedDomain string) string {
+	if email := normalizeEmail(loginIdentity); email != "" {
+		return email
+	}
+
+	if email := normalizeEmail(authID); email != "" {
+		return email
+	}
+
+	if derivedDomain != "" {
+		username := strings.TrimSpace(loginIdentity)
+		if username == "" {
+			username = strings.TrimSpace(authID)
+		}
+
+		if username != "" && !strings.Contains(username, "@") {
+			return username + "@" + derivedDomain
+		}
+	}
+
+	return ""
+}
+
+func normalizeEmail(value string) string {
+	trimmed := strings.TrimSpace(value)
+	parts := strings.Split(trimmed, "@")
+	if len(parts) != 2 {
+		return ""
+	}
+
+	local := strings.TrimSpace(parts[0])
+	domain := strings.Trim(strings.TrimSpace(parts[1]), ".")
+	if local == "" || domain == "" {
+		return ""
+	}
+
+	return local + "@" + domain
+}
+
+func resolveDomainFromOrganizationUnit(authServerURL, orgUnitID, username, password string) string {
+	baseURL, err := extractBaseURL(authServerURL)
+	if err != nil {
+		log.Printf("LOGIN: failed to parse auth server URL for OU domain resolution: %v", err)
+		return ""
+	}
+
+	log.Printf("LOGIN: resolving OU domain for org unit %s using bearer assertion", orgUnitID)
+
+	// Always prefer system assertion for OU reads because user-scoped assertions can be forbidden.
+	assertion := fetchSystemAssertion(baseURL)
+	if assertion == "" {
+		log.Printf("LOGIN: system assertion unavailable, attempting OU resolution with user assertion")
+		assertion = fetchAssertion(baseURL, username, password)
+	}
+
+	if assertion == "" {
+		log.Printf("LOGIN: failed to obtain assertion for OU domain resolution")
+		return ""
+	}
+
+	domain, err := resolveOrganizationUnitDomain(baseURL, orgUnitID, assertion)
+	if err != nil {
+		log.Printf("LOGIN: failed to resolve OU domain for %s: %v", orgUnitID, err)
+		return ""
+	}
+
+	log.Printf("LOGIN: resolved OU domain for %s as %s", orgUnitID, domain)
+
+	return domain
+}
+
+func extractBaseURL(rawURL string) (string, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", err
+	}
+
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("invalid auth server URL: %s", rawURL)
+	}
+
+	return parsed.Scheme + "://" + parsed.Host, nil
+}
+
+func fetchSystemAssertion(baseURL string) string {
+	username := getEnvOrDefault("IDP_SYSTEM_USERNAME", "admin")
+	password := getEnvOrDefault("IDP_SYSTEM_PASSWORD", "admin")
+	log.Printf("LOGIN: requesting system assertion for OU resolution using configured system identity")
+
+	assertion := fetchAssertion(baseURL, username, password)
+	if assertion == "" {
+		log.Printf("LOGIN: failed to obtain system assertion using configured IDP system credentials")
+	}
+
+	return assertion
+}
+
+func fetchAssertion(baseURL, username, password string) string {
+	applicationID := getApplicationID()
+	if applicationID == "" {
+		log.Printf("LOGIN: application ID not configured (set APPLICATION_ID/applicationId in env or .env)")
+		return ""
+	}
+
+	flowID, actionRef := startAuthenticationFlow(baseURL, applicationID)
+	if flowID == "" {
+		log.Printf("LOGIN: unable to start flow (no flow id returned)")
+		return ""
+	}
+
+	payload := map[string]any{
+		"flowId": flowID,
+		"inputs": map[string]string{
+			"username":              username,
+			"password":              password,
+			"requested_permissions": "system",
+		},
+		"action": actionRef,
+	}
+
+	var result struct {
+		Assertion string `json:"assertion"`
+	}
+
+	if err := postJSON(baseURL+"/flow/execute", payload, "", &result); err != nil {
+		log.Printf("LOGIN: flow execute failed for user %s: %v", username, err)
+		return ""
+	}
+
+	return strings.TrimSpace(result.Assertion)
+}
+
+func startAuthenticationFlow(baseURL, applicationID string) (string, string) {
+	configuredActionRef := strings.TrimSpace(os.Getenv("IDP_FLOW_ACTION"))
+	if configuredActionRef == "" {
+		configuredActionRef = strings.TrimSpace(os.Getenv("idp_flow_action"))
+	}
+
+	type executeFlowResponse struct {
+		FlowID string `json:"flowId"`
+		Data   struct {
+			Actions []struct {
+				Ref string `json:"ref"`
+			} `json:"actions"`
+		} `json:"data"`
+	}
+
+	var executeResult executeFlowResponse
+	err := postJSON(baseURL+"/flow/execute", map[string]string{
+		"applicationId": applicationID,
+		"flowType":      "AUTHENTICATION",
+	}, "", &executeResult)
+	if err == nil && executeResult.FlowID != "" {
+		actionRef := configuredActionRef
+		if actionRef == "" && len(executeResult.Data.Actions) > 0 {
+			actionRef = strings.TrimSpace(executeResult.Data.Actions[0].Ref)
+		}
+		if actionRef == "" {
+			actionRef = "action_001"
+		}
+
+		return executeResult.FlowID, actionRef
+	}
+	if err != nil {
+		log.Printf("LOGIN: flow bootstrap failed on /flow/execute: %v", err)
+	}
+
+	return "", ""
+}
+
+func resolveOrganizationUnitDomain(baseURL, orgUnitID, assertion string) (string, error) {
+	type ouResponse struct {
+		ID     string  `json:"id"`
+		Handle string  `json:"handle"`
+		Parent *string `json:"parent"`
+	}
+
+	handles := make([]string, 0, 4)
+	current := strings.TrimSpace(orgUnitID)
+	visited := map[string]struct{}{}
+
+	for current != "" {
+		if _, seen := visited[current]; seen {
+			return "", fmt.Errorf("cycle detected in OU hierarchy")
+		}
+		visited[current] = struct{}{}
+
+		var ou ouResponse
+		if err := getJSON(baseURL+"/organization-units/"+current, assertion, &ou); err != nil {
+			return "", err
+		}
+
+		handle := strings.TrimSpace(ou.Handle)
+		if handle != "" {
+			handles = append(handles, handle)
+		}
+
+		if ou.Parent == nil {
+			break
+		}
+		current = strings.TrimSpace(*ou.Parent)
+	}
+
+	if len(handles) == 0 {
+		return "", fmt.Errorf("no OU handles found")
+	}
+
+	return strings.Join(handles, "."), nil
+}
+
+func postJSON(endpoint string, payload any, assertion string, out any) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", endpoint, strings.NewReader(string(body)))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if assertion != "" {
+		req.Header.Set("Authorization", "Bearer "+assertion)
+	}
+
+	resp, err := buildAuthHTTPClient().Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	if out == nil {
+		return nil
+	}
+
+	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func getJSON(endpoint, assertion string, out any) error {
+	req, err := http.NewRequest("GET", endpoint, nil)
+	if err != nil {
+		return err
+	}
+	if assertion != "" {
+		req.Header.Set("Authorization", "Bearer "+assertion)
+	}
+
+	resp, err := buildAuthHTTPClient().Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func buildAuthHTTPClient() *http.Client {
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: true, // #nosec G402 -- Required for internal auth server communication
+	}
+
+	return &http.Client{
+		Transport: &http.Transport{TLSClientConfig: tlsConfig},
+		Timeout:   10 * time.Second,
+	}
+}
+
+func getApplicationID() string {
+	for _, key := range []string{"APPLICATION_ID", "applicationId"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+
+	for _, path := range []string{".env", "config/.env", "/etc/raven/.env"} {
+		if value := readEnvValue(path, []string{"APPLICATION_ID", "applicationId"}); value != "" {
+			return value
+		}
+	}
+
+	return ""
+}
+
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		return value
+	}
+
+	return defaultValue
+}
+
+func readEnvValue(path string, keys []string) string {
+	file, err := os.Open(filepath.Clean(path))
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = file.Close() }()
+
+	lookup := map[string]struct{}{}
+	for _, key := range keys {
+		lookup[key] = struct{}{}
+	}
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
+		if _, ok := lookup[key]; ok {
+			return value
+		}
+	}
+
+	return ""
 }
 
 // ===== HANDLE SSL CONNECTION =====

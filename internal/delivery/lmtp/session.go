@@ -205,18 +205,6 @@ func (s *Session) handleRCPT(args string) error {
 		}
 	}
 
-	// Check if user exists (if configured)
-	if s.config.Delivery.RejectUnknownUser {
-		exists, err := s.storage.CheckRecipientExists(to)
-		if err != nil {
-			log.Printf("Error checking recipient: %v", err)
-			return s.sendResponse(450, "4.3.0 Temporary failure")
-		}
-		if !exists {
-			return s.sendResponse(550, "5.1.1 User does not exist")
-		}
-	}
-
 	s.recipients = append(s.recipients, to)
 	return s.sendResponse(250, "2.1.5 Recipient OK")
 }

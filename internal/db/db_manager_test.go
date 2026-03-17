@@ -1,10 +1,15 @@
 package db
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func testEmailFromID(id int64) string {
+	return fmt.Sprintf("user-%d@example.com", id)
+}
 
 func TestNewDBManager(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "db_manager_test_*")
@@ -58,13 +63,13 @@ func TestGetSharedDB(t *testing.T) {
 	}
 
 	var count int
-	err = sharedDB.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='domains'").Scan(&count)
+	err = sharedDB.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='role_mailboxes'").Scan(&count)
 	if err != nil {
-		t.Fatalf("Failed to query domains table: %v", err)
+		t.Fatalf("Failed to query role_mailboxes table: %v", err)
 	}
 
 	if count != 1 {
-		t.Error("Expected domains table to exist in shared database")
+		t.Error("Expected role_mailboxes table to exist in shared database")
 	}
 }
 
@@ -82,7 +87,7 @@ func TestGetUserDB(t *testing.T) {
 	defer func() { _ = manager.Close() }()
 
 	userID := int64(123)
-	userDB, err := manager.GetUserDB(userID)
+	userDB, err := manager.GetUserDB(testEmailFromID(userID))
 	if err != nil {
 		t.Fatalf("GetUserDB failed: %v", err)
 	}
@@ -91,7 +96,7 @@ func TestGetUserDB(t *testing.T) {
 		t.Fatal("Expected non-nil user database")
 	}
 
-	dbPath := filepath.Join(tmpDir, "user_db_123.db")
+	dbPath := filepath.Join(tmpDir, fmt.Sprintf("user_%s.db", testEmailFromID(123)))
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 		t.Error("Expected user database file to be created")
 	}
@@ -121,12 +126,12 @@ func TestGetUserDB_Caching(t *testing.T) {
 	defer func() { _ = manager.Close() }()
 
 	userID := int64(123)
-	userDB1, err := manager.GetUserDB(userID)
+	userDB1, err := manager.GetUserDB(testEmailFromID(userID))
 	if err != nil {
 		t.Fatalf("First GetUserDB failed: %v", err)
 	}
 
-	userDB2, err := manager.GetUserDB(userID)
+	userDB2, err := manager.GetUserDB(testEmailFromID(userID))
 	if err != nil {
 		t.Fatalf("Second GetUserDB failed: %v", err)
 	}
@@ -154,7 +159,7 @@ func TestGetUserDB_DefaultMailboxes(t *testing.T) {
 	defer func() { _ = manager.Close() }()
 
 	userID := int64(123)
-	userDB, err := manager.GetUserDB(userID)
+	userDB, err := manager.GetUserDB(testEmailFromID(userID))
 	if err != nil {
 		t.Fatalf("GetUserDB failed: %v", err)
 	}
@@ -257,8 +262,8 @@ func TestClose(t *testing.T) {
 		t.Fatalf("NewDBManager failed: %v", err)
 	}
 
-	_, _ = manager.GetUserDB(1)
-	_, _ = manager.GetUserDB(2)
+	_, _ = manager.GetUserDB(testEmailFromID(1))
+	_, _ = manager.GetUserDB(testEmailFromID(2))
 	_, _ = manager.GetRoleMailboxDB(1)
 
 	err = manager.Close()
@@ -288,7 +293,7 @@ func TestClose_MultipleUserDBs(t *testing.T) {
 	}
 
 	for i := int64(1); i <= 5; i++ {
-		_, err := manager.GetUserDB(i)
+		_, err := manager.GetUserDB(testEmailFromID(i))
 		if err != nil {
 			t.Fatalf("GetUserDB(%d) failed: %v", i, err)
 		}
@@ -323,7 +328,7 @@ func TestSharedDBTables(t *testing.T) {
 
 	sharedDB := manager.GetSharedDB()
 
-	expectedTables := []string{"domains", "users", "role_mailboxes", "user_role_assignments", "blobs"}
+	expectedTables := []string{"role_mailboxes", "user_role_assignments", "blobs"}
 	for _, tableName := range expectedTables {
 		var count int
 		err = sharedDB.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", tableName).Scan(&count)
@@ -350,7 +355,7 @@ func TestUserDBTables(t *testing.T) {
 	}
 	defer func() { _ = manager.Close() }()
 
-	userDB, err := manager.GetUserDB(1)
+	userDB, err := manager.GetUserDB(testEmailFromID(1))
 	if err != nil {
 		t.Fatalf("GetUserDB failed: %v", err)
 	}
@@ -390,9 +395,6 @@ func TestSharedDBIndexes(t *testing.T) {
 	sharedDB := manager.GetSharedDB()
 
 	expectedIndexes := []string{
-		"idx_users_username_domain",
-		"idx_users_domain",
-		"idx_role_mailboxes_domain",
 		"idx_role_mailboxes_email",
 		"idx_role_assignments_user",
 		"idx_role_assignments_role",
@@ -426,13 +428,12 @@ func TestUserDBIndexes(t *testing.T) {
 	}
 	defer func() { _ = manager.Close() }()
 
-	userDB, err := manager.GetUserDB(1)
+	userDB, err := manager.GetUserDB(testEmailFromID(1))
 	if err != nil {
 		t.Fatalf("GetUserDB failed: %v", err)
 	}
 
 	expectedIndexes := []string{
-		"idx_mailboxes_user",
 		"idx_mailboxes_parent",
 		"idx_messages_date",
 		"idx_messages_thread",
@@ -447,7 +448,6 @@ func TestUserDBIndexes(t *testing.T) {
 		"idx_deliveries_message",
 		"idx_deliveries_status",
 		"idx_outbound_status",
-		"idx_subscriptions_user",
 	}
 
 	for _, indexName := range expectedIndexes {
@@ -476,12 +476,12 @@ func TestGetUserDB_ExistingDatabase(t *testing.T) {
 	}
 
 	userID := int64(123)
-	userDB1, err := manager1.GetUserDB(userID)
+	userDB1, err := manager1.GetUserDB(testEmailFromID(userID))
 	if err != nil {
 		t.Fatalf("First GetUserDB failed: %v", err)
 	}
 
-	_, err = CreateMailboxPerUser(userDB1, userID, "CustomMailbox", "")
+	_, err = CreateMailboxPerUser(userDB1, "CustomMailbox", "")
 	if err != nil {
 		t.Fatalf("Failed to create custom mailbox: %v", err)
 	}
@@ -494,7 +494,7 @@ func TestGetUserDB_ExistingDatabase(t *testing.T) {
 	}
 	defer func() { _ = manager2.Close() }()
 
-	userDB2, err := manager2.GetUserDB(userID)
+	userDB2, err := manager2.GetUserDB(testEmailFromID(userID))
 	if err != nil {
 		t.Fatalf("Second GetUserDB failed: %v", err)
 	}
@@ -535,7 +535,7 @@ func TestForeignKeyConstraints(t *testing.T) {
 		t.Error("Expected foreign keys to be enabled on shared database")
 	}
 
-	userDB, err := manager.GetUserDB(1)
+	userDB, err := manager.GetUserDB(testEmailFromID(1))
 	if err != nil {
 		t.Fatalf("GetUserDB failed: %v", err)
 	}

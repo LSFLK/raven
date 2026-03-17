@@ -520,19 +520,19 @@ func TestSASLDomainHandling(t *testing.T) {
 	client.ReadMultipleResponses()
 
 	testCases := []struct {
-		name          string
-		username      string
-		expectedEmail string
+		name             string
+		username         string
+		expectedUsername string
 	}{
 		{
-			name:          "Username without domain",
-			username:      "alice",
-			expectedEmail: "alice@example.com",
+			name:             "Username without domain",
+			username:         "alice",
+			expectedUsername: "alice",
 		},
 		{
-			name:          "Username with domain",
-			username:      "bob@custom.com",
-			expectedEmail: "bob@custom.com",
+			name:             "Username with domain",
+			username:         "bob@custom.com",
+			expectedUsername: "bob",
 		},
 	}
 
@@ -559,14 +559,22 @@ func TestSASLDomainHandling(t *testing.T) {
 				return
 			}
 
-			if email, ok := authRequest["email"].(string); ok {
-				if email != tc.expectedEmail {
-					t.Errorf("Expected email %s, got %s", tc.expectedEmail, email)
-				} else {
-					t.Logf("✓ Correct email sent to auth server: %s", email)
-				}
+			identifiers, ok := authRequest["identifiers"].(map[string]interface{})
+			if !ok {
+				t.Errorf("Identifiers field not found in auth request")
+				return
+			}
+
+			username, ok := identifiers["username"].(string)
+			if !ok {
+				t.Errorf("Identifiers.username field not found in auth request")
+				return
+			}
+
+			if username != tc.expectedUsername {
+				t.Errorf("Expected username %s, got %s", tc.expectedUsername, username)
 			} else {
-				t.Errorf("Email field not found in auth request")
+				t.Logf("✓ Correct username sent to auth server: %s", username)
 			}
 		})
 	}

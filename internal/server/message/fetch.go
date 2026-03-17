@@ -21,7 +21,7 @@ import (
 // HandleFetchForUIDs handles FETCH for a list of UIDs (used by UID FETCH command)
 func HandleFetchForUIDs(deps ServerDeps, conn net.Conn, tag string, uids []int, items string, state *models.ClientState) {
 	// Get appropriate database (user or role mailbox)
-	targetDB, _, err := deps.GetSelectedDB(state)
+	targetDB, err := deps.GetSelectedDB(state)
 	if err != nil {
 		return
 	}
@@ -67,7 +67,7 @@ func HandleFetch(deps ServerDeps, conn net.Conn, tag string, parts []string, sta
 	}
 
 	// Get appropriate database (user or role mailbox)
-	targetDB, _, err := deps.GetSelectedDB(state)
+	targetDB, err := deps.GetSelectedDB(state)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
 		return
@@ -183,7 +183,7 @@ func HandleFetch(deps ServerDeps, conn net.Conn, tag string, parts []string, sta
 // processFetchForMessage processes a single message for FETCH/UID FETCH
 func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64, seqNum int, flags, items string, state *models.ClientState) {
 	// Get appropriate database (user or role mailbox)
-	targetDB, _, err := deps.GetSelectedDB(state)
+	targetDB, err := deps.GetSelectedDB(state)
 	if err != nil {
 		return
 	}

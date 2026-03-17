@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -429,17 +430,30 @@ func (s *Server) handleLogin(conn net.Conn, id, resp string) {
 
 // authenticate validates credentials against external API
 func (s *Server) authenticate(username, password string) bool {
-	// Construct email address
-	email := username
-	if !strings.Contains(username, "@") {
-		email = username + "@" + s.domain
+	// Keep behavior consistent with IMAP auth: send the identifier as local username.
+	authUsername := username
+	if at := strings.Index(authUsername, "@"); at > 0 {
+		authUsername = authUsername[:at]
 	}
 
-	// Prepare JSON request
-	requestBody := fmt.Sprintf(`{"email":"%s","password":"%s"}`, email, password)
+	requestPayload := map[string]any{
+		"identifiers": map[string]string{
+			"username": authUsername,
+		},
+		"credentials": map[string]string{
+			"password": password,
+		},
+		"skip_assertion": true,
+	}
+
+	requestBodyBytes, err := json.Marshal(requestPayload)
+	if err != nil {
+		log.Printf("Failed to marshal authentication request payload: %v", err)
+		return false
+	}
 
 	// Create HTTP request
-	req, err := http.NewRequest("POST", s.authURL, strings.NewReader(requestBody))
+	req, err := http.NewRequest("POST", s.authURL, strings.NewReader(string(requestBodyBytes)))
 	if err != nil {
 		log.Printf("Failed to create HTTP request: %v", err)
 		return false
@@ -467,11 +481,11 @@ func (s *Server) authenticate(username, password string) bool {
 
 	// Check response status
 	if resp.StatusCode == 200 {
-		log.Printf("Authentication API returned success for user: %s", email)
+		log.Printf("Authentication API returned success for user: %s", authUsername)
 		return true
 	}
 
-	// #nosec G706 -- email is sanitized by caller, status code is int
-	log.Printf("Authentication API returned status %d for user: %s", resp.StatusCode, email)
+	// #nosec G706 -- authUsername is sanitized by caller, status code is int
+	log.Printf("Authentication API returned status %d for user: %s", resp.StatusCode, authUsername)
 	return false
 }

@@ -3,6 +3,7 @@ package sasl_test
 import (
 	"bufio"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"net"
@@ -282,17 +283,17 @@ func TestPlainAuthenticationSuccess(t *testing.T) {
 func TestPlainAuthenticationWithDomain(t *testing.T) {
 	socketPath := getSocketPath(t)
 
-	// Track the email received by auth server
-	var receivedEmail string
+	// Track the username identifier received by auth server
+	var receivedUsername string
 	authServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Read the request body to capture email
-		var buf [1024]byte
-		n, _ := r.Body.Read(buf[:])
-		body := string(buf[:n])
-
-		// Extract email from JSON body
-		if strings.Contains(body, "testuser@example.com") {
-			receivedEmail = "testuser@example.com"
+		// Read and parse the request body to capture the username identifier.
+		var requestBody map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err == nil {
+			if identifiers, ok := requestBody["identifiers"].(map[string]any); ok {
+				if username, ok := identifiers["username"].(string); ok {
+					receivedUsername = username
+				}
+			}
 		}
 
 		w.WriteHeader(http.StatusOK)
@@ -330,9 +331,9 @@ func TestPlainAuthenticationWithDomain(t *testing.T) {
 	// Give time for the auth request to complete
 	time.Sleep(100 * time.Millisecond)
 
-	// Verify domain was appended
-	if receivedEmail != "testuser@example.com" {
-		t.Errorf("Expected email with domain to be sent to auth server")
+	// Verify local-part username was sent to the auth API.
+	if receivedUsername != "testuser" {
+		t.Errorf("Expected username testuser to be sent to auth server, got %q", receivedUsername)
 	}
 }
 
