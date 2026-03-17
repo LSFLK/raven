@@ -70,9 +70,6 @@ func (c *Config) SetDefaults() {
 
 // Validate checks if the configuration is valid
 func (c *Config) Validate() error {
-	if c.Domain == "" {
-		return fmt.Errorf("domain is required")
-	}
 	if c.AuthServerURL == "" {
 		return fmt.Errorf("auth_server_url is required")
 	}

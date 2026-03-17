@@ -1574,9 +1574,7 @@ func TestCreateRoleMailbox(t *testing.T) {
 	db := setupTestDB(t)
 	defer func() { _ = db.Close() }()
 
-	domainID, _ := CreateDomain(db, "example.com")
-
-	roleID, err := CreateRoleMailbox(db, "support@example.com", domainID, "Support mailbox")
+	roleID, err := CreateRoleMailbox(db, "support@example.com", "Support mailbox")
 	if err != nil {
 		t.Fatalf("CreateRoleMailbox failed: %v", err)
 	}
@@ -1608,14 +1606,12 @@ func TestCreateRoleMailbox_Duplicate(t *testing.T) {
 	db := setupTestDB(t)
 	defer func() { _ = db.Close() }()
 
-	domainID, _ := CreateDomain(db, "example.com")
-
-	_, err := CreateRoleMailbox(db, "support@example.com", domainID, "Support mailbox")
+	_, err := CreateRoleMailbox(db, "support@example.com", "Support mailbox")
 	if err != nil {
 		t.Fatalf("First CreateRoleMailbox failed: %v", err)
 	}
 
-	_, err = CreateRoleMailbox(db, "support@example.com", domainID, "Support mailbox")
+	_, err = CreateRoleMailbox(db, "support@example.com", "Support mailbox")
 	if err == nil {
 		t.Error("Expected error when creating duplicate role mailbox")
 	}
@@ -1628,10 +1624,9 @@ func TestGetRoleMailboxByEmail(t *testing.T) {
 	db := setupTestDB(t)
 	defer func() { _ = db.Close() }()
 
-	domainID, _ := CreateDomain(db, "example.com")
-	createdID, _ := CreateRoleMailbox(db, "support@example.com", domainID, "Support mailbox")
+	createdID, _ := CreateRoleMailbox(db, "support@example.com", "Support mailbox")
 
-	retrievedID, retrievedDomainID, err := GetRoleMailboxByEmail(db, "support@example.com")
+	retrievedID, err := GetRoleMailboxByEmail(db, "support@example.com")
 	if err != nil {
 		t.Fatalf("GetRoleMailboxByEmail failed: %v", err)
 	}
@@ -1639,16 +1634,13 @@ func TestGetRoleMailboxByEmail(t *testing.T) {
 	if retrievedID != createdID {
 		t.Errorf("Expected role mailbox ID %d, got %d", createdID, retrievedID)
 	}
-	if retrievedDomainID != domainID {
-		t.Errorf("Expected domain ID %d, got %d", domainID, retrievedDomainID)
-	}
 }
 
 func TestGetRoleMailboxByEmail_NotFound(t *testing.T) {
 	db := setupTestDB(t)
 	defer func() { _ = db.Close() }()
 
-	_, _, err := GetRoleMailboxByEmail(db, "nonexistent@example.com")
+	_, err := GetRoleMailboxByEmail(db, "nonexistent@example.com")
 	if err == nil {
 		t.Error("Expected error when getting non-existent role mailbox")
 	}
@@ -1661,10 +1653,9 @@ func TestGetRoleMailboxByID(t *testing.T) {
 	db := setupTestDB(t)
 	defer func() { _ = db.Close() }()
 
-	domainID, _ := CreateDomain(db, "example.com")
-	roleID, _ := CreateRoleMailbox(db, "support@example.com", domainID, "Support mailbox")
+	roleID, _ := CreateRoleMailbox(db, "support@example.com", "Support mailbox")
 
-	email, retrievedDomainID, err := GetRoleMailboxByID(db, roleID)
+	email, err := GetRoleMailboxByID(db, roleID)
 	if err != nil {
 		t.Fatalf("GetRoleMailboxByID failed: %v", err)
 	}
@@ -1672,16 +1663,13 @@ func TestGetRoleMailboxByID(t *testing.T) {
 	if email != "support@example.com" {
 		t.Errorf("Expected email 'support@example.com', got %s", email)
 	}
-	if retrievedDomainID != domainID {
-		t.Errorf("Expected domain ID %d, got %d", domainID, retrievedDomainID)
-	}
 }
 
 func TestGetRoleMailboxByID_NotFound(t *testing.T) {
 	db := setupTestDB(t)
 	defer func() { _ = db.Close() }()
 
-	_, _, err := GetRoleMailboxByID(db, 99999)
+	_, err := GetRoleMailboxByID(db, 99999)
 	if err == nil {
 		t.Error("Expected error when getting non-existent role mailbox by ID")
 	}
@@ -1694,14 +1682,12 @@ func TestGetOrCreateRoleMailbox(t *testing.T) {
 	db := setupTestDB(t)
 	defer func() { _ = db.Close() }()
 
-	domainID, _ := CreateDomain(db, "example.com")
-
-	id1, err := GetOrCreateRoleMailbox(db, "support@example.com", domainID, "Support mailbox")
+	id1, err := GetOrCreateRoleMailbox(db, "support@example.com", "Support mailbox")
 	if err != nil {
 		t.Fatalf("First GetOrCreateRoleMailbox failed: %v", err)
 	}
 
-	id2, err := GetOrCreateRoleMailbox(db, "support@example.com", domainID, "Support mailbox")
+	id2, err := GetOrCreateRoleMailbox(db, "support@example.com", "Support mailbox")
 	if err != nil {
 		t.Fatalf("Second GetOrCreateRoleMailbox failed: %v", err)
 	}
@@ -1715,8 +1701,6 @@ func TestRoleMailboxExists(t *testing.T) {
 	db := setupTestDB(t)
 	defer func() { _ = db.Close() }()
 
-	domainID, _ := CreateDomain(db, "example.com")
-
 	exists, err := RoleMailboxExists(db, "support@example.com")
 	if err != nil {
 		t.Fatalf("RoleMailboxExists failed: %v", err)
@@ -1725,7 +1709,7 @@ func TestRoleMailboxExists(t *testing.T) {
 		t.Error("Role mailbox should not exist yet")
 	}
 
-	_, _ = CreateRoleMailbox(db, "support@example.com", domainID, "Support mailbox")
+	_, _ = CreateRoleMailbox(db, "support@example.com", "Support mailbox")
 
 	exists, err = RoleMailboxExists(db, "support@example.com")
 	if err != nil {
@@ -1740,26 +1724,23 @@ func TestAssignUserToRoleMailbox(t *testing.T) {
 	db := setupTestDB(t)
 	defer func() { _ = db.Close() }()
 
-	domainID, _ := CreateDomain(db, "example.com")
-	userID, _ := CreateUser(db, "testuser", domainID)
-	assignedByUserID, _ := CreateUser(db, "admin", domainID)
-	roleID, _ := CreateRoleMailbox(db, "support@example.com", domainID, "Support mailbox")
+	roleID, _ := CreateRoleMailbox(db, "support@example.com", "Support mailbox")
 
-	err := AssignUserToRoleMailbox(db, userID, roleID, assignedByUserID)
+	err := AssignUserToRoleMailbox(db, "testuser@example.com", roleID)
 	if err != nil {
 		t.Fatalf("AssignUserToRoleMailbox failed: %v", err)
 	}
 
-	var assignedUserID int64
+	var assignedUserEmail string
 	var isActive bool
-	err = db.QueryRow("SELECT user_id, is_active FROM user_role_assignments WHERE role_mailbox_id = ?", roleID).
-		Scan(&assignedUserID, &isActive)
+	err = db.QueryRow("SELECT user_email, is_active FROM user_role_assignments WHERE role_mailbox_id = ?", roleID).
+		Scan(&assignedUserEmail, &isActive)
 	if err != nil {
 		t.Fatalf("Failed to retrieve assignment: %v", err)
 	}
 
-	if assignedUserID != userID {
-		t.Errorf("Expected user ID %d, got %d", userID, assignedUserID)
+	if assignedUserEmail != "testuser@example.com" {
+		t.Errorf("Expected user email %s, got %s", "testuser@example.com", assignedUserEmail)
 	}
 	if !isActive {
 		t.Error("Expected assignment to be active")
@@ -1770,14 +1751,10 @@ func TestAssignUserToRoleMailbox_Reassign(t *testing.T) {
 	db := setupTestDB(t)
 	defer func() { _ = db.Close() }()
 
-	domainID, _ := CreateDomain(db, "example.com")
-	user1ID, _ := CreateUser(db, "user1", domainID)
-	user2ID, _ := CreateUser(db, "user2", domainID)
-	adminID, _ := CreateUser(db, "admin", domainID)
-	roleID, _ := CreateRoleMailbox(db, "support@example.com", domainID, "Support mailbox")
+	roleID, _ := CreateRoleMailbox(db, "support@example.com", "Support mailbox")
 
-	_ = AssignUserToRoleMailbox(db, user1ID, roleID, adminID)
-	err := AssignUserToRoleMailbox(db, user2ID, roleID, adminID)
+	_ = AssignUserToRoleMailbox(db, "user1@example.com", roleID)
+	err := AssignUserToRoleMailbox(db, "user2@example.com", roleID)
 	if err != nil {
 		t.Fatalf("Reassigning role mailbox failed: %v", err)
 	}
@@ -1792,14 +1769,14 @@ func TestAssignUserToRoleMailbox_Reassign(t *testing.T) {
 		t.Errorf("Expected 1 active assignment after reassignment, got %d", count)
 	}
 
-	var activeUserID int64
-	err = db.QueryRow("SELECT user_id FROM user_role_assignments WHERE role_mailbox_id = ? AND is_active = TRUE", roleID).Scan(&activeUserID)
+	var activeUserEmail string
+	err = db.QueryRow("SELECT user_email FROM user_role_assignments WHERE role_mailbox_id = ? AND is_active = TRUE", roleID).Scan(&activeUserEmail)
 	if err != nil {
 		t.Fatalf("Failed to retrieve active user: %v", err)
 	}
 
-	if activeUserID != user2ID {
-		t.Errorf("Expected active user ID %d, got %d", user2ID, activeUserID)
+	if activeUserEmail != "user2@example.com" {
+		t.Errorf("Expected active user email %s, got %s", "user2@example.com", activeUserEmail)
 	}
 }
 
@@ -1807,20 +1784,17 @@ func TestUnassignUserFromRoleMailbox(t *testing.T) {
 	db := setupTestDB(t)
 	defer func() { _ = db.Close() }()
 
-	domainID, _ := CreateDomain(db, "example.com")
-	userID, _ := CreateUser(db, "testuser", domainID)
-	adminID, _ := CreateUser(db, "admin", domainID)
-	roleID, _ := CreateRoleMailbox(db, "support@example.com", domainID, "Support mailbox")
+	roleID, _ := CreateRoleMailbox(db, "support@example.com", "Support mailbox")
 
-	_ = AssignUserToRoleMailbox(db, userID, roleID, adminID)
+	_ = AssignUserToRoleMailbox(db, "testuser@example.com", roleID)
 
-	err := UnassignUserFromRoleMailbox(db, userID, roleID)
+	err := UnassignUserFromRoleMailbox(db, "testuser@example.com", roleID)
 	if err != nil {
 		t.Fatalf("UnassignUserFromRoleMailbox failed: %v", err)
 	}
 
 	var isActive bool
-	err = db.QueryRow("SELECT is_active FROM user_role_assignments WHERE user_id = ? AND role_mailbox_id = ?", userID, roleID).Scan(&isActive)
+	err = db.QueryRow("SELECT is_active FROM user_role_assignments WHERE user_email = ? AND role_mailbox_id = ?", "testuser@example.com", roleID).Scan(&isActive)
 	if err != nil {
 		t.Fatalf("Failed to retrieve assignment: %v", err)
 	}
@@ -1834,17 +1808,13 @@ func TestGetUserRoleAssignments(t *testing.T) {
 	db := setupTestDB(t)
 	defer func() { _ = db.Close() }()
 
-	domainID, _ := CreateDomain(db, "example.com")
-	userID, _ := CreateUser(db, "testuser", domainID)
-	adminID, _ := CreateUser(db, "admin", domainID)
+	role1ID, _ := CreateRoleMailbox(db, "support@example.com", "Support mailbox")
+	role2ID, _ := CreateRoleMailbox(db, "sales@example.com", "Sales mailbox")
 
-	role1ID, _ := CreateRoleMailbox(db, "support@example.com", domainID, "Support mailbox")
-	role2ID, _ := CreateRoleMailbox(db, "sales@example.com", domainID, "Sales mailbox")
+	_ = AssignUserToRoleMailbox(db, "testuser@example.com", role1ID)
+	_ = AssignUserToRoleMailbox(db, "testuser@example.com", role2ID)
 
-	_ = AssignUserToRoleMailbox(db, userID, role1ID, adminID)
-	_ = AssignUserToRoleMailbox(db, userID, role2ID, adminID)
-
-	roleIDs, err := GetUserRoleAssignments(db, userID)
+	roleIDs, err := GetUserRoleAssignments(db, "testuser@example.com")
 	if err != nil {
 		t.Fatalf("GetUserRoleAssignments failed: %v", err)
 	}
@@ -1865,20 +1835,16 @@ func TestGetRoleMailboxAssignedUser(t *testing.T) {
 	db := setupTestDB(t)
 	defer func() { _ = db.Close() }()
 
-	domainID, _ := CreateDomain(db, "example.com")
-	userID, _ := CreateUser(db, "testuser", domainID)
-	adminID, _ := CreateUser(db, "admin", domainID)
-	roleID, _ := CreateRoleMailbox(db, "support@example.com", domainID, "Support mailbox")
+	roleID, _ := CreateRoleMailbox(db, "support@example.com", "Support mailbox")
 
-	_ = AssignUserToRoleMailbox(db, userID, roleID, adminID)
+	_ = AssignUserToRoleMailbox(db, "testuser@example.com", roleID)
 
-	assignedUserID, err := GetRoleMailboxAssignedUser(db, roleID)
+	assignedUserEmail, err := GetRoleMailboxAssignedEmail(db, roleID)
 	if err != nil {
-		t.Fatalf("GetRoleMailboxAssignedUser failed: %v", err)
+		t.Fatalf("GetRoleMailboxAssignedEmail failed: %v", err)
 	}
-
-	if assignedUserID != userID {
-		t.Errorf("Expected user ID %d, got %d", userID, assignedUserID)
+	if assignedUserEmail != "testuser@example.com" {
+		t.Errorf("Expected user email %s, got %s", "testuser@example.com", assignedUserEmail)
 	}
 }
 
@@ -1886,12 +1852,11 @@ func TestGetRoleMailboxAssignedUser_NoAssignment(t *testing.T) {
 	db := setupTestDB(t)
 	defer func() { _ = db.Close() }()
 
-	domainID, _ := CreateDomain(db, "example.com")
-	roleID, _ := CreateRoleMailbox(db, "support@example.com", domainID, "Support mailbox")
+	roleID, _ := CreateRoleMailbox(db, "support@example.com", "Support mailbox")
 
-	_, err := GetRoleMailboxAssignedUser(db, roleID)
+	_, err := GetRoleMailboxAssignedEmail(db, roleID)
 	if err == nil {
-		t.Error("Expected error when getting assigned user for unassigned role mailbox")
+		t.Error("Expected error when getting assigned email for unassigned role mailbox")
 	}
 	if !strings.Contains(err.Error(), "no active user assigned") {
 		t.Errorf("Expected 'no active user assigned' error, got: %v", err)
@@ -1902,12 +1867,9 @@ func TestIsUserAssignedToRoleMailbox(t *testing.T) {
 	db := setupTestDB(t)
 	defer func() { _ = db.Close() }()
 
-	domainID, _ := CreateDomain(db, "example.com")
-	userID, _ := CreateUser(db, "testuser", domainID)
-	adminID, _ := CreateUser(db, "admin", domainID)
-	roleID, _ := CreateRoleMailbox(db, "support@example.com", domainID, "Support mailbox")
+	roleID, _ := CreateRoleMailbox(db, "support@example.com", "Support mailbox")
 
-	assigned, err := IsUserAssignedToRoleMailbox(db, userID, roleID)
+	assigned, err := IsUserAssignedToRoleMailbox(db, "testuser@example.com", roleID)
 	if err != nil {
 		t.Fatalf("IsUserAssignedToRoleMailbox failed: %v", err)
 	}
@@ -1915,9 +1877,9 @@ func TestIsUserAssignedToRoleMailbox(t *testing.T) {
 		t.Error("User should not be assigned yet")
 	}
 
-	_ = AssignUserToRoleMailbox(db, userID, roleID, adminID)
+	_ = AssignUserToRoleMailbox(db, "testuser@example.com", roleID)
 
-	assigned, err = IsUserAssignedToRoleMailbox(db, userID, roleID)
+	assigned, err = IsUserAssignedToRoleMailbox(db, "testuser@example.com", roleID)
 	if err != nil {
 		t.Fatalf("IsUserAssignedToRoleMailbox failed after assignment: %v", err)
 	}

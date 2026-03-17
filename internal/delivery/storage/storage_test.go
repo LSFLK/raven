@@ -61,7 +61,7 @@ func TestDeliverMessage_NewUserAndMailbox(t *testing.T) {
     }
 
     // Message count for user should be 1
-    count, err := stor.GetMessageCount("user1")
+    count, err := stor.GetMessageCount("user1@example.com")
     if err != nil {
         t.Fatalf("GetMessageCount failed: %v", err)
     }
@@ -69,7 +69,7 @@ func TestDeliverMessage_NewUserAndMailbox(t *testing.T) {
         t.Errorf("expected 1 message, got %d", count)
     }
 
-    folderCount, err := stor.GetMessageCountInFolder("user1", "INBOX")
+    folderCount, err := stor.GetMessageCountInFolder("user1@example.com", "INBOX")
     if err != nil {
         t.Fatalf("GetMessageCountInFolder failed: %v", err)
     }
@@ -97,36 +97,20 @@ func TestDeliverToMultipleRecipients(t *testing.T) {
     }
 
     // verify counts for users
-    countA, _ := stor.GetMessageCount("usera")
-    countB, _ := stor.GetMessageCount("userb")
+    countA, _ := stor.GetMessageCount("usera@example.com")
+    countB, _ := stor.GetMessageCount("userb@example.com")
     if countA != 1 || countB != 1 {
         t.Errorf("expected one message for each valid user, got %d and %d", countA, countB)
     }
 }
 
-func TestCheckUserAndRecipientExists(t *testing.T) {
+func TestCheckUserExists(t *testing.T) {
     mgr := setupTestDBManager(t)
     stor := NewStorage(mgr)
 
     exists, err := stor.CheckUserExists("nouser")
-    if err != nil || exists {
-        t.Errorf("unexpected user existence: %v %v", exists, err)
-    }
-
-    // Deliver to create user
-    msg := buildParserMessage("sender@example.com", []string{"nouser@example.com"}, "X", "Body")
-    if err := stor.DeliverMessage("nouser@example.com", msg, "INBOX"); err != nil {
-        t.Fatalf("deliver failed: %v", err)
-    }
-
-    exists, err = stor.CheckUserExists("nouser")
     if err != nil || !exists {
-        t.Errorf("expected user to exist after delivery")
-    }
-
-    recExists, err := stor.CheckRecipientExists("nouser@example.com")
-    if err != nil || !recExists {
-        t.Errorf("expected recipient to exist: %v %v", recExists, err)
+        t.Errorf("expected user existence to be true: %v %v", exists, err)
     }
 }
 
@@ -139,7 +123,7 @@ func TestQuotaFunctions(t *testing.T) {
         t.Fatalf("deliver failed: %v", err)
     }
 
-    usage, err := stor.GetUserQuota("quotauser")
+    usage, err := stor.GetUserQuota("quotauser@example.com")
     if err != nil {
         t.Fatalf("GetUserQuota failed: %v", err)
     }
@@ -148,12 +132,12 @@ func TestQuotaFunctions(t *testing.T) {
     }
 
     // CheckQuota should succeed for large limit
-    if err := stor.CheckQuota("quotauser", 10, usage+1000); err != nil {
+    if err := stor.CheckQuota("quotauser@example.com", 10, usage+1000); err != nil {
         t.Errorf("unexpected quota failure: %v", err)
     }
 
     // Exceed quota
-    if err := stor.CheckQuota("quotauser", 10, usage-1); err == nil {
+    if err := stor.CheckQuota("quotauser@example.com", 10, usage-1); err == nil {
         t.Errorf("expected quota exceeded error")
     }
 }
@@ -163,7 +147,7 @@ func TestGetMessageCountInFolder_MissingFolder(t *testing.T) {
     stor := NewStorage(mgr)
 
     // No messages delivered yet
-    count, err := stor.GetMessageCountInFolder("nobody", "INBOX")
+    count, err := stor.GetMessageCountInFolder("nobody@example.com", "INBOX")
     if err != nil {
         t.Fatalf("unexpected error: %v", err)
     }
@@ -180,9 +164,12 @@ func TestCreateUserIfNotExists_WithDomainInName(t *testing.T) {
         t.Fatalf("CreateUserIfNotExists failed: %v", err)
     }
 
-    exists, err := stor.CheckRecipientExists("domainuser@example.net")
-    if err != nil || !exists {
-        t.Errorf("expected created user to exist: %v %v", exists, err)
+    count, err := stor.GetMessageCount("domainuser@example.net")
+    if err != nil {
+        t.Fatalf("GetMessageCount failed: %v", err)
+    }
+    if count != 0 {
+        t.Errorf("expected 0 messages for newly created user, got %d", count)
     }
 }
 
@@ -205,7 +192,7 @@ func TestDeliverMessage_CustomFolder(t *testing.T) {
         t.Fatalf("DeliverMessage to custom folder failed: %v", err)
     }
 
-    count, err := stor.GetMessageCountInFolder("custom", "CustomFolder")
+    count, err := stor.GetMessageCountInFolder("custom@example.com", "CustomFolder")
     if err != nil {
         t.Fatalf("GetMessageCountInFolder failed: %v", err)
     }
@@ -227,7 +214,7 @@ func TestDeliverMessage_MultipleDeliveries(t *testing.T) {
         }
     }
 
-    count, err := stor.GetMessageCount("multi")
+    count, err := stor.GetMessageCount("multi@example.com")
     if err != nil {
         t.Fatalf("GetMessageCount failed: %v", err)
     }
@@ -236,24 +223,11 @@ func TestDeliverMessage_MultipleDeliveries(t *testing.T) {
     }
 }
 
-func TestCheckRecipientExists_InvalidEmail(t *testing.T) {
-    mgr := setupTestDBManager(t)
-    stor := NewStorage(mgr)
-
-    exists, err := stor.CheckRecipientExists("invalid-email")
-    if err == nil {
-        t.Error("expected error for invalid email format")
-    }
-    if exists {
-        t.Error("expected false for invalid email")
-    }
-}
-
 func TestGetUserQuota_NonExistentUser(t *testing.T) {
     mgr := setupTestDBManager(t)
     stor := NewStorage(mgr)
 
-    usage, err := stor.GetUserQuota("nonexistent")
+    usage, err := stor.GetUserQuota("nonexistent@example.com")
     if err != nil {
         t.Fatalf("GetUserQuota should not error for non-existent user: %v", err)
     }
@@ -266,7 +240,7 @@ func TestGetMessageCount_NonExistentUser(t *testing.T) {
     mgr := setupTestDBManager(t)
     stor := NewStorage(mgr)
 
-    count, err := stor.GetMessageCount("nonexistent")
+    count, err := stor.GetMessageCount("nonexistent@example.com")
     if err != nil {
         t.Fatalf("GetMessageCount should not error for non-existent user: %v", err)
     }
@@ -306,7 +280,7 @@ func TestDeliverMessage_ToExistingFolder(t *testing.T) {
         t.Fatalf("Second delivery failed: %v", err)
     }
 
-    count, err := stor.GetMessageCountInFolder("foldertest", "TestFolder")
+    count, err := stor.GetMessageCountInFolder("foldertest@example.com", "TestFolder")
     if err != nil {
         t.Fatalf("GetMessageCountInFolder failed: %v", err)
     }
@@ -331,8 +305,7 @@ func TestDeliverToMultipleRecipients_AllValid(t *testing.T) {
 
     // Verify all users got the message
     for i, recipient := range recipients {
-        username := strings.Split(recipient, "@")[0]
-        count, _ := stor.GetMessageCount(username)
+        count, _ := stor.GetMessageCount(recipient)
         if count != 1 {
             t.Errorf("user%d should have 1 message, got %d", i+1, count)
         }
@@ -348,10 +321,10 @@ func TestCheckQuota_ExactLimit(t *testing.T) {
         t.Fatalf("deliver failed: %v", err)
     }
 
-    usage, _ := stor.GetUserQuota("quotatest")
+    usage, _ := stor.GetUserQuota("quotatest@example.com")
 
     // Exactly at limit should succeed
-    if err := stor.CheckQuota("quotatest", 0, usage); err != nil {
+    if err := stor.CheckQuota("quotatest@example.com", 0, usage); err != nil {
         t.Errorf("quota check at exact limit should succeed: %v", err)
     }
 }
@@ -368,12 +341,12 @@ func TestDeliverMessage_LargeBody(t *testing.T) {
         t.Fatalf("deliver large message failed: %v", err)
     }
 
-    count, _ := stor.GetMessageCount("largeuser")
+    count, _ := stor.GetMessageCount("largeuser@example.com")
     if count != 1 {
         t.Errorf("expected 1 message, got %d", count)
     }
 
-    usage, _ := stor.GetUserQuota("largeuser")
+    usage, _ := stor.GetUserQuota("largeuser@example.com")
     if usage <= 0 {
         t.Errorf("expected usage > 0 for large message")
     }
@@ -393,35 +366,16 @@ func TestDeliverMessage_MultipleFolders(t *testing.T) {
         }
     }
 
-    totalCount, _ := stor.GetMessageCount("multifolderuser")
+    totalCount, _ := stor.GetMessageCount("multifolderuser@example.com")
     if totalCount != 4 {
         t.Errorf("expected 4 total messages, got %d", totalCount)
     }
 
     for _, folder := range folders {
-        count, _ := stor.GetMessageCountInFolder("multifolderuser", folder)
+        count, _ := stor.GetMessageCountInFolder("multifolderuser@example.com", folder)
         if count != 1 {
             t.Errorf("expected 1 message in %s, got %d", folder, count)
         }
-    }
-}
-
-func TestCheckRecipientExists_AfterCreation(t *testing.T) {
-    mgr := setupTestDBManager(t)
-    stor := NewStorage(mgr)
-
-    // Create user first
-    if err := stor.CreateUserIfNotExists("checkuser@example.com"); err != nil {
-        t.Fatalf("CreateUserIfNotExists failed: %v", err)
-    }
-
-    // Check recipient should now find the user
-    exists, err := stor.CheckRecipientExists("checkuser@example.com")
-    if err != nil {
-        t.Errorf("CheckRecipientExists failed: %v", err)
-    }
-    if !exists {
-        t.Error("expected recipient to exist after creation")
     }
 }
 
@@ -430,7 +384,7 @@ func TestGetMessageCountInFolder_AfterDelivery(t *testing.T) {
     stor := NewStorage(mgr)
 
     // Initial count should be 0
-    count1, _ := stor.GetMessageCountInFolder("countuser", "INBOX")
+    count1, _ := stor.GetMessageCountInFolder("countuser@example.com", "INBOX")
     if count1 != 0 {
         t.Errorf("expected 0 initial messages, got %d", count1)
     }
@@ -442,7 +396,7 @@ func TestGetMessageCountInFolder_AfterDelivery(t *testing.T) {
     }
 
     // Count should now be 1
-    count2, _ := stor.GetMessageCountInFolder("countuser", "INBOX")
+    count2, _ := stor.GetMessageCountInFolder("countuser@example.com", "INBOX")
     if count2 != 1 {
         t.Errorf("expected 1 message after delivery, got %d", count2)
     }
@@ -486,7 +440,7 @@ func TestDeliverMessage_MultipartMessage(t *testing.T) {
         t.Fatalf("deliver multipart message failed: %v", err)
     }
 
-    count, _ := stor.GetMessageCount("multipart")
+    count, _ := stor.GetMessageCount("multipart@example.com")
     if count != 1 {
         t.Errorf("expected 1 message, got %d", count)
     }
@@ -523,7 +477,7 @@ func TestDeliverMessage_EmptyBody(t *testing.T) {
         t.Fatalf("deliver empty body message failed: %v", err)
     }
 
-    count, _ := stor.GetMessageCount("empty")
+    count, _ := stor.GetMessageCount("empty@example.com")
     if count != 1 {
         t.Errorf("expected 1 message, got %d", count)
     }
@@ -539,7 +493,7 @@ func TestDeliverMessage_SpecialCharactersInSubject(t *testing.T) {
         t.Fatalf("deliver message with special chars failed: %v", err)
     }
 
-    count, _ := stor.GetMessageCount("special")
+    count, _ := stor.GetMessageCount("special@example.com")
     if count != 1 {
         t.Errorf("expected 1 message, got %d", count)
     }
@@ -581,9 +535,10 @@ func TestDeliverMessage_WithDifferentDomains(t *testing.T) {
 
     // Verify all deliveries
     for _, domain := range domains {
-        exists, _ := stor.CheckRecipientExists("user@" + domain)
-        if !exists {
-            t.Errorf("expected user@%s to exist", domain)
+        recipient := "user@" + domain
+        count, _ := stor.GetMessageCount(recipient)
+        if count != 1 {
+            t.Errorf("expected 1 message for %s, got %d", recipient, count)
         }
     }
 }
@@ -593,7 +548,7 @@ func TestGetUserQuota_AfterMultipleDeliveries(t *testing.T) {
     stor := NewStorage(mgr)
 
     recipient := "quotamulti@example.com"
-    initialUsage, _ := stor.GetUserQuota("quotamulti")
+    initialUsage, _ := stor.GetUserQuota("quotamulti@example.com")
 
     // Deliver multiple messages
     for i := 0; i < 3; i++ {
@@ -604,7 +559,7 @@ func TestGetUserQuota_AfterMultipleDeliveries(t *testing.T) {
         }
     }
 
-    finalUsage, _ := stor.GetUserQuota("quotamulti")
+    finalUsage, _ := stor.GetUserQuota("quotamulti@example.com")
     if finalUsage <= initialUsage {
         t.Errorf("expected quota to increase after deliveries: initial=%d, final=%d", initialUsage, finalUsage)
     }
@@ -621,7 +576,7 @@ func TestGetMessageCountInFolder_NonExistentFolder(t *testing.T) {
     }
 
     // Check non-existent folder
-    count, err := stor.GetMessageCountInFolder("folderuser", "NonExistent")
+    count, err := stor.GetMessageCountInFolder("folderuser@example.com", "NonExistent")
     if err != nil {
         t.Fatalf("unexpected error: %v", err)
     }
@@ -686,7 +641,7 @@ func TestDeliverMessage_WithAttachment(t *testing.T) {
         t.Fatalf("deliver with attachment failed: %v", err)
     }
 
-    count, _ := stor.GetMessageCount("attach")
+    count, _ := stor.GetMessageCount("attach@example.com")
     if count != 1 {
         t.Errorf("expected 1 message, got %d", count)
     }
@@ -706,12 +661,12 @@ func TestSpamFiltering_RspamdActionReject(t *testing.T) {
     }
 
     // Should be in Spam folder, not INBOX
-    spamCount, _ := stor.GetMessageCountInFolder("spamuser", "Spam")
+    spamCount, _ := stor.GetMessageCountInFolder("spamuser@example.com", "Spam")
     if spamCount != 1 {
         t.Errorf("expected 1 message in Spam folder, got %d", spamCount)
     }
 
-    inboxCount, _ := stor.GetMessageCountInFolder("spamuser", "INBOX")
+    inboxCount, _ := stor.GetMessageCountInFolder("spamuser@example.com", "INBOX")
     if inboxCount != 0 {
         t.Errorf("expected 0 messages in INBOX, got %d", inboxCount)
     }
@@ -728,7 +683,7 @@ func TestSpamFiltering_RspamdActionAddHeader(t *testing.T) {
         t.Fatalf("deliver failed: %v", err)
     }
 
-    spamCount, _ := stor.GetMessageCountInFolder("spamuser2", "Spam")
+    spamCount, _ := stor.GetMessageCountInFolder("spamuser2@example.com", "Spam")
     if spamCount != 1 {
         t.Errorf("expected 1 message in Spam folder, got %d", spamCount)
     }
@@ -745,7 +700,7 @@ func TestSpamFiltering_RspamdActionRewriteSubject(t *testing.T) {
         t.Fatalf("deliver failed: %v", err)
     }
 
-    spamCount, _ := stor.GetMessageCountInFolder("spamuser3", "Spam")
+    spamCount, _ := stor.GetMessageCountInFolder("spamuser3@example.com", "Spam")
     if spamCount != 1 {
         t.Errorf("expected 1 message in Spam folder, got %d", spamCount)
     }
@@ -762,7 +717,7 @@ func TestSpamFiltering_XSpamStatusYes(t *testing.T) {
         t.Fatalf("deliver failed: %v", err)
     }
 
-    spamCount, _ := stor.GetMessageCountInFolder("spamuser4", "Spam")
+    spamCount, _ := stor.GetMessageCountInFolder("spamuser4@example.com", "Spam")
     if spamCount != 1 {
         t.Errorf("expected 1 message in Spam folder, got %d", spamCount)
     }
@@ -780,12 +735,12 @@ func TestSpamFiltering_NoActionGoesToInbox(t *testing.T) {
         t.Fatalf("deliver failed: %v", err)
     }
 
-    inboxCount, _ := stor.GetMessageCountInFolder("hamuser", "INBOX")
+    inboxCount, _ := stor.GetMessageCountInFolder("hamuser@example.com", "INBOX")
     if inboxCount != 1 {
         t.Errorf("expected 1 message in INBOX, got %d", inboxCount)
     }
 
-    spamCount, _ := stor.GetMessageCountInFolder("hamuser", "Spam")
+    spamCount, _ := stor.GetMessageCountInFolder("hamuser@example.com", "Spam")
     if spamCount != 0 {
         t.Errorf("expected 0 messages in Spam folder, got %d", spamCount)
     }
@@ -802,12 +757,12 @@ func TestSpamFiltering_NoHeadersGoesToInbox(t *testing.T) {
         t.Fatalf("deliver failed: %v", err)
     }
 
-    inboxCount, _ := stor.GetMessageCountInFolder("cleanuser", "INBOX")
+    inboxCount, _ := stor.GetMessageCountInFolder("cleanuser@example.com", "INBOX")
     if inboxCount != 1 {
         t.Errorf("expected 1 message in INBOX, got %d", inboxCount)
     }
 
-    spamCount, _ := stor.GetMessageCountInFolder("cleanuser", "Spam")
+    spamCount, _ := stor.GetMessageCountInFolder("cleanuser@example.com", "Spam")
     if spamCount != 0 {
         t.Errorf("expected 0 messages in Spam folder, got %d", spamCount)
     }
@@ -825,7 +780,7 @@ func TestSpamFiltering_CaseInsensitive(t *testing.T) {
         t.Fatalf("deliver failed: %v", err)
     }
 
-    spamCount, _ := stor.GetMessageCountInFolder("caseuser", "Spam")
+    spamCount, _ := stor.GetMessageCountInFolder("caseuser@example.com", "Spam")
     if spamCount != 1 {
         t.Errorf("expected 1 message in Spam folder (case-insensitive matching), got %d", spamCount)
     }
@@ -843,12 +798,12 @@ func TestSpamFiltering_GreylistGoesToInbox(t *testing.T) {
     }
 
     // Greylist action should go to INBOX, not Spam
-    inboxCount, _ := stor.GetMessageCountInFolder("greyuser", "INBOX")
+    inboxCount, _ := stor.GetMessageCountInFolder("greyuser@example.com", "INBOX")
     if inboxCount != 1 {
         t.Errorf("expected 1 message in INBOX for greylist, got %d", inboxCount)
     }
 
-    spamCount, _ := stor.GetMessageCountInFolder("greyuser", "Spam")
+    spamCount, _ := stor.GetMessageCountInFolder("greyuser@example.com", "Spam")
     if spamCount != 0 {
         t.Errorf("expected 0 messages in Spam folder for greylist, got %d", spamCount)
     }

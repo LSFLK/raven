@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"raven/internal/blobstorage"
-	"raven/internal/conf"
 	"raven/internal/db"
 	"raven/internal/models"
 	"raven/internal/server/auth"
@@ -71,47 +70,54 @@ func (s *IMAPServer) HandleConnection(conn net.Conn) {
 
 // ===== Helper functions for new schema =====
 
-// EnsureUserAndMailboxes ensures user exists in database and has default mailboxes (exported for commands)
-func (s *IMAPServer) EnsureUserAndMailboxes(username string, domain string) (int64, int64, error) {
-	sharedDB := s.dbManager.GetSharedDB()
-
-	// Get or create domain
-	domainID, err := db.GetOrCreateDomain(sharedDB, domain)
-	if err != nil {
-		return 0, 0, fmt.Errorf("failed to get/create domain: %v", err)
-	}
-
-	// Get or create user
-	// Get or create user for automated flows (e.g., login via external auth or delivery-created users)
-	userID, err := db.GetOrCreateUser(sharedDB, username, domainID)
-	if err != nil {
-		return 0, 0, fmt.Errorf("failed to get/create user: %v", err)
-	}
-
+// EnsureUserAndMailboxes ensures user database exists and has default mailboxes (exported for commands)
+func (s *IMAPServer) EnsureUserAndMailboxes(email string) error {
 	// Get user database (this will create default mailboxes if it's a new user)
-	_, err = s.dbManager.GetUserDB(userID)
+	_, err := s.dbManager.GetUserDB(email)
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to initialize user database: %v", err)
+		return fmt.Errorf("failed to initialize user database: %v", err)
 	}
-
-	return userID, domainID, nil
+	return nil
 }
 
 // GetUserDB returns the database connection for a user (exported for commands)
-func (s *IMAPServer) GetUserDB(userID int64) (*sql.DB, error) {
-	return s.dbManager.GetUserDB(userID)
+func (s *IMAPServer) GetUserDB(email string) (*sql.DB, error) {
+	return s.dbManager.GetUserDB(email)
 }
 
 // GetSelectedDB returns the appropriate database based on client state (exported for commands)
 // If a role mailbox is selected, returns the role mailbox database
 // Otherwise returns the user's database
-func (s *IMAPServer) GetSelectedDB(state *models.ClientState) (*sql.DB, int64, error) {
+func (s *IMAPServer) GetSelectedDB(state *models.ClientState) (*sql.DB, error) {
 	if state.IsRoleMailbox {
 		roleDB, err := s.dbManager.GetRoleMailboxDB(state.SelectedRoleMailboxID)
-		return roleDB, 0, err // userID is 0 for role mailboxes
+		return roleDB, err
 	}
-	userDB, err := s.dbManager.GetUserDB(state.UserID)
-	return userDB, state.UserID, err
+	email := resolveStateEmail(state)
+	userDB, err := s.dbManager.GetUserDB(email)
+	return userDB, err
+}
+
+func resolveStateEmail(state *models.ClientState) string {
+	if state.Email != "" {
+		return state.Email
+	}
+	if state.Username == "" {
+		if state.UserID > 0 {
+			if email := getTestUserEmail(state.UserID); email != "" {
+				return email
+			}
+			if email := getSingleTestUserEmail(); email != "" {
+				return email
+			}
+			return fmt.Sprintf("user-%d@localhost", state.UserID)
+		}
+		return ""
+	}
+	if strings.Contains(state.Username, "@") {
+		return state.Username
+	}
+	return state.Username + "@localhost"
 }
 
 // GetSharedDB returns the shared database connection (exported for commands)
@@ -134,24 +140,17 @@ func (s *IMAPServer) GetKeyPath() string {
 	return s.keyPath
 }
 
-// GetUserDomain extracts domain from username or uses default from config (exported for commands)
+// GetUserDomain extracts domain only from an explicit email value (exported for commands)
 func (s *IMAPServer) GetUserDomain(username string) string {
 	// If username contains @, extract domain
 	if strings.Contains(username, "@") {
 		parts := strings.Split(username, "@")
 		if len(parts) == 2 {
-			return parts[1]
+			return strings.Trim(parts[1], ".")
 		}
 	}
 
-	// Use domain from config
-	cfg, err := conf.LoadConfig()
-	if err == nil && cfg.Domain != "" {
-		return cfg.Domain
-	}
-
-	// Fallback to localhost
-	return "localhost"
+	return ""
 }
 
 // ExtractUsername removes domain from username if present (exported for commands)

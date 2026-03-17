@@ -107,7 +107,7 @@ Connect using any IMAP client to start managing your emails.
 | Volume                      | Path                                  | Description                                                                                        |
 |-----------------------------|---------------------------------------|----------------------------------------------------------------------------------------------------|
 | **Configuration(IMAP)**     | `-v $(pwd)/config:/etc/raven`         | Configuration directory containing `raven.yaml`                                                    |
-| **Data**                    | `-v $(pwd)/data:/app/data`            | Data directory for SQLite databases (`shared.db`, `user_db_*.db`, `role_db_*.db`) and mail storage |
+| **Data**                    | `-v $(pwd)/data:/app/data`            | Data directory for SQLite databases (`shared.db`, `user_*.db`, `role_db_*.db`) and mail storage |
 | **Certificates**            | `-v $(pwd)/certs:/certs`              | TLS/SSL certificates directory containing `fullchain.pem` and `privkey.pem` for IMAPS and STARTTLS |
 | **Configuration(Delivery)** | `-v $(pwd)/config:/etc/raven` | Delivery service configuration file `delivery.yaml`                                                 |
 
