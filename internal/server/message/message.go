@@ -887,12 +887,18 @@ func HandleStore(deps ServerDeps, conn net.Conn, tag string, parts []string, sta
 			// Determine restoration target
 			targetFolder := "INBOX"
 			var prevMailboxID sql.NullInt64
-			err = userDB.QueryRow("SELECT previous_mailbox_id FROM message_mailbox WHERE message_id = ? AND mailbox_id = ?", messageID, state.SelectedMailboxID).Scan(&prevMailboxID)
-			if err == nil && prevMailboxID.Valid {
+			dbErr := userDB.QueryRow("SELECT previous_mailbox_id FROM message_mailbox WHERE message_id = ? AND mailbox_id = ?", messageID, state.SelectedMailboxID).Scan(&prevMailboxID)
+			if dbErr != nil && dbErr != sql.ErrNoRows {
+				log.Printf("Failed to query previous_mailbox_id for message %d: %v", messageID, dbErr)
+			}
+
+			if prevMailboxID.Valid {
 				// Try to get the name of the previous mailbox
 				var prevName string
-				err = userDB.QueryRow("SELECT name FROM mailboxes WHERE id = ?", prevMailboxID.Int64).Scan(&prevName)
-				if err == nil {
+				dbErr = userDB.QueryRow("SELECT name FROM mailboxes WHERE id = ?", prevMailboxID.Int64).Scan(&prevName)
+				if dbErr != nil && dbErr != sql.ErrNoRows {
+					log.Printf("Failed to get name for previous mailbox ID %d: %v", prevMailboxID.Int64, dbErr)
+				} else if dbErr == nil {
 					targetFolder = prevName
 				}
 			}

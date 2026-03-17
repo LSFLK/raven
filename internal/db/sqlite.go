@@ -337,7 +337,11 @@ func createMessageMailboxTable(db *sql.DB) error {
 	// Migration: Add previous_mailbox_id column if it doesn't exist
 	var count int
 	err := db.QueryRow("SELECT count(*) FROM pragma_table_info('message_mailbox') WHERE name='previous_mailbox_id'").Scan(&count)
-	if err == nil && count == 0 {
+	if err != nil {
+		return fmt.Errorf("failed to check for previous_mailbox_id column: %w", err)
+	}
+
+	if count == 0 {
 		_, err = db.Exec("ALTER TABLE message_mailbox ADD COLUMN previous_mailbox_id INTEGER REFERENCES mailboxes(id)")
 		if err != nil {
 			return fmt.Errorf("failed to add previous_mailbox_id column: %v", err)
