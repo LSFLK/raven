@@ -117,10 +117,21 @@ func (gr *GroupResolver) ResolveGroupMembers(groupName string) ([]string, error)
 
 // getOrFreshAssertion returns a cached assertion or fetches a new one if expired
 func (gr *GroupResolver) getOrFreshAssertion() (string, error) {
+	gr.mu.RLock()
+	if gr.assertionCache != nil && gr.assertionCache.assertion != "" {
+		if time.Now().Add(assertionCacheBufferTime).Before(gr.assertionCache.expiresAt) {
+			log.Printf("GroupResolver: using cached assertion (expires in %v)", time.Until(gr.assertionCache.expiresAt))
+			assertion := gr.assertionCache.assertion
+			gr.mu.RUnlock()
+			return assertion, nil
+		}
+	}
+	gr.mu.RUnlock()
+
 	gr.mu.Lock()
 	defer gr.mu.Unlock()
 
-	// Check if we have a valid cached assertion
+	// Double-check cache in case another goroutine refreshed while waiting for write lock
 	if gr.assertionCache != nil && gr.assertionCache.assertion != "" {
 		if time.Now().Add(assertionCacheBufferTime).Before(gr.assertionCache.expiresAt) {
 			log.Printf("GroupResolver: using cached assertion (expires in %v)", time.Until(gr.assertionCache.expiresAt))

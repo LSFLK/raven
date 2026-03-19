@@ -33,27 +33,7 @@ type Server struct {
 
 // NewServer creates a new LMTP server
 func NewServer(dbManager *db.DBManager, cfg *config.Config) *Server {
-	// Initialize group resolver if IDP URL is configured
-	var gr *groupresolver.GroupResolver
-	if cfg.IDPBaseURL != "" {
-		systemUsername := strings.TrimSpace(os.Getenv("IDP_SYSTEM_USERNAME"))
-		if systemUsername == "" {
-			systemUsername = "admin"
-		}
-		systemPassword := strings.TrimSpace(os.Getenv("IDP_SYSTEM_PASSWORD"))
-		if systemPassword == "" {
-			systemPassword = "admin"
-		}
-		appID := os.Getenv("APPLICATION_ID")
-		if appID == "" {
-			appID = os.Getenv("applicationId")
-		}
-
-		gr = groupresolver.NewGroupResolver(cfg.IDPBaseURL, appID, systemUsername, systemPassword)
-		log.Printf("Initialized group resolver with IDP: %s", cfg.IDPBaseURL)
-	} else {
-		log.Println("Warning: IDP base URL not configured, group email delivery will be disabled")
-	}
+	gr := initGroupResolver(cfg)
 
 	return &Server{
 		dbManager:     dbManager,
@@ -67,27 +47,7 @@ func NewServer(dbManager *db.DBManager, cfg *config.Config) *Server {
 
 // NewServerWithS3 creates a new LMTP server with S3 blob storage
 func NewServerWithS3(dbManager *db.DBManager, cfg *config.Config, s3Storage *blobstorage.S3BlobStorage) *Server {
-	// Initialize group resolver if IDP URL is configured
-	var gr *groupresolver.GroupResolver
-	if cfg.IDPBaseURL != "" {
-		systemUsername := strings.TrimSpace(os.Getenv("IDP_SYSTEM_USERNAME"))
-		if systemUsername == "" {
-			systemUsername = "admin"
-		}
-		systemPassword := strings.TrimSpace(os.Getenv("IDP_SYSTEM_PASSWORD"))
-		if systemPassword == "" {
-			systemPassword = "admin"
-		}
-		appID := os.Getenv("APPLICATION_ID")
-		if appID == "" {
-			appID = os.Getenv("applicationId")
-		}
-
-		gr = groupresolver.NewGroupResolver(cfg.IDPBaseURL, appID, systemUsername, systemPassword)
-		log.Printf("Initialized group resolver with IDP: %s", cfg.IDPBaseURL)
-	} else {
-		log.Println("Warning: IDP base URL not configured, group email delivery will be disabled")
-	}
+	gr := initGroupResolver(cfg)
 
 	return &Server{
 		dbManager:     dbManager,
@@ -97,6 +57,33 @@ func NewServerWithS3(dbManager *db.DBManager, cfg *config.Config, s3Storage *blo
 		groupResolver: gr,
 		shutdown:      make(chan struct{}),
 	}
+}
+
+func initGroupResolver(cfg *config.Config) *groupresolver.GroupResolver {
+	if cfg.IDPBaseURL == "" {
+		log.Println("Warning: IDP base URL not configured, group email delivery will be disabled")
+		return nil
+	}
+
+	systemUsername := strings.TrimSpace(os.Getenv("IDP_SYSTEM_USERNAME"))
+	if systemUsername == "" {
+		systemUsername = "admin"
+	}
+
+	systemPassword := strings.TrimSpace(os.Getenv("IDP_SYSTEM_PASSWORD"))
+	if systemPassword == "" {
+		systemPassword = "admin"
+	}
+
+	appID := os.Getenv("APPLICATION_ID")
+	if appID == "" {
+		appID = os.Getenv("applicationId")
+	}
+
+	gr := groupresolver.NewGroupResolver(cfg.IDPBaseURL, appID, systemUsername, systemPassword)
+	log.Printf("Initialized group resolver with IDP: %s", cfg.IDPBaseURL)
+
+	return gr
 }
 
 // Start starts the LMTP server on configured listeners

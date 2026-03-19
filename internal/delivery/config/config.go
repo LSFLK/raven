@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -96,7 +97,7 @@ func LoadConfig(path string) (*Config, error) {
 	// Try to load raven.yaml to get IDP URL and domain
 	if err := loadMainConfig(cfg); err != nil {
 		// Log warning but don't fail - group resolution will just not work
-		fmt.Printf("Warning: failed to load main config for group resolution: %v\n", err)
+		log.Printf("Warning: failed to load main config for group resolution: %v", err)
 	}
 
 	// Validate configuration

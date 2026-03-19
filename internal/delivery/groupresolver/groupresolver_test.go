@@ -10,6 +10,25 @@ import (
 	"time"
 )
 
+func decodeRequestJSON(w http.ResponseWriter, r *http.Request, out any) bool {
+	if err := json.NewDecoder(r.Body).Decode(out); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return false
+	}
+
+	return true
+}
+
+func writeResponseJSON(w http.ResponseWriter, payload any) bool {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		return false
+	}
+
+	return true
+}
+
 func createTestJWT(exp int64) string {
 	header := map[string]string{"alg": "HS256", "typ": "JWT"}
 	headerJSON, _ := json.Marshal(header)
@@ -55,50 +74,13 @@ func TestExtractJWTExpiry(t *testing.T) {
 	}
 }
 
-func TestIsGroupEmail(t *testing.T) {
-	tests := []struct {
-		name     string
-		email    string
-		expected bool
-	}{
-		{"valid group email", "engineering-group@example.com", true},
-		{"non-group email", "john@example.com", false},
-	}
-
-	for _, tt := range tests {
-		// These would be tested via session integration tests
-		_ = tt
-	}
-}
-
-func TestParseGroupEmail(t *testing.T) {
-	tests := []struct {
-		name       string
-		email      string
-		wantGroup  string
-		wantDomain string
-		wantErr    bool
-	}{
-		{
-			name:       "valid group email",
-			email:      "engineering-group@example.com",
-			wantGroup:  "engineering",
-			wantDomain: "example.com",
-			wantErr:    false,
-		},
-	}
-
-	for _, tt := range tests {
-		// These would be tested via session integration tests
-		_ = tt
-	}
-}
-
 func TestGroupResolverAuthentication(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/flow/execute" && r.Method == http.MethodPost {
 			var reqBody map[string]interface{}
-			json.NewDecoder(r.Body).Decode(&reqBody)
+			if !decodeRequestJSON(w, r, &reqBody) {
+				return
+			}
 
 			if _, ok := reqBody["applicationId"]; ok {
 				resp := map[string]interface{}{
@@ -107,14 +89,12 @@ func TestGroupResolverAuthentication(t *testing.T) {
 						"actions": []map[string]string{{"ref": "action_001"}},
 					},
 				}
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				_ = writeResponseJSON(w, resp)
 			} else if _, ok := reqBody["flowId"]; ok {
 				exp := time.Now().Add(1 * time.Hour).Unix()
 				token := createTestJWT(exp)
 				resp := map[string]interface{}{"assertion": token}
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				_ = writeResponseJSON(w, resp)
 			}
 		}
 	}))
@@ -146,7 +126,9 @@ func TestGroupMemberResolution(t *testing.T) {
 		switch r.URL.Path {
 		case "/flow/execute":
 			var reqBody map[string]interface{}
-			json.NewDecoder(r.Body).Decode(&reqBody)
+			if !decodeRequestJSON(w, r, &reqBody) {
+				return
+			}
 
 			if _, ok := reqBody["applicationId"]; ok {
 				// Bootstrap request
@@ -156,15 +138,13 @@ func TestGroupMemberResolution(t *testing.T) {
 						"actions": []map[string]string{{"ref": "action_001"}},
 					},
 				}
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				_ = writeResponseJSON(w, resp)
 			} else {
 				// Flow execute request
 				exp := time.Now().Add(1 * time.Hour).Unix()
 				token := createTestJWT(exp)
 				resp := map[string]interface{}{"assertion": token}
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				_ = writeResponseJSON(w, resp)
 			}
 
 		case "/groups":
@@ -178,8 +158,7 @@ func TestGroupMemberResolution(t *testing.T) {
 					{"id": "group-eng", "name": "engineering"},
 				},
 			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = writeResponseJSON(w, resp)
 
 		case "/groups/group-eng/members":
 			auth := r.Header.Get("Authorization")
@@ -193,8 +172,7 @@ func TestGroupMemberResolution(t *testing.T) {
 					{"id": "user-2", "type": "user"},
 				},
 			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = writeResponseJSON(w, resp)
 
 		case "/users/user-1":
 			resp := map[string]interface{}{
@@ -204,8 +182,7 @@ func TestGroupMemberResolution(t *testing.T) {
 					"username": "alice",
 				},
 			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = writeResponseJSON(w, resp)
 
 		case "/users/user-2":
 			resp := map[string]interface{}{
@@ -215,8 +192,7 @@ func TestGroupMemberResolution(t *testing.T) {
 					"username": "bob",
 				},
 			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = writeResponseJSON(w, resp)
 
 		case "/organization-units/ou-1":
 			resp := map[string]interface{}{
@@ -224,8 +200,7 @@ func TestGroupMemberResolution(t *testing.T) {
 				"handle": "example.com",
 				"parent": nil,
 			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = writeResponseJSON(w, resp)
 
 		case "/organization-units/ou-2":
 			resp := map[string]interface{}{
@@ -233,8 +208,7 @@ func TestGroupMemberResolution(t *testing.T) {
 				"handle": "example.net",
 				"parent": nil,
 			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = writeResponseJSON(w, resp)
 
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -270,7 +244,9 @@ func TestGroupNotFound(t *testing.T) {
 		switch r.URL.Path {
 		case "/flow/execute":
 			var reqBody map[string]interface{}
-			json.NewDecoder(r.Body).Decode(&reqBody)
+			if !decodeRequestJSON(w, r, &reqBody) {
+				return
+			}
 
 			if _, ok := reqBody["applicationId"]; ok {
 				resp := map[string]interface{}{
@@ -279,14 +255,12 @@ func TestGroupNotFound(t *testing.T) {
 						"actions": []map[string]string{{"ref": "action_001"}},
 					},
 				}
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				_ = writeResponseJSON(w, resp)
 			} else {
 				exp := time.Now().Add(1 * time.Hour).Unix()
 				token := createTestJWT(exp)
 				resp := map[string]interface{}{"assertion": token}
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				_ = writeResponseJSON(w, resp)
 			}
 
 		case "/groups":
@@ -298,8 +272,7 @@ func TestGroupNotFound(t *testing.T) {
 			resp := map[string]interface{}{
 				"groups": []map[string]string{},
 			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = writeResponseJSON(w, resp)
 
 		default:
 			w.WriteHeader(http.StatusNotFound)

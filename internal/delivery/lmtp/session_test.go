@@ -3,8 +3,11 @@ package lmtp
 import (
 	"bufio"
 	"bytes"
-	"fmt"
+	"encoding/base64"
+	"encoding/json"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -12,6 +15,7 @@ import (
 
 	"raven/internal/db"
 	"raven/internal/delivery/config"
+	"raven/internal/delivery/groupresolver"
 	"raven/internal/delivery/storage"
 )
 
@@ -68,6 +72,37 @@ func (m *mockConn) writeString(s string) {
 
 func (m *mockConn) getWritten() string {
 	return m.writeBuf.String()
+}
+
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, out any) bool {
+	if err := json.NewDecoder(r.Body).Decode(out); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return false
+	}
+
+	return true
+}
+
+func writeJSON(w http.ResponseWriter, payload any) bool {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		return false
+	}
+
+	return true
+}
+
+func createLMTPTestJWT(exp int64) string {
+	header := map[string]string{"alg": "HS256", "typ": "JWT"}
+	headerJSON, _ := json.Marshal(header)
+	headerB64 := base64.RawURLEncoding.EncodeToString(headerJSON)
+
+	payload := map[string]int64{"exp": exp}
+	payloadJSON, _ := json.Marshal(payload)
+	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
+
+	return headerB64 + "." + payloadB64 + ".dummy-signature"
 }
 
 func setupTestStorage(t *testing.T) *storage.Storage {
@@ -203,6 +238,58 @@ func TestSession_HandleLHLO_NoArgument(t *testing.T) {
 
 	if !strings.Contains(written, "requires domain") {
 		t.Error("Expected error message about requiring domain")
+	}
+}
+
+func TestIsGroupEmail(t *testing.T) {
+	tests := []struct {
+		name     string
+		email    string
+		expected bool
+	}{
+		{name: "valid group email", email: "engineering-group@example.com", expected: true},
+		{name: "group email with subdomain", email: "devops-group@mail.example.com", expected: true},
+		{name: "non-group email", email: "john@example.com", expected: false},
+		{name: "missing domain", email: "engineering-group", expected: false},
+		{name: "empty local part", email: "@example.com", expected: false},
+		{name: "suffix appears in domain only", email: "john@group-example.com", expected: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isGroupEmail(tt.email)
+			if got != tt.expected {
+				t.Errorf("isGroupEmail(%q) = %v, expected %v", tt.email, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestParseGroupEmail(t *testing.T) {
+	tests := []struct {
+		name      string
+		email     string
+		wantGroup string
+		wantErr   bool
+	}{
+		{name: "valid group email", email: "engineering-group@example.com", wantGroup: "engineering", wantErr: false},
+		{name: "valid with numbers", email: "team123-group@example.com", wantGroup: "team123", wantErr: false},
+		{name: "missing group suffix", email: "engineering@example.com", wantErr: true},
+		{name: "empty group name", email: "-group@example.com", wantErr: true},
+		{name: "invalid email format", email: "engineering-group", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotGroup, err := parseGroupEmail(tt.email)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("parseGroupEmail(%q) error = %v, wantErr %v", tt.email, err, tt.wantErr)
+			}
+
+			if !tt.wantErr && gotGroup != tt.wantGroup {
+				t.Errorf("parseGroupEmail(%q) group = %q, expected %q", tt.email, gotGroup, tt.wantGroup)
+			}
+		})
 	}
 }
 
@@ -832,29 +919,84 @@ func TestSession_Integration_BasicFlow(t *testing.T) {
 	}
 }
 
-// mockGroupResolver implements a mock GroupResolver for testing
-type mockGroupResolver struct {
-	groupMembers map[string][]string // groupName -> []email addresses
-}
-
-func (m *mockGroupResolver) ResolveGroupMembers(groupName, baseDomain string) ([]string, error) {
-	if members, ok := m.groupMembers[groupName]; ok {
-		return members, nil
-	}
-	return nil, fmt.Errorf("group '%s' not found", groupName)
-}
-
-// newMockGroupResolver creates a mock group resolver with predefined groups
-func newMockGroupResolver() *mockGroupResolver {
-	return &mockGroupResolver{
-		groupMembers: map[string][]string{
-			"engineering": {"alice@example.com", "bob@example.com"},
-			"devops":      {"charlie@example.com"},
-		},
-	}
-}
-
 func TestGroupEmailDelivery(t *testing.T) {
+	idpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/flow/execute":
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+
+			var reqBody map[string]any
+			if !decodeJSONBody(w, r, &reqBody) {
+				return
+			}
+
+			if _, ok := reqBody["applicationId"]; ok {
+				_ = writeJSON(w, map[string]any{
+					"flowId": "flow-123",
+					"data": map[string]any{
+						"actions": []map[string]string{{"ref": "action_001"}},
+					},
+				})
+				return
+			}
+
+			token := createLMTPTestJWT(time.Now().Add(1 * time.Hour).Unix())
+			_ = writeJSON(w, map[string]any{"assertion": token})
+
+		case "/groups":
+			_ = writeJSON(w, map[string]any{
+				"groups": []map[string]string{{"id": "group-eng", "name": "engineering"}},
+			})
+
+		case "/groups/group-eng/members":
+			_ = writeJSON(w, map[string]any{
+				"members": []map[string]string{
+					{"id": "user-1", "type": "user"},
+					{"id": "user-2", "type": "user"},
+				},
+			})
+
+		case "/users/user-1":
+			_ = writeJSON(w, map[string]any{
+				"id":               "user-1",
+				"organizationUnit": "ou-1",
+				"attributes": map[string]string{
+					"username": "alice",
+				},
+			})
+
+		case "/users/user-2":
+			_ = writeJSON(w, map[string]any{
+				"id":               "user-2",
+				"organizationUnit": "ou-2",
+				"attributes": map[string]string{
+					"username": "bob",
+				},
+			})
+
+		case "/organization-units/ou-1":
+			_ = writeJSON(w, map[string]any{
+				"id":     "ou-1",
+				"handle": "example.com",
+				"parent": nil,
+			})
+
+		case "/organization-units/ou-2":
+			_ = writeJSON(w, map[string]any{
+				"id":     "ou-2",
+				"handle": "example.net",
+				"parent": nil,
+			})
+
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer idpServer.Close()
+
 	tmpDir, err := os.MkdirTemp("", "lmtp_group_test_*")
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
@@ -882,17 +1024,16 @@ func TestGroupEmailDelivery(t *testing.T) {
 	cfg.Delivery.QuotaEnabled = false
 
 	conn := newMockConn()
-	// GroupResolver is nil in this test - group resolution needs IDP URL configured
-	session := NewSession(conn, stor, cfg, nil)
+	resolver := groupresolver.NewGroupResolver(idpServer.URL, "app-123", "admin", "admin")
+	session := NewSession(conn, stor, cfg, resolver)
 
 	// Send complete LMTP transaction with group email
-	// Without GroupResolver configured, the group email will be treated as a regular email
 	conn.writeString("LHLO client.example.com\r\n")
 	conn.writeString("MAIL FROM:<sender@example.com>\r\n")
-	conn.writeString("RCPT TO:<testuser@example.com>\r\n")
+	conn.writeString("RCPT TO:<engineering-group@example.com>\r\n")
 	conn.writeString("DATA\r\n")
 	conn.writeString("From: sender@example.com\r\n")
-	conn.writeString("To: testuser@example.com\r\n")
+	conn.writeString("To: engineering-group@example.com\r\n")
 	conn.writeString("Subject: Test Message\r\n")
 	conn.writeString("\r\n")
 	conn.writeString("This is a test message.\r\n")
@@ -918,5 +1059,13 @@ func TestGroupEmailDelivery(t *testing.T) {
 
 	if !strings.Contains(written, "221") {
 		t.Error("Expected 221 goodbye")
+	}
+
+	if !strings.Contains(written, "Message accepted for delivery to <alice@example.com>") {
+		t.Error("Expected delivery response for alice@example.com")
+	}
+
+	if !strings.Contains(written, "Message accepted for delivery to <bob@example.net>") {
+		t.Error("Expected delivery response for bob@example.net")
 	}
 }
