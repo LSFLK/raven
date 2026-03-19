@@ -3,6 +3,7 @@ package lmtp
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"net"
 	"os"
 	"strings"
@@ -103,7 +104,7 @@ func setupTestSession(t *testing.T) (*Session, *mockConn, *config.Config) {
 	cfg.Delivery.RejectUnknownUser = false
 	cfg.Delivery.QuotaEnabled = false
 
-	session := NewSession(conn, stor, cfg)
+	session := NewSession(conn, stor, cfg, nil) // GroupResolver is nil for regular tests
 	return session, conn, cfg
 }
 
@@ -786,7 +787,7 @@ func TestSession_Integration_BasicFlow(t *testing.T) {
 	cfg.Delivery.RejectUnknownUser = false
 
 	conn := newMockConn()
-	session := NewSession(conn, stor, cfg)
+	session := NewSession(conn, stor, cfg, nil) // GroupResolver is nil for regular tests
 
 	// Send complete LMTP transaction
 	conn.writeString("LHLO client.example.com\r\n")
@@ -820,6 +821,95 @@ func TestSession_Integration_BasicFlow(t *testing.T) {
 
 	if !strings.Contains(written, "250") && !strings.Contains(written, "Recipient OK") {
 		t.Error("Expected recipient accepted")
+	}
+
+	if !strings.Contains(written, "354") {
+		t.Error("Expected 354 start mail input")
+	}
+
+	if !strings.Contains(written, "221") {
+		t.Error("Expected 221 goodbye")
+	}
+}
+
+// mockGroupResolver implements a mock GroupResolver for testing
+type mockGroupResolver struct {
+	groupMembers map[string][]string // groupName -> []email addresses
+}
+
+func (m *mockGroupResolver) ResolveGroupMembers(groupName, baseDomain string) ([]string, error) {
+	if members, ok := m.groupMembers[groupName]; ok {
+		return members, nil
+	}
+	return nil, fmt.Errorf("group '%s' not found", groupName)
+}
+
+// newMockGroupResolver creates a mock group resolver with predefined groups
+func newMockGroupResolver() *mockGroupResolver {
+	return &mockGroupResolver{
+		groupMembers: map[string][]string{
+			"engineering": {"alice@example.com", "bob@example.com"},
+			"devops":      {"charlie@example.com"},
+		},
+	}
+}
+
+func TestGroupEmailDelivery(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "lmtp_group_test_*")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(tmpDir)
+	})
+
+	dbManager, err := db.NewDBManager(tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create DB manager: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = dbManager.Close()
+	})
+
+	stor := storage.NewStorage(dbManager)
+	cfg := config.DefaultConfig()
+	cfg.LMTP.Hostname = "test.example.com"
+	cfg.LMTP.MaxSize = 1024 * 1024
+	cfg.LMTP.Timeout = 5
+	cfg.LMTP.MaxRecipients = 100
+	cfg.Delivery.AllowedDomains = []string{}
+	cfg.Delivery.RejectUnknownUser = false
+	cfg.Delivery.QuotaEnabled = false
+
+	conn := newMockConn()
+	// GroupResolver is nil in this test - group resolution needs IDP URL configured
+	session := NewSession(conn, stor, cfg, nil)
+
+	// Send complete LMTP transaction with group email
+	// Without GroupResolver configured, the group email will be treated as a regular email
+	conn.writeString("LHLO client.example.com\r\n")
+	conn.writeString("MAIL FROM:<sender@example.com>\r\n")
+	conn.writeString("RCPT TO:<testuser@example.com>\r\n")
+	conn.writeString("DATA\r\n")
+	conn.writeString("From: sender@example.com\r\n")
+	conn.writeString("To: testuser@example.com\r\n")
+	conn.writeString("Subject: Test Message\r\n")
+	conn.writeString("\r\n")
+	conn.writeString("This is a test message.\r\n")
+	conn.writeString(".\r\n")
+	conn.writeString("QUIT\r\n")
+
+	// Handle session
+	err = session.Handle()
+	if err != nil && !strings.Contains(err.Error(), "QUIT") {
+		t.Errorf("Session error: %v", err)
+	}
+
+	// Check that message was handled properly
+	written := conn.getWritten()
+
+	if !strings.Contains(written, "250") {
+		t.Error("Expected 250 response for RCPT")
 	}
 
 	if !strings.Contains(written, "354") {

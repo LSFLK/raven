@@ -10,31 +10,34 @@ import (
 	"time"
 
 	"raven/internal/delivery/config"
+	"raven/internal/delivery/groupresolver"
 	"raven/internal/delivery/parser"
 	"raven/internal/delivery/storage"
 )
 
 // Session represents an LMTP session
 type Session struct {
-	conn       net.Conn
-	reader     *bufio.Reader
-	writer     *bufio.Writer
-	storage    *storage.Storage
-	config     *config.Config
-	mailFrom   string
-	recipients []string
-	helo       string
+	conn           net.Conn
+	reader         *bufio.Reader
+	writer         *bufio.Writer
+	storage        *storage.Storage
+	config         *config.Config
+	groupResolver  *groupresolver.GroupResolver
+	mailFrom       string
+	recipients     []string
+	helo           string
 }
 
 // NewSession creates a new LMTP session
-func NewSession(conn net.Conn, stor *storage.Storage, cfg *config.Config) *Session {
+func NewSession(conn net.Conn, stor *storage.Storage, cfg *config.Config, gr *groupresolver.GroupResolver) *Session {
 	return &Session{
-		conn:       conn,
-		reader:     bufio.NewReader(conn),
-		writer:     bufio.NewWriter(conn),
-		storage:    stor,
-		config:     cfg,
-		recipients: make([]string, 0),
+		conn:          conn,
+		reader:        bufio.NewReader(conn),
+		writer:        bufio.NewWriter(conn),
+		storage:       stor,
+		config:        cfg,
+		groupResolver: gr,
+		recipients:    make([]string, 0),
 	}
 }
 
@@ -205,8 +208,97 @@ func (s *Session) handleRCPT(args string) error {
 		}
 	}
 
-	s.recipients = append(s.recipients, to)
+	// Check if this is a group email and resolve members
+	resolvedRecipients, err := s.resolveGroupIfNeeded(to)
+	if err != nil {
+		// Log the error but still accept the recipient for backwards compatibility
+		log.Printf("Warning: failed to resolve group email %s: %v", to, err)
+		resolvedRecipients = []string{to}
+	}
+
+	// Add resolved recipients (could be the original address or group members)
+	for _, recipient := range resolvedRecipients {
+		if len(s.recipients) >= s.config.LMTP.MaxRecipients {
+			return s.sendResponse(452, "Too many recipients")
+		}
+		s.recipients = append(s.recipients, recipient)
+	}
+
 	return s.sendResponse(250, "2.1.5 Recipient OK")
+}
+
+// resolveGroupIfNeeded checks if the recipient is a group email and resolves members
+// Returns the list of recipients to deliver to (either original or resolved group members)
+func (s *Session) resolveGroupIfNeeded(recipient string) ([]string, error) {
+	// Check if this looks like a group email (ends with -group@domain)
+	if !isGroupEmail(recipient) {
+		// Not a group, return the original recipient
+		return []string{recipient}, nil
+	}
+
+	// It's a group email, resolve members
+	if s.groupResolver == nil {
+		// Group resolver not configured, return error
+		return nil, fmt.Errorf("group resolver not configured for group email resolution")
+	}
+
+	groupName, domain, err := parseGroupEmail(recipient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse group email: %w", err)
+	}
+
+	log.Printf("Resolving group email: %s (group=%s, domain=%s)", recipient, groupName, domain)
+
+	members, err := s.groupResolver.ResolveGroupMembers(groupName, domain)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve group members: %w", err)
+	}
+
+	if len(members) == 0 {
+		return nil, fmt.Errorf("group '%s' has no members", groupName)
+	}
+
+	log.Printf("Group email %s resolved to %d members: %v", recipient, len(members), members)
+	return members, nil
+}
+
+// isGroupEmail checks if an email address is a group email (ends with -group@domain)
+func isGroupEmail(email string) bool {
+	// Group email format: <group_name>-group@<domain>
+	localPart, _, err := parseEmail(email)
+	if err != nil {
+		return false
+	}
+	return strings.HasSuffix(localPart, "-group")
+}
+
+// parseGroupEmail parses a group email address and returns the group name and domain
+func parseGroupEmail(email string) (groupName, domain string, err error) {
+	localPart, domainPart, err := parseEmail(email)
+	if err != nil {
+		return "", "", err
+	}
+
+	if !strings.HasSuffix(localPart, "-group") {
+		return "", "", fmt.Errorf("not a group email address: %s", email)
+	}
+
+	// Remove the "-group" suffix to get the actual group name
+	groupName = strings.TrimSuffix(localPart, "-group")
+	if groupName == "" {
+		return "", "", fmt.Errorf("empty group name in address: %s", email)
+	}
+
+	return groupName, domainPart, nil
+}
+
+// parseEmail parses an email address into local and domain parts
+func parseEmail(email string) (localPart, domain string, err error) {
+	parts := strings.SplitN(email, "@", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("invalid email address: %s", email)
+	}
+	return parts[0], parts[1], nil
 }
 
 // handleDATA handles the DATA command

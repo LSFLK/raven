@@ -2,11 +2,13 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 
-	"gopkg.in/yaml.v2"
 	"raven/internal/blobstorage"
+
+	"gopkg.in/yaml.v2"
 )
 
 // Config holds the delivery service configuration
@@ -16,6 +18,8 @@ type Config struct {
 	Delivery    DeliveryConfig     `yaml:"delivery"`
 	Logging     LoggingConfig      `yaml:"logging"`
 	BlobStorage blobstorage.Config `yaml:"blob_storage"`
+	IDPBaseURL  string             // IDP base URL (loaded from raven.yaml auth_server_url)
+	Domain      string             // Domain from raven.yaml
 }
 
 // LMTPConfig holds LMTP server configuration
@@ -90,12 +94,78 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
+	// Try to load raven.yaml to get IDP URL and domain
+	if err := loadMainConfig(cfg); err != nil {
+		// Log warning but don't fail - group resolution will just not work
+		fmt.Printf("Warning: failed to load main config for group resolution: %v\n", err)
+	}
+
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
 	return cfg, nil
+}
+
+// loadMainConfig loads raven.yaml to extract IDP URL and domain
+func loadMainConfig(cfg *Config) error {
+	ravenConfigPaths := []string{
+		"/etc/raven/raven.yaml",
+		"./config/raven.yaml",
+		"./raven.yaml",
+		"config/raven.yaml",
+	}
+
+	type MainConfig struct {
+		Domain        string `yaml:"domain"`
+		AuthServerURL string `yaml:"auth_server_url"`
+	}
+
+	var ravenCfg MainConfig
+	var data []byte
+	var err error
+
+	for _, path := range ravenConfigPaths {
+		data, err = os.ReadFile(filepath.Clean(path))
+		if err == nil {
+			break
+		}
+	}
+
+	if err != nil {
+		return fmt.Errorf("could not find raven.yaml in standard locations")
+	}
+
+	if err := yaml.Unmarshal(data, &ravenCfg); err != nil {
+		return fmt.Errorf("failed to parse raven.yaml: %w", err)
+	}
+
+	// Extract base URL from auth server URL
+	// Strip path like /auth/credentials/authenticate to get base URL
+	baseURL, err := extractBaseURL(ravenCfg.AuthServerURL)
+	if err != nil {
+		return fmt.Errorf("failed to extract IDP base URL: %w", err)
+	}
+
+	cfg.IDPBaseURL = baseURL
+	cfg.Domain = ravenCfg.Domain
+
+	return nil
+}
+
+// extractBaseURL extracts the base URL from an auth server URL
+func extractBaseURL(rawURL string) (string, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", err
+	}
+
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("invalid auth server URL: %s", rawURL)
+	}
+
+	return parsed.Scheme + "://" + parsed.Host, nil
 }
 
 // Validate validates the configuration

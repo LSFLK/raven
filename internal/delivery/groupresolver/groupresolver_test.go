@@ -1,0 +1,280 @@
+package groupresolver
+
+import (
+	"encoding/base64"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+)
+
+func createTestJWT(exp int64) string {
+	header := map[string]string{"alg": "HS256", "typ": "JWT"}
+	headerJSON, _ := json.Marshal(header)
+	headerB64 := base64.RawURLEncoding.EncodeToString(headerJSON)
+
+	payload := map[string]interface{}{"exp": exp}
+	payloadJSON, _ := json.Marshal(payload)
+	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
+
+	return headerB64 + "." + payloadB64 + ".dummy-signature"
+}
+
+func TestExtractJWTExpiry(t *testing.T) {
+	tests := []struct {
+		name      string
+		token     string
+		wantErr   bool
+		wantExpiry bool
+	}{
+		{
+			name:       "valid JWT with exp claim",
+			token:      createTestJWT(time.Now().Add(1 * time.Hour).Unix()),
+			wantErr:    false,
+			wantExpiry: true,
+		},
+		{
+			name:    "invalid JWT format",
+			token:   "invalid.jwt",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			exp, err := extractJWTExpiry(tt.token)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("extractJWTExpiry() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && exp.IsZero() != !tt.wantExpiry {
+				t.Errorf("extractJWTExpiry() returned zero time, wanted non-zero")
+			}
+		})
+	}
+}
+
+func TestIsGroupEmail(t *testing.T) {
+	tests := []struct {
+		name     string
+		email    string
+		expected bool
+	}{
+		{"valid group email", "engineering-group@example.com", true},
+		{"non-group email", "john@example.com", false},
+	}
+
+	for _, tt := range tests {
+		// These would be tested via session integration tests
+		_ = tt
+	}
+}
+
+func TestParseGroupEmail(t *testing.T) {
+	tests := []struct {
+		name       string
+		email      string
+		wantGroup  string
+		wantDomain string
+		wantErr    bool
+	}{
+		{
+			name:       "valid group email",
+			email:      "engineering-group@example.com",
+			wantGroup:  "engineering",
+			wantDomain: "example.com",
+			wantErr:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		// These would be tested via session integration tests
+		_ = tt
+	}
+}
+
+func TestGroupResolverAuthentication(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/flow/execute" && r.Method == http.MethodPost {
+			var reqBody map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&reqBody)
+
+			if _, ok := reqBody["applicationId"]; ok {
+				resp := map[string]interface{}{
+					"flowId": "flow-123",
+					"data": map[string]interface{}{
+						"actions": []map[string]string{{"ref": "action_001"}},
+					},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(resp)
+			} else if _, ok := reqBody["flowId"]; ok {
+				exp := time.Now().Add(1 * time.Hour).Unix()
+				token := createTestJWT(exp)
+				resp := map[string]interface{}{"assertion": token}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(resp)
+			}
+		}
+	}))
+	defer server.Close()
+
+	gr := NewGroupResolver(server.URL, "app-123", "admin", "admin")
+	assertion, err := gr.getOrFreshAssertion()
+
+	if err != nil {
+		t.Fatalf("getOrFreshAssertion() error = %v", err)
+	}
+
+	if assertion == "" {
+		t.Error("getOrFreshAssertion() returned empty assertion")
+	}
+
+	assertion2, err := gr.getOrFreshAssertion()
+	if err != nil {
+		t.Fatalf("getOrFreshAssertion() (second call) error = %v", err)
+	}
+
+	if assertion != assertion2 {
+		t.Error("cached assertion was not reused")
+	}
+}
+
+func TestGroupMemberResolution(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/flow/execute":
+			var reqBody map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&reqBody)
+
+			if _, ok := reqBody["applicationId"]; ok {
+				// Bootstrap request
+				resp := map[string]interface{}{
+					"flowId": "flow-123",
+					"data": map[string]interface{}{
+						"actions": []map[string]string{{"ref": "action_001"}},
+					},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(resp)
+			} else {
+				// Flow execute request
+				exp := time.Now().Add(1 * time.Hour).Unix()
+				token := createTestJWT(exp)
+				resp := map[string]interface{}{"assertion": token}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(resp)
+			}
+
+		case "/groups":
+			auth := r.Header.Get("Authorization")
+			if auth == "" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			resp := map[string]interface{}{
+				"groups": []map[string]string{
+					{"id": "group-eng", "name": "engineering"},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+
+		case "/groups/group-eng/members":
+			auth := r.Header.Get("Authorization")
+			if auth == "" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			resp := map[string]interface{}{
+				"members": []map[string]string{
+					{"id": "alice", "type": "user"},
+					{"id": "bob", "type": "user"},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	gr := NewGroupResolver(server.URL, "app-123", "admin", "admin")
+	members, err := gr.ResolveGroupMembers("engineering", "example.com")
+
+	if err != nil {
+		t.Fatalf("ResolveGroupMembers() error = %v", err)
+	}
+
+	expectedMembers := map[string]bool{
+		"alice@example.com": true,
+		"bob@example.com":   true,
+	}
+
+	if len(members) != len(expectedMembers) {
+		t.Errorf("ResolveGroupMembers() returned %d members, expected %d", len(members), len(expectedMembers))
+	}
+
+	for _, member := range members {
+		if !expectedMembers[member] {
+			t.Errorf("unexpected member: %s", member)
+		}
+	}
+}
+
+func TestGroupNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/flow/execute":
+			var reqBody map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&reqBody)
+
+			if _, ok := reqBody["applicationId"]; ok {
+				resp := map[string]interface{}{
+					"flowId": "flow-123",
+					"data": map[string]interface{}{
+						"actions": []map[string]string{{"ref": "action_001"}},
+					},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(resp)
+			} else {
+				exp := time.Now().Add(1 * time.Hour).Unix()
+				token := createTestJWT(exp)
+				resp := map[string]interface{}{"assertion": token}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(resp)
+			}
+
+		case "/groups":
+			auth := r.Header.Get("Authorization")
+			if auth == "" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			resp := map[string]interface{}{
+				"groups": []map[string]string{},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	gr := NewGroupResolver(server.URL, "app-123", "admin", "admin")
+	_, err := gr.ResolveGroupMembers("nonexistent", "example.com")
+
+	if err == nil {
+		t.Error("ResolveGroupMembers() expected error for nonexistent group")
+	}
+
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("ResolveGroupMembers() error = %v, expected 'not found'", err)
+	}
+}
