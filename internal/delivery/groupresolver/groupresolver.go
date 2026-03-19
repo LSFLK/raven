@@ -47,10 +47,10 @@ func NewGroupResolver(baseURL, applicationID, systemUsername, systemPassword str
 	}
 }
 
-// ResolveGroupMembers resolves all members of a group (recursively) and returns their email addresses
-// groupName should be the portion before "-group@", e.g. "engineering" from "engineering-group@domain.com"
+// ResolveGroupMembers resolves all members of a group (recursively) and returns their email addresses.
+// groupName should be the portion before "-group@", e.g. "engineering" from "engineering-group@domain.com".
 // Returns slice of resolved email addresses, deduplicated
-func (gr *GroupResolver) ResolveGroupMembers(groupName, baseDomain string) ([]string, error) {
+func (gr *GroupResolver) ResolveGroupMembers(groupName string) ([]string, error) {
 	// Get system assertion
 	assertion, err := gr.getOrFreshAssertion()
 	if err != nil {
@@ -83,7 +83,7 @@ func (gr *GroupResolver) ResolveGroupMembers(groupName, baseDomain string) ([]st
 		for _, member := range members {
 			if member.Type == "user" {
 				// Resolve user to email address
-				email, err := gr.resolveUserEmail(assertion, member.ID, baseDomain)
+				email, err := gr.resolveUserEmail(assertion, member.ID)
 				if err != nil {
 					log.Printf("GroupResolver: failed to resolve user %s: %v, skipping", member.ID, err)
 					continue
@@ -268,7 +268,7 @@ func (gr *GroupResolver) fetchGroupMembers(assertion, groupID string) ([]Member,
 
 // resolveUserEmail resolves a user member id to an email address.
 // It fetches the user profile, extracts username, and derives domain from organization unit.
-func (gr *GroupResolver) resolveUserEmail(assertion, userID, baseDomain string) (string, error) {
+func (gr *GroupResolver) resolveUserEmail(assertion, userID string) (string, error) {
 	user, err := gr.fetchUserByID(assertion, userID)
 	if err != nil {
 		return "", err
@@ -289,13 +289,13 @@ func (gr *GroupResolver) resolveUserEmail(assertion, userID, baseDomain string) 
 		return "", fmt.Errorf("user %s has invalid email username", userID)
 	}
 
-	domain := strings.Trim(strings.TrimSpace(baseDomain), ".")
-	if user.OrganizationUnit != "" {
-		resolvedDomain, err := gr.resolveDomainFromOrganizationUnit(assertion, user.OrganizationUnit)
-		if err != nil {
-			return "", fmt.Errorf("failed to resolve domain from org unit for user %s: %w", userID, err)
-		}
-		domain = resolvedDomain
+	if strings.TrimSpace(user.OrganizationUnit) == "" {
+		return "", fmt.Errorf("unable to resolve domain for user %s: missing organization unit", userID)
+	}
+
+	domain, err := gr.resolveDomainFromOrganizationUnit(assertion, user.OrganizationUnit)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve domain from org unit for user %s: %w", userID, err)
 	}
 
 	if domain == "" {

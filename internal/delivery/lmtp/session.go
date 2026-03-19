@@ -17,15 +17,15 @@ import (
 
 // Session represents an LMTP session
 type Session struct {
-	conn           net.Conn
-	reader         *bufio.Reader
-	writer         *bufio.Writer
-	storage        *storage.Storage
-	config         *config.Config
-	groupResolver  *groupresolver.GroupResolver
-	mailFrom       string
-	recipients     []string
-	helo           string
+	conn          net.Conn
+	reader        *bufio.Reader
+	writer        *bufio.Writer
+	storage       *storage.Storage
+	config        *config.Config
+	groupResolver *groupresolver.GroupResolver
+	mailFrom      string
+	recipients    []string
+	helo          string
 }
 
 // NewSession creates a new LMTP session
@@ -242,14 +242,14 @@ func (s *Session) resolveGroupIfNeeded(recipient string) ([]string, error) {
 		return nil, fmt.Errorf("group resolver not configured for group email resolution")
 	}
 
-	groupName, domain, err := parseGroupEmail(recipient)
+	groupName, err := parseGroupEmail(recipient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse group email: %w", err)
 	}
 
-	log.Printf("Resolving group email: %s (group=%s, domain=%s)", recipient, groupName, domain)
+	log.Printf("Resolving group email: %s (group=%s)", recipient, groupName)
 
-	members, err := s.groupResolver.ResolveGroupMembers(groupName, domain)
+	members, err := s.groupResolver.ResolveGroupMembers(groupName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve group members: %w", err)
 	}
@@ -272,24 +272,24 @@ func isGroupEmail(email string) bool {
 	return strings.HasSuffix(localPart, "-group")
 }
 
-// parseGroupEmail parses a group email address and returns the group name and domain
-func parseGroupEmail(email string) (groupName, domain string, err error) {
-	localPart, domainPart, err := parseEmail(email)
+// parseGroupEmail parses a group email address and returns the group name.
+func parseGroupEmail(email string) (groupName string, err error) {
+	localPart, _, err := parseEmail(email)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 
 	if !strings.HasSuffix(localPart, "-group") {
-		return "", "", fmt.Errorf("not a group email address: %s", email)
+		return "", fmt.Errorf("not a group email address: %s", email)
 	}
 
 	// Remove the "-group" suffix to get the actual group name
 	groupName = strings.TrimSuffix(localPart, "-group")
 	if groupName == "" {
-		return "", "", fmt.Errorf("empty group name in address: %s", email)
+		return "", fmt.Errorf("empty group name in address: %s", email)
 	}
 
-	return groupName, domainPart, nil
+	return groupName, nil
 }
 
 // parseEmail parses an email address into local and domain parts

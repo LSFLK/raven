@@ -19,7 +19,6 @@ type Config struct {
 	Logging     LoggingConfig      `yaml:"logging"`
 	BlobStorage blobstorage.Config `yaml:"blob_storage"`
 	IDPBaseURL  string             // IDP base URL (loaded from raven.yaml auth_server_url)
-	Domain      string             // Domain from raven.yaml
 }
 
 // LMTPConfig holds LMTP server configuration
@@ -108,7 +107,7 @@ func LoadConfig(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// loadMainConfig loads raven.yaml to extract IDP URL and domain
+// loadMainConfig loads raven.yaml to extract IDP URL
 func loadMainConfig(cfg *Config) error {
 	ravenConfigPaths := []string{
 		"/etc/raven/raven.yaml",
@@ -118,7 +117,6 @@ func loadMainConfig(cfg *Config) error {
 	}
 
 	type MainConfig struct {
-		Domain        string `yaml:"domain"`
 		AuthServerURL string `yaml:"auth_server_url"`
 	}
 
@@ -149,7 +147,6 @@ func loadMainConfig(cfg *Config) error {
 	}
 
 	cfg.IDPBaseURL = baseURL
-	cfg.Domain = ravenCfg.Domain
 
 	return nil
 }

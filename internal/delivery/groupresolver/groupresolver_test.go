@@ -243,7 +243,7 @@ func TestGroupMemberResolution(t *testing.T) {
 	defer server.Close()
 
 	gr := NewGroupResolver(server.URL, "app-123", "admin", "admin")
-	members, err := gr.ResolveGroupMembers("engineering", "example.com")
+	members, err := gr.ResolveGroupMembers("engineering")
 
 	if err != nil {
 		t.Fatalf("ResolveGroupMembers() error = %v", err)
@@ -308,7 +308,7 @@ func TestGroupNotFound(t *testing.T) {
 	defer server.Close()
 
 	gr := NewGroupResolver(server.URL, "app-123", "admin", "admin")
-	_, err := gr.ResolveGroupMembers("nonexistent", "example.com")
+	_, err := gr.ResolveGroupMembers("nonexistent")
 
 	if err == nil {
 		t.Error("ResolveGroupMembers() expected error for nonexistent group")
