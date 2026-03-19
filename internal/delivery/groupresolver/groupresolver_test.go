@@ -210,6 +210,46 @@ func TestGroupMemberResolution(t *testing.T) {
 			}
 			_ = writeResponseJSON(w, resp)
 
+		case "/users/user-1":
+			resp := map[string]interface{}{
+				"id":               "user-1",
+				"organizationUnit": "ou-1",
+				"attributes": map[string]string{
+					"username": "alice",
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+
+		case "/users/user-2":
+			resp := map[string]interface{}{
+				"id":               "user-2",
+				"organizationUnit": "ou-2",
+				"attributes": map[string]string{
+					"username": "bob",
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+
+		case "/organization-units/ou-1":
+			resp := map[string]interface{}{
+				"id":     "ou-1",
+				"handle": "example.com",
+				"parent": nil,
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+
+		case "/organization-units/ou-2":
+			resp := map[string]interface{}{
+				"id":     "ou-2",
+				"handle": "example.net",
+				"parent": nil,
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}

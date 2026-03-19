@@ -83,7 +83,7 @@ func (gr *GroupResolver) ResolveGroupMembers(groupName string) ([]string, error)
 		for _, member := range members {
 			if member.Type == "user" {
 				// Resolve user to email address
-				email, err := gr.resolveUserEmail(assertion, member.ID)
+				email, err := gr.resolveUserEmail(member.ID, baseDomain)
 				if err != nil {
 					log.Printf("GroupResolver: failed to resolve user %s: %v, skipping", member.ID, err)
 					continue
@@ -277,153 +277,15 @@ func (gr *GroupResolver) fetchGroupMembers(assertion, groupID string) ([]Member,
 	return result.Members, nil
 }
 
-// resolveUserEmail resolves a user member id to an email address.
-// It fetches the user profile, extracts username, and derives domain from organization unit.
-func (gr *GroupResolver) resolveUserEmail(assertion, userID string) (string, error) {
-	user, err := gr.fetchUserByID(assertion, userID)
-	if err != nil {
-		return "", err
+// resolveUserEmail resolves a user's UUID to their email address using domain
+func (gr *GroupResolver) resolveUserEmail(userID, baseDomain string) (string, error) {
+	// The user ID is typically a username or similar identifier
+	// We construct the email as username@domain
+	username := userID
+	if baseDomain == "" {
+		return "", fmt.Errorf("base domain is required to resolve user email")
 	}
-
-	username := strings.TrimSpace(user.Username)
-	if username == "" {
-		return "", fmt.Errorf("user %s has no username", userID)
-	}
-
-	if strings.Contains(username, "@") {
-		parts := strings.SplitN(username, "@", 2)
-		local := strings.TrimSpace(parts[0])
-		domain := strings.Trim(strings.TrimSpace(parts[1]), ".")
-		if local != "" && domain != "" {
-			return local + "@" + domain, nil
-		}
-		return "", fmt.Errorf("user %s has invalid email username", userID)
-	}
-
-	if strings.TrimSpace(user.OrganizationUnit) == "" {
-		return "", fmt.Errorf("unable to resolve domain for user %s: missing organization unit", userID)
-	}
-
-	domain, err := gr.resolveDomainFromOrganizationUnit(assertion, user.OrganizationUnit)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve domain from org unit for user %s: %w", userID, err)
-	}
-
-	if domain == "" {
-		return "", fmt.Errorf("unable to resolve domain for user %s", userID)
-	}
-
-	return username + "@" + domain, nil
-}
-
-type userRecord struct {
-	ID               string
-	Username         string
-	OrganizationUnit string
-}
-
-func (gr *GroupResolver) fetchUserByID(assertion, userID string) (*userRecord, error) {
-	type userResponse struct {
-		ID                  string `json:"id"`
-		OrganizationUnit    string `json:"organizationUnit"`
-		OrganizationUnitAlt string `json:"organization_unit"`
-		Username            string `json:"username"`
-		UserName            string `json:"userName"`
-		Name                string `json:"name"`
-		Email               string `json:"email"`
-		Attributes          struct {
-			Username string `json:"username"`
-			UserName string `json:"userName"`
-			Email    string `json:"email"`
-			Name     string `json:"name"`
-		} `json:"attributes"`
-	}
-
-	var resp userResponse
-	if err := gr.getJSON(gr.baseURL+"/users/"+userID, assertion, &resp); err != nil {
-		return nil, fmt.Errorf("failed to fetch user %s: %w", userID, err)
-	}
-
-	username := firstNonEmpty(
-		resp.Attributes.Email,
-		resp.Email,
-		resp.Attributes.Username,
-		resp.Attributes.UserName,
-		resp.Username,
-		resp.UserName,
-		resp.Attributes.Name,
-		resp.Name,
-	)
-	if username == "" {
-		return nil, fmt.Errorf("user %s profile missing username", userID)
-	}
-
-	orgUnit := strings.TrimSpace(resp.OrganizationUnit)
-	if orgUnit == "" {
-		orgUnit = strings.TrimSpace(resp.OrganizationUnitAlt)
-	}
-
-	return &userRecord{
-		ID:               strings.TrimSpace(resp.ID),
-		Username:         username,
-		OrganizationUnit: orgUnit,
-	}, nil
-}
-
-func (gr *GroupResolver) resolveDomainFromOrganizationUnit(assertion, orgUnitID string) (string, error) {
-	return gr.resolveOrganizationUnitDomain(assertion, orgUnitID)
-}
-
-func (gr *GroupResolver) resolveOrganizationUnitDomain(assertion, orgUnitID string) (string, error) {
-	type ouResponse struct {
-		ID     string  `json:"id"`
-		Handle string  `json:"handle"`
-		Parent *string `json:"parent"`
-	}
-
-	handles := make([]string, 0, 4)
-	current := strings.TrimSpace(orgUnitID)
-	visited := map[string]struct{}{}
-
-	for current != "" {
-		if _, seen := visited[current]; seen {
-			return "", fmt.Errorf("cycle detected in OU hierarchy")
-		}
-		visited[current] = struct{}{}
-
-		var ou ouResponse
-		if err := gr.getJSON(gr.baseURL+"/organization-units/"+current, assertion, &ou); err != nil {
-			return "", err
-		}
-
-		handle := strings.TrimSpace(ou.Handle)
-		if handle != "" {
-			handles = append(handles, handle)
-		}
-
-		if ou.Parent == nil {
-			break
-		}
-
-		current = strings.TrimSpace(*ou.Parent)
-	}
-
-	if len(handles) == 0 {
-		return "", fmt.Errorf("no OU handles found")
-	}
-
-	return strings.Join(handles, "."), nil
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		trimmed := strings.TrimSpace(value)
-		if trimmed != "" {
-			return trimmed
-		}
-	}
-
-	return ""
+	return username + "@" + baseDomain, nil
 }
 
 // Member represents a group member
