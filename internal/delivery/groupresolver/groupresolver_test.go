@@ -29,6 +29,25 @@ func writeResponseJSON(w http.ResponseWriter, payload any) bool {
 	return true
 }
 
+func decodeRequestJSON(w http.ResponseWriter, r *http.Request, out any) bool {
+	if err := json.NewDecoder(r.Body).Decode(out); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return false
+	}
+
+	return true
+}
+
+func writeResponseJSON(w http.ResponseWriter, payload any) bool {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		return false
+	}
+
+	return true
+}
+
 func createTestJWT(exp int64) string {
 	header := map[string]string{"alg": "HS256", "typ": "JWT"}
 	headerJSON, _ := json.Marshal(header)
@@ -172,7 +191,8 @@ func TestGroupMemberResolution(t *testing.T) {
 					{"id": "user-2", "type": "user"},
 				},
 			}
-			_ = writeResponseJSON(w, resp)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
 
 		case "/users/user-1":
 			resp := map[string]interface{}{
@@ -209,46 +229,6 @@ func TestGroupMemberResolution(t *testing.T) {
 				"parent": nil,
 			}
 			_ = writeResponseJSON(w, resp)
-
-		case "/users/user-1":
-			resp := map[string]interface{}{
-				"id":               "user-1",
-				"organizationUnit": "ou-1",
-				"attributes": map[string]string{
-					"username": "alice",
-				},
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
-
-		case "/users/user-2":
-			resp := map[string]interface{}{
-				"id":               "user-2",
-				"organizationUnit": "ou-2",
-				"attributes": map[string]string{
-					"username": "bob",
-				},
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
-
-		case "/organization-units/ou-1":
-			resp := map[string]interface{}{
-				"id":     "ou-1",
-				"handle": "example.com",
-				"parent": nil,
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
-
-		case "/organization-units/ou-2":
-			resp := map[string]interface{}{
-				"id":     "ou-2",
-				"handle": "example.net",
-				"parent": nil,
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
 
 		default:
 			w.WriteHeader(http.StatusNotFound)
