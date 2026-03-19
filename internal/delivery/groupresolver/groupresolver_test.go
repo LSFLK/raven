@@ -24,9 +24,9 @@ func createTestJWT(exp int64) string {
 
 func TestExtractJWTExpiry(t *testing.T) {
 	tests := []struct {
-		name      string
-		token     string
-		wantErr   bool
+		name       string
+		token      string
+		wantErr    bool
 		wantExpiry bool
 	}{
 		{
@@ -189,9 +189,49 @@ func TestGroupMemberResolution(t *testing.T) {
 			}
 			resp := map[string]interface{}{
 				"members": []map[string]string{
-					{"id": "alice", "type": "user"},
-					{"id": "bob", "type": "user"},
+					{"id": "user-1", "type": "user"},
+					{"id": "user-2", "type": "user"},
 				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+
+		case "/users/user-1":
+			resp := map[string]interface{}{
+				"id":               "user-1",
+				"organizationUnit": "ou-1",
+				"attributes": map[string]string{
+					"username": "alice",
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+
+		case "/users/user-2":
+			resp := map[string]interface{}{
+				"id":               "user-2",
+				"organizationUnit": "ou-2",
+				"attributes": map[string]string{
+					"username": "bob",
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+
+		case "/organization-units/ou-1":
+			resp := map[string]interface{}{
+				"id":     "ou-1",
+				"handle": "example.com",
+				"parent": nil,
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+
+		case "/organization-units/ou-2":
+			resp := map[string]interface{}{
+				"id":     "ou-2",
+				"handle": "example.net",
+				"parent": nil,
 			}
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(resp)
@@ -211,7 +251,7 @@ func TestGroupMemberResolution(t *testing.T) {
 
 	expectedMembers := map[string]bool{
 		"alice@example.com": true,
-		"bob@example.com":   true,
+		"bob@example.net":   true,
 	}
 
 	if len(members) != len(expectedMembers) {
