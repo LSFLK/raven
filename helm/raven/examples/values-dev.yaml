@@ -1,0 +1,51 @@
+# Development environment values
+# Minimal resource setup for local testing
+
+replicaCount: 1
+
+image:
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# Minimal resources for development
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Small storage for development
+persistence:
+  enabled: true
+  size: 1Gi
+
+# Use ClusterIP for internal access only
+service:
+  type: ClusterIP
+
+# Basic configuration
+raven:
+  domain: "localhost"
+  authServerUrl: "http://auth-service:8080"
+  saslScope: "all"
+
+delivery:
+  lmtp:
+    tcpAddress: "0.0.0.0:24"
+    maxSize: 26214400  # 25MB for dev
+    timeout: 300
+
+# Disable TLS certificates for dev
+certificates:
+  enabled: false
+
+# Relaxed probes for dev environment
+probes:
+  liveness:
+    initialDelaySeconds: 60
+    periodSeconds: 20
+  readiness:
+    initialDelaySeconds: 30
+    periodSeconds: 10

@@ -1,0 +1,63 @@
+1. Get the service IP:
+  kubectl get svc {{ include "raven.fullname" . }} -w
+
+2. Connect to Raven services:
+  - IMAP: port 143
+  - IMAPS: port 993
+  - LMTP: port 24
+  - Admin: port 12345
+
+{{- if eq .Values.service.type "LoadBalancer" }}
+
+  To get the external IP:
+  kubectl get svc {{ include "raven.fullname" . }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+
+{{- else if eq .Values.service.type "NodePort" }}
+
+  To access via NodePort, use the node IP and get the port:
+  kubectl get svc {{ include "raven.fullname" . }} -o jsonpath='{.spec.ports[0].nodePort}'
+
+{{- else }}
+
+  For ClusterIP access, use port forwarding:
+  kubectl port-forward svc/{{ include "raven.fullname" . }} 143:143 993:993 24:24 12345:12345
+
+{{- end }}
+
+3. Check pod status:
+  kubectl get pods -l app.kubernetes.io/name={{ include "raven.name" . }}
+  kubectl logs -l app.kubernetes.io/name={{ include "raven.name" . }}
+
+4. Configuration:
+  The configuration is stored in a ConfigMap:
+  kubectl get cm {{ include "raven.fullname" . }}-config -o yaml
+
+  To view specific config:
+  kubectl get cm {{ include "raven.fullname" . }}-config -o jsonpath='{.data.raven\.yaml}'
+
+5. Persistence:
+  {{- if .Values.persistence.enabled }}
+  Database is stored in PVC: {{ include "raven.fullname" . }}-data-pvc
+  Mount path: {{ .Values.persistence.mountPath }}
+  Storage size: {{ .Values.persistence.size }}
+  {{- else }}
+  Persistence is disabled - data will be lost on pod restart!
+  {{- end }}
+
+6. Certificate Configuration (for IMAPS):
+  {{- if .Values.certificates.enabled }}
+  Certificates are configured to be mounted at: {{ .Values.certificates.mountPath }}
+  {{- if .Values.certificates.existingSecret }}
+  Using secret: {{ .Values.certificates.existingSecret }}
+  {{- else if .Values.certificates.hostPath }}
+  Using host path: {{ .Values.certificates.hostPath }}
+  {{- end }}
+  {{- else }}
+  Certificates are not configured. To enable IMAPS, set certificates.enabled=true
+  {{- end }}
+
+7. Additional help:
+  For troubleshooting, check:
+  - Events: kubectl describe pod -l app.kubernetes.io/name={{ include "raven.name" . }}
+  - Logs: kubectl logs -f -l app.kubernetes.io/name={{ include "raven.name" . }}
+  - Resource usage: kubectl top pod -l app.kubernetes.io/name={{ include "raven.name" . }}

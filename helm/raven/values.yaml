@@ -1,0 +1,211 @@
+# Default values for raven
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Number of replicas to deploy
+replicaCount: 1
+
+# Image configuration
+image:
+  registry: ghcr.io
+  repository: lsflk/raven
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion
+  tag: ""
+
+# Image pull secrets for private registries
+imagePullSecrets: []
+
+# String to override the fully qualified app name
+nameOverride: ""
+
+# String to override the fully qualified app name with a custom value
+fullnameOverride: ""
+
+# Pod annotations
+podAnnotations: {}
+
+# Pod security context
+podSecurityContext:
+  runAsNonRoot: false
+  runAsUser: 0
+  runAsGroup: 0
+  fsGroup: 0
+
+# Container security context
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: false
+  runAsUser: 0
+  runAsGroup: 0
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 143
+  ports:
+    - name: imap
+      port: 143
+      targetPort: 143
+      protocol: TCP
+    - name: imaps
+      port: 993
+      targetPort: 993
+      protocol: TCP
+    - name: lmtp
+      port: 24
+      targetPort: 24
+      protocol: TCP
+    - name: admin
+      port: 12345
+      targetPort: 12345
+      protocol: TCP
+  annotations: {}
+
+# Ingress configuration (for TCP protocols, requires nginx ingress with TCP support)
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations: {}
+    # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  # Note: TCP ingress requires special configuration in nginx ingress controller
+  # See examples/values-ingress-enabled.yaml for detailed TCP ingress setup
+  hosts:
+    - mail.example.com
+  tls: []
+    # - secretName: raven-tls
+    #   hosts:
+    #     - mail.example.com
+
+# Resource limits and requests
+resources:
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+# Node selector for pod scheduling
+nodeSelector: {}
+
+# Tolerations for pod scheduling
+tolerations: []
+
+# Affinity rules for pod scheduling
+affinity: {}
+
+# Persistence configuration for SQLite database
+persistence:
+  # Enable persistent storage
+  enabled: true
+  
+  # Storage class name (leave empty for default)
+  storageClassName: ""
+  
+  # Access modes
+  accessModes:
+    - ReadWriteOnce
+  
+  # Storage size
+  size: 5Gi
+  
+  # Selector for existing PVC
+  selector: {}
+  
+  # Mount path inside container
+  mountPath: /app/data
+
+# Certificates configuration for IMAPS (TLS)
+certificates:
+  enabled: false
+  # Mount path for certificates inside container
+  mountPath: /certs
+  # Use existing secret for certificates (cert.pem and key.pem)
+  existingSecret: ""
+  # Or use hostPath to mount certificates from host
+  hostPath: ""
+
+# Probes configuration
+probes:
+  liveness:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# Raven IMAP and SASL configuration
+raven:
+  # Domain name for the mail server
+  domain: "example.com"
+  
+  # Authentication server URL
+  authServerUrl: "http://auth-service:8080"
+  
+  # SASL access scope: all|tcp_only|unix_socket_only
+  saslScope: "all"
+  
+  # Blob storage configuration for email attachments
+  blobStorage:
+    enabled: false
+    endpoint: "http://s3-service:9000"
+    bucket: "email-attachments"
+    accessKey: ""
+    secretKey: ""
+    useSSL: false
+
+# LMTP delivery configuration
+delivery:
+  lmtp:
+    # LMTP TCP listen address
+    tcpAddress: "0.0.0.0:24"
+    
+    # Maximum message size in bytes (50MB default)
+    maxSize: 52428800
+    
+    # Request timeout in seconds
+    timeout: 300
+  
+  # Database configuration
+  database:
+    # Database file path inside container
+    path: "/app/data/databases"
+  
+  # Delivery settings
+  deliveryConfig:
+    # Default mailbox folder for new messages
+    defaultFolder: "INBOX"
+    
+    # Enable mailbox quotas
+    quotaEnabled: false
+    
+    # Reject delivery to unknown users
+    rejectUnknownUser: false
+
+# Environment variables to set in the pod
+env:
+  # SERVICE environment variable: all|imap|lmtp|sasl|socketmap
+  # Set to "all" to run all services in one container
+  SERVICE: "all"
+  
+  # Database file path
+  DB_FILE: "/app/data/databases/shared.db"
+
+# Additional environment variables
+envFrom: []
+
+# Livenss and readiness probe (port-based by default)
+# Can be overridden for more complex health checks
+probe:
+  port: 143

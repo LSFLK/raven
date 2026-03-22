@@ -1,0 +1,20 @@
+apiVersion: v2
+name: raven
+description: A Helm chart for deploying Raven - an open-source IMAP4 email server with LMTP delivery, SASL authentication, and Postfix socketmap support
+type: application
+version: 0.1.0
+appVersion: "0.5.0"
+home: https://github.com/LSFLK/raven
+sources:
+  - https://github.com/LSFLK/raven
+maintainers:
+  - name: LSFLK
+    url: https://github.com/LSFLK
+keywords:
+  - imap
+  - lmtp
+  - sasl
+  - email
+  - mail-server
+  - socketmap
+icon: https://raw.githubusercontent.com/LSFLK/raven/main/docs/images/raven-logo.png

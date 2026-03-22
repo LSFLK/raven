@@ -1,0 +1,97 @@
+# Production environment values
+# Full-featured setup for production deployments
+
+replicaCount: 2
+
+image:
+  tag: "v0.5.0"  # Use specific version tags in production
+  pullPolicy: IfNotPresent
+
+# Resource allocation for production
+resources:
+  limits:
+    cpu: 4000m
+    memory: 4Gi
+  requests:
+    cpu: 2000m
+    memory: 2Gi
+
+# Significant storage for production
+persistence:
+  enabled: true
+  size: 100Gi
+  storageClassName: "fast-ssd"  # Adjust to your cluster's storage classes
+
+# Use LoadBalancer for external access
+service:
+  type: LoadBalancer
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"  # For AWS NLB
+
+# Production configuration
+raven:
+  domain: "mail.example.com"
+  authServerUrl: "http://auth-service.default.svc.cluster.local:8080"
+  saslScope: "all"
+  
+  # Enable blob storage for large attachments
+  blobStorage:
+    enabled: true
+    endpoint: "http://seaweedfs-service:9000"
+    bucket: "email-attachments"
+    accessKey: "admin"
+    secretKey: "admin123"
+    useSSL: false
+
+delivery:
+  lmtp:
+    tcpAddress: "0.0.0.0:24"
+    maxSize: 52428800  # 50MB production limit
+    timeout: 300
+  
+  deliveryConfig:
+    defaultFolder: "INBOX"
+    quotaEnabled: true
+    rejectUnknownUser: true
+
+# Enable TLS certificates for IMAPS/SMTP
+certificates:
+  enabled: true
+  mountPath: /certs
+  existingSecret: "raven-tls-secret"  # Requires pre-existing TLS secret
+
+# Production-grade probes
+probes:
+  liveness:
+    initialDelaySeconds: 45
+    periodSeconds: 30
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    failureThreshold: 2
+
+# Pod affinity for high availability
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - raven
+          topologyKey: kubernetes.io/hostname
+
+# Node selector for production nodes
+nodeSelector:
+  workload: mail-production
+
+# Tolerations for specific node taints
+tolerations:
+  - key: "mail-production"
+    operator: "Equal"
+    value: "true"
+    effect: "NoSchedule"

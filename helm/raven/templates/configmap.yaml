@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "raven.fullname" . }}-config
+  labels:
+    {{- include "raven.labels" . | nindent 4 }}
+data:
+  raven.yaml: |
+    domain: {{ .Values.raven.domain | quote }}
+    auth_server_url: {{ .Values.raven.authServerUrl | quote }}
+    sasl_scope: {{ .Values.raven.saslScope | quote }}
+    {{- if .Values.raven.blobStorage.enabled }}
+    blob_storage:
+      enabled: true
+      endpoint: {{ .Values.raven.blobStorage.endpoint | quote }}
+      bucket: {{ .Values.raven.blobStorage.bucket | quote }}
+      {{- if .Values.raven.blobStorage.accessKey }}
+      access_key: {{ .Values.raven.blobStorage.accessKey | quote }}
+      {{- end }}
+      {{- if .Values.raven.blobStorage.secretKey }}
+      secret_key: {{ .Values.raven.blobStorage.secretKey | quote }}
+      {{- end }}
+      use_ssl: {{ .Values.raven.blobStorage.useSSL }}
+    {{- end }}
+  
+  delivery.yaml: |
+    lmtp:
+      tcp_address: {{ .Values.delivery.lmtp.tcpAddress | quote }}
+      max_size: {{ .Values.delivery.lmtp.maxSize }}
+      timeout: {{ .Values.delivery.lmtp.timeout }}
+    
+    database:
+      path: {{ .Values.delivery.database.path | quote }}
+    
+    delivery:
+      default_folder: {{ .Values.delivery.deliveryConfig.defaultFolder | quote }}
+      quota_enabled: {{ .Values.delivery.deliveryConfig.quotaEnabled }}
+      reject_unknown_user: {{ .Values.delivery.deliveryConfig.rejectUnknownUser }}

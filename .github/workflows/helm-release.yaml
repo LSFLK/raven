@@ -1,0 +1,145 @@
+name: Helm Chart Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Chart version (leave empty to use release version)'
+        required: false
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  CHART_NAME: charts/raven
+
+jobs:
+  helm-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'latest'
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "release" ]; then
+            VERSION=${{ github.event.release.tag_name }}
+            VERSION=${VERSION#v}  # Remove 'v' prefix if present
+          else
+            VERSION=${{ inputs.version }}
+            if [ -z "$VERSION" ]; then
+              echo "Error: Version must be provided for manual trigger"
+              exit 1
+            fi
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "chart_version=$(grep '^version:' helm/raven/Chart.yaml | awk '{print $2}')" >> $GITHUB_OUTPUT
+
+      - name: Update chart version
+        if: steps.version.outputs.version != steps.version.outputs.chart_version
+        run: |
+          sed -i "s/^version: .*/version: ${{ steps.version.outputs.version }}/" helm/raven/Chart.yaml
+          echo "Updated Chart.yaml version to ${{ steps.version.outputs.version }}"
+
+      - name: Lint Helm chart
+        run: |
+          helm lint helm/raven/ --strict
+          echo "✅ Chart linting passed"
+
+      - name: Template validation
+        run: |
+          helm template raven helm/raven/ > /tmp/manifest.yaml
+          echo "✅ Chart template rendering successful"
+          wc -l /tmp/manifest.yaml
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Package Helm chart
+        run: |
+          mkdir -p /tmp/charts
+          helm package helm/raven/ --destination /tmp/charts
+          ls -lah /tmp/charts/
+
+      - name: Push chart to GHCR
+        run: |
+          CHART_PACKAGE=$(ls /tmp/charts/raven-*.tgz)
+          echo "Pushing chart package: $CHART_PACKAGE"
+          helm push "$CHART_PACKAGE" oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.CHART_NAME }}
+          echo "✅ Chart pushed to oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.CHART_NAME }}"
+
+      - name: Verify published chart
+        run: |
+          helm pull oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.CHART_NAME }} \
+            --version ${{ steps.version.outputs.version }} \
+            --destination /tmp/verify
+          echo "✅ Chart verification successful"
+          tar -tzf /tmp/verify/raven-*.tgz | head -20
+
+      - name: Create workflow summary
+        run: |
+          echo "## Helm Chart Released" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Chart Name | raven |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | ${{ steps.version.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Registry | ${{ env.REGISTRY }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Repository | ${{ github.repository_owner }}/${{ env.CHART_NAME }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Installation" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "helm install raven oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.CHART_NAME }} \\" >> $GITHUB_STEP_SUMMARY
+          echo "  --version ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Publish release notes
+        if: github.event_name == 'release'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const installCmd = `helm install raven oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.CHART_NAME }} --version ${{ steps.version.outputs.version }}`;
+            const releaseBody = `${{ github.event.release.body }}
+
+## Helm Chart
+
+This release includes a Helm chart for Kubernetes deployments.
+
+### Quick Install
+
+\`\`\`bash
+${installCmd}
+\`\`\`
+
+### Documentation
+
+See [helm/raven/README.md](https://github.com/${{ github.repository }}/blob/${{ github.event.release.tag_name }}/helm/raven/README.md) for full documentation.
+
+### Examples
+
+- Development: \`helm install raven oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.CHART_NAME }} -f helm/raven/examples/values-dev.yaml\`
+- Production: \`helm install raven oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.CHART_NAME }} -f helm/raven/examples/values-prod.yaml\`
+`;
+            github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: ${{ github.event.release.id }},
+              body: releaseBody
+            });
