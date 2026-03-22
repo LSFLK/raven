@@ -533,9 +533,13 @@ func fetchSystemAssertion(baseURL string) string {
 }
 
 func fetchAssertion(baseURL, username, password string) string {
-	applicationID := getApplicationID()
+	applicationID, err := conf.GetApplicationID()
+	if err != nil {
+		log.Printf("LOGIN: failed to get application ID: %v", err)
+		return ""
+	}
 	if applicationID == "" {
-		log.Printf("LOGIN: application ID not configured (set APPLICATION_ID/applicationId in env or .env)")
+		log.Printf("LOGIN: application ID is empty")
 		return ""
 	}
 
@@ -710,22 +714,6 @@ func buildAuthHTTPClient() *http.Client {
 		Transport: &http.Transport{TLSClientConfig: tlsConfig},
 		Timeout:   10 * time.Second,
 	}
-}
-
-func getApplicationID() string {
-	for _, key := range []string{"APPLICATION_ID", "applicationId"} {
-		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-			return value
-		}
-	}
-
-	for _, path := range []string{".env", "config/.env", "/etc/raven/.env"} {
-		if value := readEnvValue(path, []string{"APPLICATION_ID", "applicationId"}); value != "" {
-			return value
-		}
-	}
-
-	return ""
 }
 
 func getEnvOrDefault(key, defaultValue string) string {

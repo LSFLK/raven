@@ -1,11 +1,8 @@
 package auth
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -157,35 +154,6 @@ func TestResolveOrganizationUnitDomainAndCycle(t *testing.T) {
 		_, err := resolveOrganizationUnitDomain(srv.URL, "ou-a", "")
 		if err == nil || !strings.Contains(err.Error(), "cycle detected") {
 			t.Fatalf("expected cycle detected error, got: %v", err)
-		}
-	})
-}
-
-func TestGetApplicationIDAndReadEnvValue(t *testing.T) {
-	t.Run("env wins", func(t *testing.T) {
-		t.Setenv("APPLICATION_ID", "env-app-id")
-		if got := getApplicationID(); got != "env-app-id" {
-			t.Fatalf("getApplicationID() = %q, want %q", got, "env-app-id")
-		}
-	})
-
-	t.Run("lowercase env key supported", func(t *testing.T) {
-		t.Setenv("APPLICATION_ID", "")
-		t.Setenv("applicationId", "lowercase-app-id")
-		if got := getApplicationID(); got != "lowercase-app-id" {
-			t.Fatalf("getApplicationID() = %q, want %q", got, "lowercase-app-id")
-		}
-	})
-
-	t.Run("readEnvValue supports quotes", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "sample.env")
-		content := fmt.Sprintf("%s\n", `applicationId="quoted-app-id"`)
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-			t.Fatalf("WriteFile() failed: %v", err)
-		}
-
-		if got := readEnvValue(path, []string{"applicationId"}); got != "quoted-app-id" {
-			t.Fatalf("readEnvValue() = %q, want %q", got, "quoted-app-id")
 		}
 	})
 }
