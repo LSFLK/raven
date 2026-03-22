@@ -7,16 +7,16 @@
 ingress:
   enabled: true
   className: "nginx"
-  
+
   # Annotations for nginx ingress controller TCP services
   annotations:
     # These annotations tell nginx-ingress to handle TCP traffic
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
-  
+
   # Hosts for the ingress (typically mail server domain)
   hosts:
     - mail.example.com
-  
+
   # TLS configuration
   tls:
     - secretName: raven-tls-cert
@@ -37,7 +37,7 @@ service:
 # For nginx-ingress, you would configure in values or via ConfigMap:
 # data:
 #   "143": "default/raven:143"    # IMAP
-#   "993": "default/raven:993"    # IMAPS  
+#   "993": "default/raven:993"    # IMAPS
 #   "24":  "default/raven:24"     # LMTP
 #   "12345": "default/raven:12345" # Admin
 #

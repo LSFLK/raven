@@ -103,20 +103,20 @@ affinity: {}
 persistence:
   # Enable persistent storage
   enabled: true
-  
+
   # Storage class name (leave empty for default)
   storageClassName: ""
-  
+
   # Access modes
   accessModes:
     - ReadWriteOnce
-  
+
   # Storage size
   size: 5Gi
-  
+
   # Selector for existing PVC
   selector: {}
-  
+
   # Mount path inside container
   mountPath: /app/data
 
@@ -149,13 +149,13 @@ probes:
 raven:
   # Domain name for the mail server
   domain: "example.com"
-  
+
   # Authentication server URL
   authServerUrl: "http://auth-service:8080"
-  
+
   # SASL access scope: all|tcp_only|unix_socket_only
   saslScope: "all"
-  
+
   # Blob storage configuration for email attachments
   blobStorage:
     enabled: false
@@ -170,26 +170,26 @@ delivery:
   lmtp:
     # LMTP TCP listen address
     tcpAddress: "0.0.0.0:24"
-    
+
     # Maximum message size in bytes (50MB default)
     maxSize: 52428800
-    
+
     # Request timeout in seconds
     timeout: 300
-  
+
   # Database configuration
   database:
     # Database file path inside container
     path: "/app/data/databases"
-  
+
   # Delivery settings
   deliveryConfig:
     # Default mailbox folder for new messages
     defaultFolder: "INBOX"
-    
+
     # Enable mailbox quotas
     quotaEnabled: false
-    
+
     # Reject delivery to unknown users
     rejectUnknownUser: false
 
@@ -198,7 +198,7 @@ env:
   # SERVICE environment variable: all|imap|lmtp|sasl|socketmap
   # Set to "all" to run all services in one container
   SERVICE: "all"
-  
+
   # Database file path
   DB_FILE: "/app/data/databases/shared.db"
 

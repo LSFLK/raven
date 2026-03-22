@@ -34,7 +34,7 @@ raven:
 delivery:
   lmtp:
     tcpAddress: "0.0.0.0:24"
-    maxSize: 26214400  # 25MB for dev
+    maxSize: 26214400 # 25MB for dev
     timeout: 300
 
 # Disable TLS certificates for dev
