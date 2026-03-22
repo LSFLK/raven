@@ -40,7 +40,7 @@ func getEnvInt(key string, defaultValue int) int {
 		if intVal, err := strconv.Atoi(value); err == nil {
 			return intVal
 		} else {
-			log.Printf("Warning: could not parse env var %s value %q as int. Using default %d. Error: %v", key, value, defaultValue, err)
+			log.Printf("Warning: could not parse env var %s as int. Using default %d.", key, defaultValue)
 		}
 	}
 	return defaultValue

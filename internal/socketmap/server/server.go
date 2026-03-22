@@ -69,7 +69,11 @@ func (s *Server) Start() error {
 
 // handleConnection handles a single client connection
 func (s *Server) handleConnection(conn net.Conn) {
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			log.Printf("⚠ Error closing connection %s: %v", conn.RemoteAddr(), err)
+		}
+	}()
 	defer log.Printf("Connection closed: %s", conn.RemoteAddr())
 
 	log.Printf("  Connection established, using netstring protocol...")
@@ -77,7 +81,10 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 	for {
 		// Set read timeout to prevent hanging connections
-		conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+		if err := conn.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
+			log.Printf("⚠ Error setting read deadline for %s: %v", conn.RemoteAddr(), err)
+			return
+		}
 
 		log.Printf("  Waiting to read netstring from connection...")
 
@@ -111,7 +118,10 @@ func (s *Server) handleConnection(conn net.Conn) {
 		log.Printf("→ Preparing response: %q", response)
 
 		// Send response using netstring protocol
-		conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		if err := conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			log.Printf("⚠ Error setting write deadline for %s: %v", conn.RemoteAddr(), err)
+			return
+		}
 		err = protocol.WriteNetstring(conn, response)
 		if err != nil {
 			log.Printf("⚠ Error writing netstring to %s: %v", conn.RemoteAddr(), err)
@@ -124,7 +134,9 @@ func (s *Server) handleConnection(conn net.Conn) {
 // Close gracefully shuts down the server
 func (s *Server) Close() error {
 	if s.listener != nil {
-		s.listener.Close()
+		if err := s.listener.Close(); err != nil {
+			return fmt.Errorf("failed to close listener: %w", err)
+		}
 	}
 	s.activeConns.Wait()
 	return nil

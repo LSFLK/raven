@@ -84,7 +84,11 @@ func ValidateUser(email, host, port string, tokenRefreshSeconds int) (bool, erro
 		log.Printf("      └──────────────────────────────")
 		return false, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("      │ ⚠ Failed to close user response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != 200 {
 		log.Printf("      │ ⚠ Unexpected status: %d", resp.StatusCode)

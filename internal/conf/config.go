@@ -1,6 +1,7 @@
 package conf
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"os"
@@ -94,7 +95,8 @@ func (c *Config) Validate() error {
 // 1. THUNDER_DEVELOP_APP_ID environment variable
 // 2. APPLICATION_ID environment variable
 // 3. applicationId environment variable
-// 4. Extracted from thunder-setup container logs as fallback
+// 4. .env/config/.env entries (APPLICATION_ID or applicationId)
+// 5. Extracted from thunder-setup container logs as fallback
 func GetApplicationID() (string, error) {
 	// Try THUNDER_DEVELOP_APP_ID first (socketmap develop environment)
 	if appID := strings.TrimSpace(os.Getenv("THUNDER_DEVELOP_APP_ID")); appID != "" {
@@ -114,6 +116,13 @@ func GetApplicationID() (string, error) {
 		return appID, nil
 	}
 
+	for _, path := range []string{".env", "config/.env", "/etc/raven/.env"} {
+		if value := readEnvValue(path, []string{"THUNDER_DEVELOP_APP_ID", "APPLICATION_ID", "applicationId"}); value != "" {
+			log.Printf("Using Application ID from %s", path)
+			return value, nil
+		}
+	}
+
 	// Fall back to extracting from thunder container logs
 	log.Printf("Application ID not set in environment variables, attempting to extract from thunder-setup container logs...")
 	appID, err := extractApplicationIDFromThunderLogs()
@@ -122,6 +131,40 @@ func GetApplicationID() (string, error) {
 	}
 
 	return appID, nil
+}
+
+func readEnvValue(path string, keys []string) string {
+	file, err := os.Open(filepath.Clean(path))
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = file.Close() }()
+
+	lookup := map[string]struct{}{}
+	for _, key := range keys {
+		lookup[key] = struct{}{}
+	}
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
+		if _, ok := lookup[key]; ok {
+			return value
+		}
+	}
+
+	return ""
 }
 
 // extractApplicationIDFromThunderLogs extracts the Application ID from thunder-setup container logs
@@ -161,5 +204,5 @@ func extractApplicationIDFromThunderLogs() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("Application ID not found in thunder-setup container logs")
+	return "", fmt.Errorf("application ID not found in thunder-setup container logs")
 }

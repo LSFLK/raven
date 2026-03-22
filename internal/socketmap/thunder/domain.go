@@ -24,8 +24,8 @@ func sanitizeDomainPart(part string) error {
 
 	// Validate that domain part contains only valid characters (alphanumeric, hyphens, underscores)
 	for _, char := range part {
-		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
-			(char >= '0' && char <= '9') || char == '-' || char == '_') {
+		if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') &&
+			(char < '0' || char > '9') && char != '-' && char != '_' {
 			return fmt.Errorf("invalid character in domain part: %c", char)
 		}
 	}
@@ -115,7 +115,11 @@ func ValidateDomain(domain, host, port string, tokenRefreshSeconds int) (bool, e
 		log.Printf("      └──────────────────────────────")
 		return false, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("      │ ⚠ Failed to close response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode == 404 {
 		log.Printf("      │ ✗ Domain not found in Thunder")
@@ -191,7 +195,11 @@ func GetOrgUnitIDForDomain(domain, host, port string, tokenRefreshSeconds int) (
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("      │ ⚠ Failed to close OU response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != 200 {
 		return "", fmt.Errorf("OU not found or error: %d", resp.StatusCode)

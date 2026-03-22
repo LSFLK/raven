@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"bufio"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
@@ -12,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -722,40 +720,6 @@ func getEnvOrDefault(key, defaultValue string) string {
 	}
 
 	return defaultValue
-}
-
-func readEnvValue(path string, keys []string) string {
-	file, err := os.Open(filepath.Clean(path))
-	if err != nil {
-		return ""
-	}
-	defer func() { _ = file.Close() }()
-
-	lookup := map[string]struct{}{}
-	for _, key := range keys {
-		lookup[key] = struct{}{}
-	}
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
-			continue
-		}
-
-		key := strings.TrimSpace(parts[0])
-		value := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
-		if _, ok := lookup[key]; ok {
-			return value
-		}
-	}
-
-	return ""
 }
 
 // ===== HANDLE SSL CONNECTION =====

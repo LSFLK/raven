@@ -6,12 +6,12 @@ import (
 	"time"
 )
 
-// GetHTTPClient returns an HTTP client with TLS verification disabled for self-signed certs
+// GetHTTPClient returns an HTTP client with secure TLS defaults.
 func GetHTTPClient() *http.Client {
 	return &http.Client{
 		Timeout: 10 * time.Second,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
 		},
 	}
 }

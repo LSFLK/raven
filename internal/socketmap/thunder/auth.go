@@ -64,7 +64,11 @@ func Authenticate(host, port string, tokenRefreshSeconds int) (*Auth, error) {
 		log.Printf("  └───────────────────────────────────")
 		return nil, fmt.Errorf("failed to start flow: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("  │ ⚠ Failed to close flow response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != 200 {
 		log.Printf("  │ ✗ Flow start failed (HTTP %d)", resp.StatusCode)
@@ -100,7 +104,11 @@ func Authenticate(host, port string, tokenRefreshSeconds int) (*Auth, error) {
 		log.Printf("  └───────────────────────────────────")
 		return nil, fmt.Errorf("failed to complete auth: %w", err)
 	}
-	defer resp2.Body.Close()
+	defer func() {
+		if err := resp2.Body.Close(); err != nil {
+			log.Printf("  │ ⚠ Failed to close auth response body: %v", err)
+		}
+	}()
 
 	if resp2.StatusCode != 200 {
 		log.Printf("  │ ✗ Auth completion failed (HTTP %d)", resp2.StatusCode)
