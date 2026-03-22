@@ -96,7 +96,12 @@ func Authenticate(host, port string, tokenRefreshSeconds int) (*Auth, error) {
 		},
 		"action": "action_001",
 	}
-	authData, _ := json.Marshal(authPayload)
+	authData, err := json.Marshal(authPayload)
+	if err != nil {
+		log.Printf("  │ ✗ Failed to marshal auth payload: %v", err)
+		log.Printf("  └───────────────────────────────────")
+		return nil, fmt.Errorf("failed to marshal auth payload: %w", err)
+	}
 
 	resp2, err := client.Post(baseURL+"/flow/execute", "application/json", bytes.NewBuffer(authData))
 	if err != nil {

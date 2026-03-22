@@ -14,6 +14,8 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+var uuidRegex = regexp.MustCompile(`[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}`)
+
 // SASLScope defines where SASL authentication should be applied
 type SASLScope string
 
@@ -194,9 +196,7 @@ func extractApplicationIDFromThunderLogs() (string, error) {
 	for _, line := range lines {
 		// Look for line containing DEVELOP_APP_ID (case-insensitive)
 		if strings.Contains(line, "DEVELOP_APP_ID") || strings.Contains(line, "develop_app_id") {
-			// Extract UUID pattern: [a-f0-9-]{36}
-			re := regexp.MustCompile(`[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}`)
-			match := re.FindString(line)
+			match := uuidRegex.FindString(line)
 			if match != "" {
 				log.Printf("✓ Application ID extracted from thunder logs: %s", match)
 				return match, nil

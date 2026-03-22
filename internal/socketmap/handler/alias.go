@@ -41,8 +41,8 @@ func ResolveAlias(address string, cfg *config.Config, cacheManager *cache.Cache)
 		log.Printf("    │ Querying alias database...")
 	}
 
-	// Query database for alias
-	destination := checkAliasInTestDB(address)
+	// Resolve built-in aliases.
+	destination := resolveBuiltInAlias(address)
 
 	log.Printf("    │ Database result: destination=%s", destination)
 
@@ -60,9 +60,9 @@ func ResolveAlias(address string, cfg *config.Config, cacheManager *cache.Cache)
 	return destination
 }
 
-// checkAliasInTestDB queries the test alias database
-func checkAliasInTestDB(address string) string {
-	log.Printf("      ┌─ Test Alias DB Lookup ───────")
+// resolveBuiltInAlias resolves built-in aliases handled by socketmap.
+func resolveBuiltInAlias(address string) string {
+	log.Printf("      ┌─ Built-in Alias Lookup ──────")
 	log.Printf("      │ Checking: %s", address)
 
 	// Parse address to get domain
@@ -84,7 +84,7 @@ func checkAliasInTestDB(address string) string {
 		return destination
 	}
 
-	log.Printf("      │ ✗ No alias found (only postmaster@domain supported)")
+	log.Printf("      │ ✗ No built-in alias found (only postmaster@domain supported)")
 	log.Printf("      └──────────────────────────────")
 	return ""
 }

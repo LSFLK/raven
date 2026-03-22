@@ -154,7 +154,7 @@ ENTRYPOINT ["/app/entrypoint.sh"]
 # ============================================================================
 # Stage 6: Socketmap Service Image
 # ============================================================================
-FROM alpine:3.19 AS raven-socketmap
+FROM alpine:3.18 AS raven-socketmap
 
 # Install runtime dependencies required by socketmap
 RUN apk --no-cache add ca-certificates netcat-openbsd docker-cli

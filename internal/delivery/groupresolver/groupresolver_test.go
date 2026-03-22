@@ -172,10 +172,7 @@ func TestGroupMemberResolution(t *testing.T) {
 					{"id": "user-2", "type": "user"},
 				},
 			}
-			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(resp); err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-			}
+			_ = writeResponseJSON(w, resp)
 
 		case "/users/user-1":
 			resp := map[string]interface{}{
