@@ -29,25 +29,6 @@ func writeResponseJSON(w http.ResponseWriter, payload any) bool {
 	return true
 }
 
-func decodeRequestJSON(w http.ResponseWriter, r *http.Request, out any) bool {
-	if err := json.NewDecoder(r.Body).Decode(out); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return false
-	}
-
-	return true
-}
-
-func writeResponseJSON(w http.ResponseWriter, payload any) bool {
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(payload); err != nil {
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
-		return false
-	}
-
-	return true
-}
-
 func createTestJWT(exp int64) string {
 	header := map[string]string{"alg": "HS256", "typ": "JWT"}
 	headerJSON, _ := json.Marshal(header)

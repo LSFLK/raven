@@ -83,11 +83,7 @@ func (gr *GroupResolver) ResolveGroupMembers(groupName string) ([]string, error)
 		for _, member := range members {
 			if member.Type == "user" {
 				// Resolve user to email address
-<<<<<<< HEAD
-				email, err := gr.resolveUserEmail(member.ID, baseDomain)
-=======
 				email, err := gr.resolveUserEmail(assertion, member.ID)
->>>>>>> 842bda9 (Feature: Refactor group email handling by removing domain parameter and updating related methods)
 				if err != nil {
 					log.Printf("GroupResolver: failed to resolve user %s: %v, skipping", member.ID, err)
 					continue
@@ -281,17 +277,6 @@ func (gr *GroupResolver) fetchGroupMembers(assertion, groupID string) ([]Member,
 	return result.Members, nil
 }
 
-<<<<<<< HEAD
-// resolveUserEmail resolves a user's UUID to their email address using domain
-func (gr *GroupResolver) resolveUserEmail(userID, baseDomain string) (string, error) {
-	// The user ID is typically a username or similar identifier
-	// We construct the email as username@domain
-	username := userID
-	if baseDomain == "" {
-		return "", fmt.Errorf("base domain is required to resolve user email")
-	}
-	return username + "@" + baseDomain, nil
-=======
 // resolveUserEmail resolves a user member id to an email address.
 // It fetches the user profile, extracts username, and derives domain from organization unit.
 func (gr *GroupResolver) resolveUserEmail(assertion, userID string) (string, error) {
@@ -439,7 +424,6 @@ func firstNonEmpty(values ...string) string {
 	}
 
 	return ""
->>>>>>> 842bda9 (Feature: Refactor group email handling by removing domain parameter and updating related methods)
 }
 
 // Member represents a group member
