@@ -39,11 +39,13 @@ virtual_alias_maps = socketmap:inet:socketmap-server:9100:virtual-aliases
 
 | Map | Purpose | Response |
 |-----|---------|----------|
-| `user-exists` | Validate users via Thunder IDP | `OK email` or `NOTFOUND` |
+| `user-exists` | Validate users and group addresses via Thunder IDP | `OK email` or `NOTFOUND` |
 | `virtual-domains` | Validate domains via Thunder OUs | `OK 1` or `NOTFOUND` |
 | `virtual-aliases` | Resolve aliases | `OK target` or `NOTFOUND` |
 
-**Caching:** Positive results cached for 5 minutes. Negative results NOT cached (new users immediately accessible).
+Group address format: `<groupname>-group@domainname`.
+
+**Caching:** Positive results cached for 5 minutes. Negative results NOT cached (new users/groups immediately accessible).
 
 ## Troubleshooting
 
