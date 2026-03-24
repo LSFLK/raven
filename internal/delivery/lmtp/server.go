@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"raven/internal/blobstorage"
+	"raven/internal/conf"
 	"raven/internal/db"
 	"raven/internal/delivery/config"
 	"raven/internal/delivery/groupresolver"
@@ -75,9 +76,11 @@ func initGroupResolver(cfg *config.Config) *groupresolver.GroupResolver {
 		systemPassword = "admin"
 	}
 
-	appID := os.Getenv("APPLICATION_ID")
-	if appID == "" {
-		appID = os.Getenv("applicationId")
+	// Use shared application ID retrieval (env variables or thunder logs)
+	appID, err := conf.GetApplicationID()
+	if err != nil {
+		log.Printf("Warning: Failed to get application ID for group resolver: %v", err)
+		appID = ""
 	}
 
 	gr := groupresolver.NewGroupResolver(cfg.IDPBaseURL, appID, systemUsername, systemPassword)

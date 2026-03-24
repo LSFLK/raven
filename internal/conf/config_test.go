@@ -458,3 +458,59 @@ auth_server_url: https://auth.test.example.com
 		})
 	}
 }
+
+func TestGetApplicationID_PreferenceOrder(t *testing.T) {
+	t.Setenv("THUNDER_DEVELOP_APP_ID", "thunder-app-id")
+	t.Setenv("APPLICATION_ID", "upper-app-id")
+	t.Setenv("applicationId", "lower-app-id")
+
+	got, err := GetApplicationID()
+	if err != nil {
+		t.Fatalf("GetApplicationID() unexpected error: %v", err)
+	}
+	if got != "thunder-app-id" {
+		t.Fatalf("GetApplicationID() = %q, want %q", got, "thunder-app-id")
+	}
+}
+
+func TestGetApplicationID_FromDotEnv(t *testing.T) {
+	t.Setenv("THUNDER_DEVELOP_APP_ID", "")
+	t.Setenv("APPLICATION_ID", "")
+	t.Setenv("applicationId", "")
+
+	tmpDir := t.TempDir()
+	envPath := filepath.Join(tmpDir, ".env")
+	if err := os.WriteFile(envPath, []byte("applicationId=dotenv-app-id\n"), 0600); err != nil {
+		t.Fatalf("Failed to write .env file: %v", err)
+	}
+
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get current directory: %v", err)
+	}
+	defer func() { _ = os.Chdir(originalDir) }()
+
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+
+	got, err := GetApplicationID()
+	if err != nil {
+		t.Fatalf("GetApplicationID() unexpected error: %v", err)
+	}
+	if got != "dotenv-app-id" {
+		t.Fatalf("GetApplicationID() = %q, want %q", got, "dotenv-app-id")
+	}
+}
+
+func TestReadEnvValue_QuotedValue(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sample.env")
+	content := "applicationId=\"quoted-app-id\"\n"
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatalf("WriteFile() failed: %v", err)
+	}
+
+	if got := readEnvValue(path, []string{"applicationId"}); got != "quoted-app-id" {
+		t.Fatalf("readEnvValue() = %q, want %q", got, "quoted-app-id")
+	}
+}

@@ -5,7 +5,8 @@
 #   1. raven-sasl  - SASL authentication service only
 #   2. raven-lmtp  - LMTP delivery service only
 #   3. raven-imap  - IMAP server only
-#   4. raven       - All services combined
+#   4. raven-socketmap - Socketmap service only
+#   5. raven       - All services combined
 # ============================================================================
 
 # ============================================================================
@@ -32,7 +33,8 @@ ENV CGO_ENABLED=1
 # Add new service builds here following the same pattern
 RUN go build -ldflags="-w -s" -o imap-server ./cmd/server && \
     go build -ldflags="-w -s" -o raven-delivery ./cmd/delivery && \
-    go build -ldflags="-w -s" -o raven-sasl ./cmd/sasl
+    go build -ldflags="-w -s" -o raven-sasl ./cmd/sasl && \
+    CGO_ENABLED=0 go build -ldflags="-w -s" -o socketmap ./cmd/socketmap
 
 # ============================================================================
 # Stage 2: Base runtime image
@@ -40,7 +42,7 @@ RUN go build -ldflags="-w -s" -o imap-server ./cmd/server && \
 FROM alpine:3.18 AS base
 
 # Install required runtime dependencies
-RUN apk add --no-cache sqlite tzdata netcat-openbsd ca-certificates bash \
+RUN apk add --no-cache sqlite tzdata netcat-openbsd ca-certificates bash docker-cli \
     && rm -rf /var/cache/apk/*
 
 # Create a non-root user
@@ -150,7 +152,26 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 ENTRYPOINT ["/app/entrypoint.sh"]
 
 # ============================================================================
-# Stage 6: Combined Image (All Services)
+# Stage 6: Socketmap Service Image
+# ============================================================================
+FROM alpine:3.18 AS raven-socketmap
+
+# Install runtime dependencies required by socketmap
+RUN apk --no-cache add ca-certificates netcat-openbsd docker-cli
+
+WORKDIR /app
+
+# Copy socketmap binary
+COPY --from=builder /app/socketmap .
+
+# Expose socketmap port
+EXPOSE 9100
+
+# Start socketmap service
+ENTRYPOINT ["/app/socketmap"]
+
+# ============================================================================
+# Stage 7: Combined Image (All Services)
 # ============================================================================
 FROM base AS raven
 
@@ -158,6 +179,7 @@ FROM base AS raven
 COPY --from=builder /app/imap-server .
 COPY --from=builder /app/raven-delivery .
 COPY --from=builder /app/raven-sasl .
+COPY --from=builder /app/socketmap .
 
 # Copy combined entrypoint script
 COPY ./scripts/entrypoint.sh /app/entrypoint.sh
@@ -176,7 +198,8 @@ USER ravenuser
 # IMAP: 143 (plaintext), 993 (TLS)
 # LMTP: 24
 # SASL: 12345 (TCP)
-EXPOSE 143 993 24 12345
+# Socketmap: 9100
+EXPOSE 143 993 24 12345 9100
 
 # Set environment variables
 ENV DB_PATH=/app/data/databases \
@@ -184,12 +207,13 @@ ENV DB_PATH=/app/data/databases \
 
 # Health check - check all services
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD nc -z localhost 143 && nc -z localhost 24 && nc -z localhost 12345 || exit 1
+    CMD nc -z localhost 143 && nc -z localhost 24 && nc -z localhost 12345 && nc -z localhost 9100 || exit 1
 
 # Start all services or a specific one based on SERVICE environment variable
 # Usage:
 #   docker run -e SERVICE=imap ...     # Run only IMAP
 #   docker run -e SERVICE=lmtp ...     # Run only LMTP
 #   docker run -e SERVICE=sasl ...     # Run only SASL
+#   docker run -e SERVICE=socketmap ... # Run only Socketmap
 #   docker run ...                     # Run all services (default)
 ENTRYPOINT ["/app/entrypoint.sh"]

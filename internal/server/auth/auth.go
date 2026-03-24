@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"bufio"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
@@ -12,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -533,9 +531,13 @@ func fetchSystemAssertion(baseURL string) string {
 }
 
 func fetchAssertion(baseURL, username, password string) string {
-	applicationID := getApplicationID()
+	applicationID, err := conf.GetApplicationID()
+	if err != nil {
+		log.Printf("LOGIN: failed to get application ID: %v", err)
+		return ""
+	}
 	if applicationID == "" {
-		log.Printf("LOGIN: application ID not configured (set APPLICATION_ID/applicationId in env or .env)")
+		log.Printf("LOGIN: application ID is empty")
 		return ""
 	}
 
@@ -712,62 +714,12 @@ func buildAuthHTTPClient() *http.Client {
 	}
 }
 
-func getApplicationID() string {
-	for _, key := range []string{"APPLICATION_ID", "applicationId"} {
-		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-			return value
-		}
-	}
-
-	for _, path := range []string{".env", "config/.env", "/etc/raven/.env"} {
-		if value := readEnvValue(path, []string{"APPLICATION_ID", "applicationId"}); value != "" {
-			return value
-		}
-	}
-
-	return ""
-}
-
 func getEnvOrDefault(key, defaultValue string) string {
 	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
 		return value
 	}
 
 	return defaultValue
-}
-
-func readEnvValue(path string, keys []string) string {
-	file, err := os.Open(filepath.Clean(path))
-	if err != nil {
-		return ""
-	}
-	defer func() { _ = file.Close() }()
-
-	lookup := map[string]struct{}{}
-	for _, key := range keys {
-		lookup[key] = struct{}{}
-	}
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
-			continue
-		}
-
-		key := strings.TrimSpace(parts[0])
-		value := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
-		if _, ok := lookup[key]; ok {
-			return value
-		}
-	}
-
-	return ""
 }
 
 // ===== HANDLE SSL CONNECTION =====

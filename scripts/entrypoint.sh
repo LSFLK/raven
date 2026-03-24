@@ -9,6 +9,7 @@ set -e
 #   SERVICE=imap   - Run only IMAP server
 #   SERVICE=lmtp   - Run only LMTP delivery service
 #   SERVICE=sasl   - Run only SASL authentication service
+#   SERVICE=socketmap - Run only Socketmap service
 
 SERVICE=${SERVICE:-all}
 
@@ -28,6 +29,12 @@ start_imap() {
 start_lmtp() {
     echo "Starting Delivery service (LMTP)..."
     exec ./raven-delivery -db ${DB_PATH:-/app/data/databases}
+}
+
+# Function to start Socketmap service
+start_socketmap() {
+    echo "Starting Socketmap service..."
+    exec ./socketmap
 }
 
 # Function to start all services
@@ -51,12 +58,18 @@ start_all() {
     DELIVERY_PID=$!
     echo "Delivery service started with PID: $DELIVERY_PID"
 
+    echo "Starting Socketmap service..."
+    ./socketmap &
+    SOCKETMAP_PID=$!
+    echo "Socketmap service started with PID: $SOCKETMAP_PID (TCP :9100)"
+
     echo ""
     echo "==================================="
     echo "All Raven services started:"
     echo "  SASL Auth: PID $SASL_PID (TCP :12345)"
     echo "  IMAP:      PID $IMAP_PID"
     echo "  LMTP:      PID $DELIVERY_PID"
+    echo "  Socketmap: PID $SOCKETMAP_PID (TCP :9100)"
     echo "  DB Path:   ${DB_PATH:-/app/data/databases}"
     echo "==================================="
 
@@ -74,12 +87,15 @@ case "$SERVICE" in
     lmtp)
         start_lmtp
         ;;
+    socketmap)
+        start_socketmap
+        ;;
     all)
         start_all
         ;;
     *)
         echo "Error: Unknown SERVICE value: $SERVICE"
-        echo "Valid options: sasl, imap, lmtp, all"
+        echo "Valid options: sasl, imap, lmtp, socketmap, all"
         exit 1
         ;;
 esac
