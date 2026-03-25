@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -58,6 +59,7 @@ type Validator struct {
 	mu    sync.RWMutex
 	keys  map[string]*rsa.PublicKey
 	expAt time.Time
+	sf    singleflight.Group
 
 	httpClient *http.Client
 }
@@ -127,9 +129,12 @@ func (v *Validator) keyFunc(token *jwt.Token) (any, error) {
 
 	log.Printf("OAUTHBEARER: key lookup kid=%q alg=%q cache_hit=false refreshing_jwks=true", kid, alg)
 
-	if err := v.refreshJWKS(); err != nil {
-		log.Printf("OAUTHBEARER: key lookup kid=%q alg=%q refresh_failed=%v", kid, alg, err)
-		return nil, err
+	_, refreshErr, _ := v.sf.Do("jwks_refresh", func() (any, error) {
+		return nil, v.refreshJWKS()
+	})
+	if refreshErr != nil {
+		log.Printf("OAUTHBEARER: key lookup kid=%q alg=%q refresh_failed=%v", kid, alg, refreshErr)
+		return nil, refreshErr
 	}
 	if key := v.getCachedKey(kid); key != nil {
 		log.Printf("OAUTHBEARER: key lookup kid=%q alg=%q cache_hit=true source=post_refresh", kid, alg)

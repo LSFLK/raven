@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -254,6 +256,75 @@ func TestIdentityPrecedence(t *testing.T) {
 	claims.Username = ""
 	if claims.Identity() != "third" {
 		t.Fatalf("expected sub fallback, got %q", claims.Identity())
+	}
+}
+
+func TestValidateAccessToken_ConcurrentJWKSRefreshSingleflight(t *testing.T) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate rsa key: %v", err)
+	}
+	jwkN, jwkE := rsaPublicJWK(t, &priv.PublicKey)
+
+	var hits int32
+	jwksServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		// Slow endpoint to make overlap between goroutines likely.
+		time.Sleep(100 * time.Millisecond)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"keys": []map[string]string{{
+				"kty": "RSA",
+				"kid": "kid-1",
+				"n":   jwkN,
+				"e":   jwkE,
+			}},
+		})
+	}))
+	defer jwksServer.Close()
+
+	validator, err := NewValidator(Config{
+		IssuerURL: "https://issuer.example.com",
+		JWKSURL:   jwksServer.URL,
+		Audiences: []string{"raven-imap"},
+	})
+	if err != nil {
+		t.Fatalf("NewValidator failed: %v", err)
+	}
+
+	token, err := signToken(priv, "kid-1", jwt.MapClaims{
+		"iss": "https://issuer.example.com",
+		"aud": []string{"raven-imap"},
+		"exp": time.Now().Add(2 * time.Minute).Unix(),
+		"sub": "sub-1",
+	})
+	if err != nil {
+		t.Fatalf("signToken failed: %v", err)
+	}
+
+	const workers = 10
+	var wg sync.WaitGroup
+	errCh := make(chan error, workers)
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, validateErr := validator.ValidateAccessToken(token)
+			if validateErr != nil {
+				errCh <- validateErr
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for validateErr := range errCh {
+		t.Fatalf("ValidateAccessToken failed: %v", validateErr)
+	}
+
+	if got := atomic.LoadInt32(&hits); got != 1 {
+		t.Fatalf("expected exactly 1 JWKS request, got %d", got)
 	}
 }
 
