@@ -274,6 +274,7 @@ func (s *Server) handleConnection(conn net.Conn, connType ConnectionType) {
 			_, _ = conn.Write([]byte(mechLogin))
 			log.Printf("SASL sent: %s", strings.TrimSpace(mechLogin))
 
+			// #nosec G101 -- This is a SASL protocol capability advertisement, not a credential.
 			mechOAuthBearer := "MECH\tOAUTHBEARER\tplaintext\n"
 			_, _ = conn.Write([]byte(mechOAuthBearer))
 			log.Printf("SASL sent: %s", strings.TrimSpace(mechOAuthBearer))

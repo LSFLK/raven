@@ -285,7 +285,7 @@ func TestResolveDomainFromOrganizationUnit_AdditionalBranches(t *testing.T) {
 			_, _ = w.Write([]byte(`{"id":"ou-root","handle":"example.com","parent":null}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte(fmt.Sprintf("not found: %s", r.URL.Path)))
+			_, _ = fmt.Fprintf(w, "not found: %s", r.URL.Path)
 		}
 	}))
 	defer srv.Close()
