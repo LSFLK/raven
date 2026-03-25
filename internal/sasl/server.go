@@ -454,7 +454,7 @@ func (s *Server) handleOAuthBearer(conn net.Conn, id, resp string, respProvided 
 		return
 	}
 
-	accessToken, _, err := oauthbearer.ParseInitialClientResponse(resp)
+	accessToken, _, _, err := oauthbearer.ParseInitialClientResponseDetails(resp)
 	if err != nil {
 		response := fmt.Sprintf("FAIL\t%s\treason=Invalid OAUTHBEARER payload\n", id)
 		_, _ = conn.Write([]byte(response))
