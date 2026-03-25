@@ -28,6 +28,8 @@ type ServerDeps interface {
 	GetUserDomain(username string) string
 	EnsureUserAndMailboxes(email string) error
 	GetDBManager() *db.DBManager
+	GetConfig() *conf.Config
+	GetOAuthValidator() *oauthbearer.Validator
 	GetCertPath() string
 	GetKeyPath() string
 	GetS3Storage() *blobstorage.S3BlobStorage
@@ -246,22 +248,17 @@ func HandleAuthenticate(deps ServerDeps, conn net.Conn, tag string, parts []stri
 			return
 		}
 
-		cfg, err := conf.LoadConfig()
-		if err != nil {
-			log.Printf("OAUTHBEARER: LoadConfig error: %v", err)
+		cfg := deps.GetConfig()
+		if cfg == nil {
+			log.Printf("OAUTHBEARER: config unavailable from server cache")
 			deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Configuration error", tag))
 			return
 		}
 
-		validator, err := oauthbearer.NewValidator(oauthbearer.Config{
-			IssuerURL: cfg.OAuthIssuer,
-			JWKSURL:   cfg.OAuthJWKSURL,
-			Audiences: cfg.OAuthAudience,
-			ClockSkew: time.Duration(cfg.OAuthSkewSec) * time.Second,
-		})
+		validator := deps.GetOAuthValidator()
 		log.Printf("OAUTHBEARER: validator config issuer=%q jwks_url=%q audience_count=%d skew_seconds=%d", cfg.OAuthIssuer, cfg.OAuthJWKSURL, len(cfg.OAuthAudience), cfg.OAuthSkewSec)
-		if err != nil {
-			log.Printf("OAUTHBEARER: validator init failed: %v", err)
+		if validator == nil {
+			log.Printf("OAUTHBEARER: shared validator unavailable from server cache")
 			deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] OAUTHBEARER configuration error", tag))
 			return
 		}

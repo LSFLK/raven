@@ -35,6 +35,8 @@ type Server struct {
 	authURL      string
 	domain       string
 	saslScope    conf.SASLScope
+	oauthConfig  *conf.Config
+	oauthValidator *oauthbearer.Validator
 	unixListener net.Listener
 	tcpListener  net.Listener
 	mu           sync.Mutex
@@ -45,7 +47,7 @@ type Server struct {
 
 // NewServer creates a new SASL authentication server
 func NewServer(socketPath, tcpAddr, authURL, domain string, saslScope conf.SASLScope) *Server {
-	return &Server{
+	server := &Server{
 		socketPath: socketPath,
 		tcpAddr:    tcpAddr,
 		authURL:    authURL,
@@ -53,6 +55,32 @@ func NewServer(socketPath, tcpAddr, authURL, domain string, saslScope conf.SASLS
 		saslScope:  saslScope,
 		shutdown:   make(chan struct{}),
 	}
+
+	server.initOAuthValidation()
+
+	return server
+}
+
+func (s *Server) initOAuthValidation() {
+	cfg, err := conf.LoadConfig()
+	if err != nil {
+		log.Printf("SASL OAUTHBEARER: config load skipped at init: %v", err)
+		return
+	}
+
+	validator, err := oauthbearer.NewValidator(oauthbearer.Config{
+		IssuerURL: cfg.OAuthIssuer,
+		JWKSURL:   cfg.OAuthJWKSURL,
+		Audiences: cfg.OAuthAudience,
+		ClockSkew: time.Duration(cfg.OAuthSkewSec) * time.Second,
+	})
+	if err != nil {
+		log.Printf("SASL OAUTHBEARER: validator init skipped at startup: %v", err)
+		return
+	}
+
+	s.oauthConfig = cfg
+	s.oauthValidator = validator
 }
 
 // Start starts the SASL server
@@ -463,28 +491,14 @@ func (s *Server) handleOAuthBearer(conn net.Conn, id, resp string, respProvided 
 		return
 	}
 
-	cfg, err := conf.LoadConfig()
-	if err != nil {
+	if s.oauthConfig == nil || s.oauthValidator == nil {
 		response := fmt.Sprintf("FAIL\t%s\treason=OAUTHBEARER configuration error\n", id)
 		_, _ = conn.Write([]byte(response))
 		log.Printf("SASL sent: %s", strings.TrimSpace(response))
 		return
 	}
 
-	validator, err := oauthbearer.NewValidator(oauthbearer.Config{
-		IssuerURL: cfg.OAuthIssuer,
-		JWKSURL:   cfg.OAuthJWKSURL,
-		Audiences: cfg.OAuthAudience,
-		ClockSkew: time.Duration(cfg.OAuthSkewSec) * time.Second,
-	})
-	if err != nil {
-		response := fmt.Sprintf("FAIL\t%s\treason=OAUTHBEARER configuration error\n", id)
-		_, _ = conn.Write([]byte(response))
-		log.Printf("SASL sent: %s", strings.TrimSpace(response))
-		return
-	}
-
-	claims, err := validator.ValidateAccessToken(accessToken)
+	claims, err := s.oauthValidator.ValidateAccessToken(accessToken)
 	if err != nil {
 		response := fmt.Sprintf("FAIL\t%s\treason=Invalid credentials\n", id)
 		_, _ = conn.Write([]byte(response))
@@ -493,7 +507,7 @@ func (s *Server) handleOAuthBearer(conn net.Conn, id, resp string, respProvided 
 	}
 
 	identity := strings.TrimSpace(claims.Identity())
-	user := normalizeOAuthIdentity(identity, cfg.Domain)
+	user := normalizeOAuthIdentity(identity, s.oauthConfig.Domain)
 	if user == "" {
 		response := fmt.Sprintf("FAIL\t%s\treason=Invalid credentials\n", id)
 		_, _ = conn.Write([]byte(response))
