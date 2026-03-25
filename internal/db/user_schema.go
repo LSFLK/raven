@@ -7,6 +7,13 @@ import (
 	"time"
 )
 
+func normalizeMailboxName(name string) string {
+	if strings.EqualFold(name, "INBOX") {
+		return "INBOX"
+	}
+	return name
+}
+
 // Per-user table creation functions
 // Per-user databases are scoped by email, so they do not store user IDs.
 
@@ -97,6 +104,8 @@ func createOutboundQueueTablePerUser(db *sql.DB) error {
 // Mailbox management functions for per-user databases
 
 func CreateMailboxPerUser(db *sql.DB, name string, specialUse string) (int64, error) {
+	name = normalizeMailboxName(name)
+
 	// Validate mailbox name
 	if name == "" {
 		return 0, fmt.Errorf("mailbox name cannot be empty")
@@ -122,6 +131,8 @@ func CreateMailboxPerUser(db *sql.DB, name string, specialUse string) (int64, er
 }
 
 func GetMailboxByNamePerUser(db *sql.DB, name string) (int64, error) {
+	name = normalizeMailboxName(name)
+
 	var id int64
 	err := db.QueryRow("SELECT id FROM mailboxes WHERE name = ?", name).Scan(&id)
 	if err == sql.ErrNoRows {
@@ -148,6 +159,8 @@ func IncrementUIDNextPerUser(db *sql.DB, mailboxID int64) (int64, error) {
 }
 
 func MailboxExistsPerUser(db *sql.DB, mailboxName string) (bool, error) {
+	mailboxName = normalizeMailboxName(mailboxName)
+
 	var count int
 	err := db.QueryRow("SELECT COUNT(*) FROM mailboxes WHERE name = ?", mailboxName).Scan(&count)
 	return count > 0, err
@@ -408,6 +421,15 @@ func GetUnseenCountPerUser(db *sql.DB, mailboxID int64) (int, error) {
 	err := db.QueryRow(`
 		SELECT COUNT(*) FROM message_mailbox
 		WHERE mailbox_id = ? AND (flags IS NULL OR flags NOT LIKE '%\Seen%')
+	`, mailboxID).Scan(&count)
+	return count, err
+}
+
+func GetRecentCountPerUser(db *sql.DB, mailboxID int64) (int, error) {
+	var count int
+	err := db.QueryRow(`
+		SELECT COUNT(*) FROM message_mailbox
+		WHERE mailbox_id = ? AND flags LIKE '%\Recent%'
 	`, mailboxID).Scan(&count)
 	return count, err
 }

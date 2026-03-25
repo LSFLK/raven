@@ -283,6 +283,45 @@ func TestUIDSearch_UIDRange(t *testing.T) {
 	}
 }
 
+// TestUIDSearch_SeenUnseen tests UID SEARCH SEEN and UNSEEN.
+func TestUIDSearch_SeenUnseen(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
+
+	userID := server.CreateTestUser(t, database, "uiduser")
+	msg1ID := server.InsertTestMail(t, database, "uiduser", "Message 1", "sender@test.com", "uiduser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "uiduser", "Message 2", "sender@test.com", "uiduser@localhost", "INBOX")
+
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
+
+	state := &models.ClientState{
+		Authenticated:     true,
+		UserID:            userID,
+		Username:          "uiduser",
+		SelectedMailboxID: inboxID,
+	}
+	userDB := server.GetUserDBByID(t, database, state.UserID)
+
+	if _, err := userDB.Exec(`UPDATE message_mailbox SET flags = '\Seen' WHERE message_id = ? AND mailbox_id = ?`, msg1ID, inboxID); err != nil {
+		t.Fatalf("Failed to mark message as seen: %v", err)
+	}
+
+	srv.HandleUID(conn, "U027", []string{"UID", "UID", "SEARCH", "SEEN"}, state)
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "* SEARCH 1") {
+		t.Errorf("Expected UID 1 in SEEN results, got: %s", response)
+	}
+
+	conn.ClearWriteBuffer()
+
+	srv.HandleUID(conn, "U028", []string{"UID", "UID", "SEARCH", "UNSEEN"}, state)
+	response = conn.GetWrittenData()
+	if !strings.Contains(response, "* SEARCH 2") {
+		t.Errorf("Expected UID 2 in UNSEEN results, got: %s", response)
+	}
+}
+
 // TestUIDStore_FLAGS tests UID STORE FLAGS operation
 func TestUIDStore_FLAGS(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
@@ -881,7 +920,7 @@ func TestUIDCopy_PreservesFlags(t *testing.T) {
 	}
 }
 
-// TestUIDSearch_DefaultBehavior tests UID SEARCH with unrecognized criteria
+// TestUIDSearch_DefaultBehavior tests UID SEARCH with unrecognized criteria.
 func TestUIDSearch_DefaultBehavior(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
@@ -899,14 +938,16 @@ func TestUIDSearch_DefaultBehavior(t *testing.T) {
 		SelectedMailboxID: inboxID,
 	}
 
-	// UID SEARCH UNRECOGNIZED (should default to returning all UIDs)
+	// UID SEARCH UNRECOGNIZED should not match all messages.
 	srv.HandleUID(conn, "U026", []string{"UID", "UID", "SEARCH", "UNRECOGNIZED"}, state)
 
 	response := conn.GetWrittenData()
 
-	// Should return all UIDs (default behavior)
-	if !strings.Contains(response, "* SEARCH") {
-		t.Errorf("Expected SEARCH response, got: %s", response)
+	if !strings.Contains(response, "* SEARCH\r\n") {
+		t.Errorf("Expected empty SEARCH response, got: %s", response)
+	}
+	if strings.Contains(response, "* SEARCH 1") || strings.Contains(response, "* SEARCH 2") {
+		t.Errorf("Unexpected UID match for unrecognized criteria, got: %s", response)
 	}
 	if !strings.Contains(response, "U026 OK UID SEARCH completed") {
 		t.Errorf("Expected OK response, got: %s", response)

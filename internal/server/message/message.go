@@ -38,6 +38,12 @@ type messageInfo struct {
 	seqNum       int
 }
 
+// SearchMatch describes a mailbox message that matched SEARCH criteria.
+type SearchMatch struct {
+	UID    int64
+	SeqNum int
+}
+
 func resolveStateEmail(state *models.ClientState) string {
 	if state.Email != "" {
 		return state.Email
@@ -96,8 +102,29 @@ func HandleSearch(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 	}
 
 	email := resolveStateEmail(state)
+	criteria := strings.Join(parts[searchStart:], " ")
+	matches, err := SearchMailboxMatches(targetDB, state.SelectedMailboxID, criteria, charset, email, deps)
+	if err != nil {
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Search failed: %v", tag, err))
+		return
+	}
 
-	// Get all messages in the mailbox with their metadata
+	// Build response
+	if len(matches) > 0 {
+		var results []string
+		for _, match := range matches {
+			results = append(results, strconv.Itoa(match.SeqNum))
+		}
+		deps.SendResponse(conn, fmt.Sprintf("* SEARCH %s", strings.Join(results, " ")))
+	} else {
+		deps.SendResponse(conn, "* SEARCH")
+	}
+	deps.SendResponse(conn, fmt.Sprintf("%s OK SEARCH completed", tag))
+}
+
+// SearchMailboxMatches evaluates IMAP SEARCH criteria against a mailbox and
+// returns the matching sequence numbers and UIDs from the selected mailbox.
+func SearchMailboxMatches(targetDB *sql.DB, mailboxID int64, criteria string, charset string, email string, deps ServerDeps) ([]SearchMatch, error) {
 	query := `
 		SELECT mm.message_id, mm.uid, mm.flags, mm.internal_date,
 		       ROW_NUMBER() OVER (ORDER BY mm.uid ASC) as seq_num
@@ -105,16 +132,13 @@ func HandleSearch(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 		WHERE mm.mailbox_id = ?
 		ORDER BY mm.uid ASC
 	`
-	rows, err := targetDB.Query(query, state.SelectedMailboxID)
+	rows, err := targetDB.Query(query, mailboxID)
 	if err != nil {
-		deps.SendResponse(conn, fmt.Sprintf("%s NO Search failed: %v", tag, err))
-		return
+		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 
-	// Build list of messages with metadata
 	var messages []messageInfo
-
 	for rows.Next() {
 		var msg messageInfo
 		var flagsStr sql.NullString
@@ -131,21 +155,26 @@ func HandleSearch(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 		messages = append(messages, msg)
 	}
 
-	// Parse and evaluate search criteria
-	criteria := strings.Join(parts[searchStart:], " ")
-	matchingSeqNums := evaluateSearchCriteria(messages, criteria, charset, email, deps)
-
-	// Build response
-	if len(matchingSeqNums) > 0 {
-		var results []string
-		for _, seq := range matchingSeqNums {
-			results = append(results, strconv.Itoa(seq))
-		}
-		deps.SendResponse(conn, fmt.Sprintf("* SEARCH %s", strings.Join(results, " ")))
-	} else {
-		deps.SendResponse(conn, "* SEARCH")
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
-	deps.SendResponse(conn, fmt.Sprintf("%s OK SEARCH completed", tag))
+
+	if strings.TrimSpace(criteria) == "" {
+		criteria = "ALL"
+	}
+
+	tokens := parseSearchTokens(criteria)
+	matches := make([]SearchMatch, 0, len(messages))
+	for _, msg := range messages {
+		if matchesSearchCriteria(msg, tokens, charset, email, deps) {
+			matches = append(matches, SearchMatch{
+				UID:    msg.uid,
+				SeqNum: msg.seqNum,
+			})
+		}
+	}
+
+	return matches, nil
 }
 
 // evaluateSearchCriteria evaluates search criteria against messages
@@ -474,8 +503,8 @@ func evaluateTokens(msg messageInfo, tokens []string, charset string, email stri
 			i++
 
 		default:
-			// Unknown search key - skip it
-			i++
+			// Unknown search keys must not silently match everything.
+			return false
 		}
 	}
 
@@ -1709,7 +1738,7 @@ func HandleCheck(deps ServerDeps, conn net.Conn, tag string, state *models.Clien
 		return
 	}
 
-	currentRecent, err := db.GetUnseenCountPerUser(userDB, state.SelectedMailboxID)
+	currentRecent, err := db.GetRecentCountPerUser(userDB, state.SelectedMailboxID)
 	if err != nil {
 		currentRecent = 0
 	}
