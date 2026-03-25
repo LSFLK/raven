@@ -240,7 +240,7 @@ func HandleAuthenticate(deps ServerDeps, conn net.Conn, tag string, parts []stri
 			return
 		}
 
-		accessToken, _, saslUser, err := oauthbearer.ParseInitialClientResponseDetails(authData)
+		accessToken, _, _, err := oauthbearer.ParseInitialClientResponseDetails(authData)
 		if err != nil {
 			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Invalid OAuth payload", tag))
 			return
@@ -274,11 +274,6 @@ func HandleAuthenticate(deps ServerDeps, conn net.Conn, tag string, parts []stri
 		}
 
 		tokenUsername := strings.TrimSpace(claims.Username)
-		if saslUser != "" && tokenUsername != "" && !strings.EqualFold(strings.TrimSpace(saslUser), tokenUsername) {
-			log.Printf("OAUTHBEARER: username mismatch sasl_user=%q token_username=%q", saslUser, tokenUsername)
-			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
-			return
-		}
 
 		identity := claims.Identity()
 		email := normalizeEmail(identity)

@@ -18,9 +18,9 @@ func TestParseInitialClientResponse(t *testing.T) {
 	payload := "n,a=user@example.com,\x01auth=Bearer token-123\x01\x01"
 	encoded := base64.StdEncoding.EncodeToString([]byte(payload))
 
-	token, authzid, err := ParseInitialClientResponse(encoded)
+	token, authzid, _, err := ParseInitialClientResponseDetails(encoded)
 	if err != nil {
-		t.Fatalf("ParseInitialClientResponse returned error: %v", err)
+		t.Fatalf("ParseInitialClientResponseDetails returned error: %v", err)
 	}
 	if token != "token-123" {
 		t.Fatalf("expected token token-123, got %q", token)
@@ -50,7 +50,7 @@ func TestParseInitialClientResponseDetails(t *testing.T) {
 }
 
 func TestParseRawInitialClientResponse_MissingBearer(t *testing.T) {
-	_, _, err := ParseRawInitialClientResponse("n,,\x01k=v\x01\x01")
+	_, _, _, err := ParseRawInitialClientResponseDetails("n,,\x01k=v\x01\x01")
 	if err == nil {
 		t.Fatal("expected missing bearer error, got nil")
 	}

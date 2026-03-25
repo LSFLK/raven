@@ -259,12 +259,6 @@ func (v *Validator) validateClaims(claims jwt.MapClaims) error {
 		}
 	}
 
-	identity := extractClaims(claims).Identity()
-	if strings.TrimSpace(identity) == "" {
-		log.Printf("OAUTHBEARER: claims validation failed reason=missing_identity_claims")
-		return errors.New("token missing identity claims")
-	}
-
 	return nil
 }
 
@@ -301,22 +295,12 @@ func extractClaims(claims jwt.MapClaims) Claims {
 	return result
 }
 
-func ParseInitialClientResponse(encoded string) (token string, authzid string, err error) {
-	token, authzid, _, err = ParseInitialClientResponseDetails(encoded)
-	return token, authzid, err
-}
-
 func ParseInitialClientResponseDetails(encoded string) (token string, authzid string, user string, err error) {
 	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
 	if err != nil {
 		return "", "", "", fmt.Errorf("invalid base64 OAUTHBEARER payload: %w", err)
 	}
 	return ParseRawInitialClientResponseDetails(string(decoded))
-}
-
-func ParseRawInitialClientResponse(raw string) (token string, authzid string, err error) {
-	token, authzid, _, err = ParseRawInitialClientResponseDetails(raw)
-	return token, authzid, err
 }
 
 func ParseRawInitialClientResponseDetails(raw string) (token string, authzid string, user string, err error) {
