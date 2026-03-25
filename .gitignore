@@ -3,3 +3,6 @@
 
 # Ignore .idea directory
 .idea/
+
+# .DS_Store files
+.DS_Store

@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"raven/internal/auth/oauthbearer"
 	"raven/internal/conf"
 	"strings"
 	"sync"
@@ -273,6 +274,14 @@ func (s *Server) handleConnection(conn net.Conn, connType ConnectionType) {
 			_, _ = conn.Write([]byte(mechLogin))
 			log.Printf("SASL sent: %s", strings.TrimSpace(mechLogin))
 
+			mechOAuthBearer := "MECH\tOAUTHBEARER\tplaintext\n"
+			_, _ = conn.Write([]byte(mechOAuthBearer))
+			log.Printf("SASL sent: %s", strings.TrimSpace(mechOAuthBearer))
+
+			mechXOAuth2 := "MECH\tXOAUTH2\tplaintext\n"
+			_, _ = conn.Write([]byte(mechXOAuth2))
+			log.Printf("SASL sent: %s", strings.TrimSpace(mechXOAuth2))
+
 			response := "DONE\n"
 			_, _ = conn.Write([]byte(response))
 			log.Printf("SASL sent: %s", strings.TrimSpace(response))
@@ -330,6 +339,8 @@ func (s *Server) handleAuth(conn net.Conn, parts []string) {
 		s.handlePlain(conn, id, resp, respProvided)
 	case "LOGIN":
 		s.handleLogin(conn, id, resp)
+	case "OAUTHBEARER", "XOAUTH2":
+		s.handleOAuthBearer(conn, id, resp, respProvided)
 	default:
 		// Unsupported mechanism
 		response := fmt.Sprintf("FAIL\t%s\treason=Unsupported mechanism\n", id)
@@ -426,6 +437,95 @@ func (s *Server) handleLogin(conn net.Conn, id, resp string) {
 	response := fmt.Sprintf("FAIL\t%s\treason=LOGIN not fully implemented, use PLAIN\n", id)
 	_, _ = conn.Write([]byte(response))
 	log.Printf("SASL sent: %s", strings.TrimSpace(response))
+}
+
+func (s *Server) handleOAuthBearer(conn net.Conn, id, resp string, respProvided bool) {
+	if !respProvided {
+		response := fmt.Sprintf("CONT\t%s\t\n", id)
+		_, _ = conn.Write([]byte(response))
+		log.Printf("SASL sent: %s", strings.TrimSpace(response))
+		return
+	}
+
+	if strings.TrimSpace(resp) == "" {
+		response := fmt.Sprintf("FAIL\t%s\treason=Invalid OAUTHBEARER payload\n", id)
+		_, _ = conn.Write([]byte(response))
+		log.Printf("SASL sent: %s", strings.TrimSpace(response))
+		return
+	}
+
+	accessToken, _, err := oauthbearer.ParseInitialClientResponse(resp)
+	if err != nil {
+		response := fmt.Sprintf("FAIL\t%s\treason=Invalid OAUTHBEARER payload\n", id)
+		_, _ = conn.Write([]byte(response))
+		log.Printf("SASL sent: %s", strings.TrimSpace(response))
+		return
+	}
+
+	cfg, err := conf.LoadConfig()
+	if err != nil {
+		response := fmt.Sprintf("FAIL\t%s\treason=OAUTHBEARER configuration error\n", id)
+		_, _ = conn.Write([]byte(response))
+		log.Printf("SASL sent: %s", strings.TrimSpace(response))
+		return
+	}
+
+	validator, err := oauthbearer.NewValidator(oauthbearer.Config{
+		IssuerURL: cfg.OAuthIssuer,
+		JWKSURL:   cfg.OAuthJWKSURL,
+		Audiences: cfg.OAuthAudience,
+		ClockSkew: time.Duration(cfg.OAuthSkewSec) * time.Second,
+	})
+	if err != nil {
+		response := fmt.Sprintf("FAIL\t%s\treason=OAUTHBEARER configuration error\n", id)
+		_, _ = conn.Write([]byte(response))
+		log.Printf("SASL sent: %s", strings.TrimSpace(response))
+		return
+	}
+
+	claims, err := validator.ValidateAccessToken(accessToken)
+	if err != nil {
+		response := fmt.Sprintf("FAIL\t%s\treason=Invalid credentials\n", id)
+		_, _ = conn.Write([]byte(response))
+		log.Printf("SASL sent: %s", strings.TrimSpace(response))
+		return
+	}
+
+	identity := strings.TrimSpace(claims.Identity())
+	user := normalizeOAuthIdentity(identity, cfg.Domain)
+	if user == "" {
+		response := fmt.Sprintf("FAIL\t%s\treason=Invalid credentials\n", id)
+		_, _ = conn.Write([]byte(response))
+		log.Printf("SASL sent: %s", strings.TrimSpace(response))
+		return
+	}
+
+	response := fmt.Sprintf("OK\t%s\tuser=%s\n", id, user)
+	_, _ = conn.Write([]byte(response))
+	log.Printf("SASL sent: %s", strings.TrimSpace(response))
+}
+
+func normalizeOAuthIdentity(identity, defaultDomain string) string {
+	identity = strings.TrimSpace(identity)
+	if identity == "" {
+		return ""
+	}
+
+	if strings.Contains(identity, "@") {
+		parts := strings.SplitN(identity, "@", 2)
+		local := strings.TrimSpace(parts[0])
+		domain := strings.Trim(strings.TrimSpace(parts[1]), ".")
+		if local == "" || domain == "" {
+			return ""
+		}
+		return local + "@" + domain
+	}
+
+	if strings.TrimSpace(defaultDomain) == "" {
+		return ""
+	}
+
+	return identity + "@" + strings.Trim(strings.TrimSpace(defaultDomain), ".")
 }
 
 // authenticate validates credentials against external API

@@ -8,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.6
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.95.0
 	github.com/aws/smithy-go v1.24.0
+	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/mattn/go-sqlite3 v1.14.32
 	gopkg.in/yaml.v2 v2.4.0
 )
