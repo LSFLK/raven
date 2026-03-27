@@ -3,10 +3,14 @@ package server
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"net"
 	"strings"
+	"time"
 
+	"raven/internal/auth/oauthbearer"
 	"raven/internal/blobstorage"
+	"raven/internal/conf"
 	"raven/internal/db"
 	"raven/internal/models"
 	"raven/internal/server/auth"
@@ -17,25 +21,67 @@ type IMAPServer struct {
 	certPath  string
 	keyPath   string
 	s3Storage *blobstorage.S3BlobStorage
+	cfg       *conf.Config
+	oauthVal  *oauthbearer.Validator
 }
 
 func NewIMAPServer(dbManager *db.DBManager) *IMAPServer {
-	return &IMAPServer{
+	server := &IMAPServer{
 		dbManager: dbManager,
 		certPath:  "/certs/fullchain.pem",
 		keyPath:   "/certs/privkey.pem",
 		s3Storage: nil,
 	}
+
+	server.initOAuthValidation()
+
+	return server
 }
 
 // NewIMAPServerWithS3 creates a new IMAP server with S3 blob storage support
 func NewIMAPServerWithS3(dbManager *db.DBManager, s3Storage *blobstorage.S3BlobStorage) *IMAPServer {
-	return &IMAPServer{
+	server := &IMAPServer{
 		dbManager: dbManager,
 		certPath:  "/certs/fullchain.pem",
 		keyPath:   "/certs/privkey.pem",
 		s3Storage: s3Storage,
 	}
+
+	server.initOAuthValidation()
+
+	return server
+}
+
+func (s *IMAPServer) initOAuthValidation() {
+	cfg, err := conf.LoadConfig()
+	if err != nil {
+		log.Printf("IMAP OAUTHBEARER: config load skipped at init: %v", err)
+		return
+	}
+
+	validator, err := oauthbearer.NewValidator(oauthbearer.Config{
+		IssuerURL: cfg.OAuthIssuer,
+		JWKSURL:   cfg.OAuthJWKSURL,
+		Audiences: cfg.OAuthAudience,
+		ClockSkew: time.Duration(cfg.OAuthSkewSec) * time.Second,
+	})
+	if err != nil {
+		log.Printf("IMAP OAUTHBEARER: validator init skipped at startup: %v", err)
+		return
+	}
+
+	s.cfg = cfg
+	s.oauthVal = validator
+}
+
+// GetConfig returns cached process configuration loaded at startup.
+func (s *IMAPServer) GetConfig() *conf.Config {
+	return s.cfg
+}
+
+// GetOAuthValidator returns the shared OAuth validator instance.
+func (s *IMAPServer) GetOAuthValidator() *oauthbearer.Validator {
+	return s.oauthVal
 }
 
 // SetS3Storage sets the S3 blob storage (useful for adding storage after creation)
@@ -63,7 +109,7 @@ func (s *IMAPServer) HandleConnection(conn net.Conn) {
 	}
 
 	// Greeting - advertise basic capabilities in greeting
-	s.sendResponse(conn, "* OK [CAPABILITY IMAP4rev1 STARTTLS LOGINDISABLED UIDPLUS IDLE LITERAL+] SQLite IMAP server ready")
+	s.sendResponse(conn, "* OK [CAPABILITY IMAP4rev1 STARTTLS LOGINDISABLED AUTH=OAUTHBEARER AUTH=XOAUTH2 SASL-IR UIDPLUS IDLE LITERAL+] SQLite IMAP server ready")
 
 	handleClient(s, conn, state)
 }
@@ -167,7 +213,7 @@ func (s *IMAPServer) HandleSSLConnection(conn net.Conn) {
 	clientHandler := func(conn net.Conn, state *models.ClientState) {
 		// Send greeting for SSL/TLS connections
 		// TLS is active, so AUTH=PLAIN and LOGIN are allowed (no STARTTLS needed)
-		s.sendResponse(conn, "* OK [CAPABILITY IMAP4rev1 AUTH=PLAIN LOGIN UIDPLUS IDLE LITERAL+] SQLite IMAP server ready")
+		s.sendResponse(conn, "* OK [CAPABILITY IMAP4rev1 AUTH=PLAIN LOGIN AUTH=OAUTHBEARER AUTH=XOAUTH2 SASL-IR UIDPLUS IDLE LITERAL+] SQLite IMAP server ready")
 		handleClient(s, conn, state)
 	}
 	auth.HandleSSLConnection(clientHandler, conn)

@@ -334,7 +334,7 @@ func TestAuthenticatePlainSuccessResponse(t *testing.T) {
 	// response code in the tagged OK response after successful AUTHENTICATE
 	// Note: This is a unit test of the response format expectation
 
-	expectedFormat := "A001 OK [CAPABILITY IMAP4rev1 AUTH=PLAIN UIDPLUS IDLE NAMESPACE UNSELECT LITERAL+] Authenticated"
+	expectedFormat := "A001 OK [CAPABILITY IMAP4rev1 AUTH=PLAIN LOGIN AUTH=OAUTHBEARER AUTH=XOAUTH2 SASL-IR UIDPLUS IDLE NAMESPACE UNSELECT LITERAL+] Authenticated"
 
 	// Verify the format includes:
 	// 1. Tag (A001)

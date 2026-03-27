@@ -32,6 +32,10 @@ type Config struct {
 	Domain        string             `yaml:"domain"`
 	AuthServerURL string             `yaml:"auth_server_url"`
 	SASLScope     SASLScope          `yaml:"sasl_scope"`
+	OAuthIssuer   string             `yaml:"oauth_issuer_url"`
+	OAuthJWKSURL  string             `yaml:"oauth_jwks_url"`
+	OAuthAudience []string           `yaml:"oauth_audience"`
+	OAuthSkewSec  int                `yaml:"oauth_clock_skew_seconds"`
 	BlobStorage   blobstorage.Config `yaml:"blob_storage"`
 }
 

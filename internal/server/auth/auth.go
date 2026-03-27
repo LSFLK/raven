@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"raven/internal/auth/oauthbearer"
 	"raven/internal/blobstorage"
 	"raven/internal/conf"
 	"raven/internal/db"
@@ -27,6 +28,8 @@ type ServerDeps interface {
 	GetUserDomain(username string) string
 	EnsureUserAndMailboxes(email string) error
 	GetDBManager() *db.DBManager
+	GetConfig() *conf.Config
+	GetOAuthValidator() *oauthbearer.Validator
 	GetCertPath() string
 	GetKeyPath() string
 	GetS3Storage() *blobstorage.S3BlobStorage
@@ -55,10 +58,11 @@ func HandleCapability(deps ServerDeps, conn net.Conn, tag string, state *models.
 
 	if isTLS {
 		// TLS is active → allow authentication
-		capabilities = append(capabilities, "AUTH=PLAIN", "LOGIN")
+		capabilities = append(capabilities, "AUTH=PLAIN", "LOGIN", "AUTH=OAUTHBEARER", "AUTH=XOAUTH2", "SASL-IR")
 	} else {
-		// Plain connection → require STARTTLS and disable login
-		capabilities = append(capabilities, "STARTTLS", "LOGINDISABLED")
+		// Plain connection → require STARTTLS and disable LOGIN.
+		// OAUTH mechanisms are advertised for client discovery, but AUTH still enforces TLS.
+		capabilities = append(capabilities, "STARTTLS", "LOGINDISABLED", "AUTH=OAUTHBEARER", "AUTH=XOAUTH2", "SASL-IR")
 	}
 
 	// Add extension capabilities
@@ -198,6 +202,129 @@ func HandleAuthenticate(deps ServerDeps, conn net.Conn, tag string, parts []stri
 
 		// Reuse the existing login logic
 		authenticateUser(deps, conn, tag, username, password, state)
+		return
+
+	case "OAUTHBEARER", "XOAUTH2":
+		isTLS := false
+		if _, ok := conn.(*tls.Conn); ok {
+			isTLS = true
+		} else {
+			type tlsAware interface{ IsTLS() bool }
+			if ta, ok := any(conn).(tlsAware); ok && ta.IsTLS() {
+				isTLS = true
+			}
+		}
+		if !isTLS {
+			deps.SendResponse(conn, fmt.Sprintf("%s NO Plaintext authentication disallowed without TLS", tag))
+			return
+		}
+
+		authData := ""
+		if len(parts) >= 4 {
+			authData = strings.TrimSpace(parts[3])
+		}
+
+		if authData == "" || authData == "=" {
+			deps.SendResponse(conn, "+ ")
+
+			buf := make([]byte, 8192)
+			_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+			n, err := conn.Read(buf)
+			if err != nil {
+				deps.SendResponse(conn, fmt.Sprintf("%s NO Authentication failed", tag))
+				return
+			}
+			authData = strings.TrimSpace(string(buf[:n]))
+		}
+
+		if authData == "*" {
+			deps.SendResponse(conn, fmt.Sprintf("%s BAD Authentication exchange cancelled", tag))
+			return
+		}
+
+		accessToken, _, _, err := oauthbearer.ParseInitialClientResponseDetails(authData)
+		if err != nil {
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Invalid OAuth payload", tag))
+			return
+		}
+
+		cfg := deps.GetConfig()
+		if cfg == nil {
+			log.Printf("OAUTHBEARER: config unavailable from server cache")
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Configuration error", tag))
+			return
+		}
+
+		validator := deps.GetOAuthValidator()
+		log.Printf("OAUTHBEARER: validator config issuer=%q jwks_url=%q audience_count=%d skew_seconds=%d", cfg.OAuthIssuer, cfg.OAuthJWKSURL, len(cfg.OAuthAudience), cfg.OAuthSkewSec)
+		if validator == nil {
+			log.Printf("OAUTHBEARER: shared validator unavailable from server cache")
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] OAUTHBEARER configuration error", tag))
+			return
+		}
+
+		claims, err := validator.ValidateAccessToken(accessToken)
+		if err != nil {
+			log.Printf("OAUTHBEARER: token validation failed: %v", err)
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
+			return
+		}
+
+		tokenUsername := strings.TrimSpace(claims.Username)
+
+		identity := claims.Identity()
+		email := normalizeEmail(identity)
+		if email == "" && tokenUsername != "" && claims.OrganizationUnitID != "" {
+			if cfg.AuthServerURL == "" {
+				log.Printf("OAUTHBEARER: cannot resolve OU domain without auth_server_url")
+				deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Configuration error", tag))
+				return
+			}
+
+			derivedDomain := resolveDomainFromOrganizationUnit(cfg.AuthServerURL, claims.OrganizationUnitID, tokenUsername, "")
+			if derivedDomain == "" {
+				log.Printf("OAUTHBEARER: failed to resolve domain from ouId=%q for username=%q", claims.OrganizationUnitID, tokenUsername)
+				deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
+				return
+			}
+
+			email = tokenUsername + "@" + strings.Trim(strings.TrimSpace(derivedDomain), ".")
+			log.Printf("OAUTHBEARER: resolved mailbox email from token username/ouId email=%q", email)
+		}
+		if email == "" && tokenUsername != "" && cfg.Domain != "" {
+			email = tokenUsername + "@" + strings.Trim(strings.TrimSpace(cfg.Domain), ".")
+		}
+		if email == "" && cfg.Domain != "" && !strings.Contains(identity, "@") {
+			email = strings.TrimSpace(identity) + "@" + strings.Trim(strings.TrimSpace(cfg.Domain), ".")
+		}
+		if email == "" {
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
+			return
+		}
+
+		actualUsername := deps.ExtractUsername(email)
+
+		if err := deps.EnsureUserAndMailboxes(email); err != nil {
+			log.Printf("Failed to initialize user database for OAUTHBEARER: %v", err)
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Server error", tag))
+			return
+		}
+
+		state.Authenticated = true
+		state.Username = actualUsername
+		state.Email = email
+
+		roleMailboxIDs, err := db.GetUserRoleAssignments(deps.GetDBManager().GetSharedDB(), email)
+		if err != nil {
+			log.Printf("Failed to load role assignments for OAUTHBEARER user %s: %v", email, err)
+			state.RoleMailboxIDs = []int64{}
+		} else {
+			state.RoleMailboxIDs = roleMailboxIDs
+		}
+
+		capabilities := "IMAP4rev1 AUTH=PLAIN LOGIN AUTH=OAUTHBEARER AUTH=XOAUTH2 SASL-IR"
+		capabilities += " UIDPLUS IDLE NAMESPACE UNSELECT LITERAL+"
+		deps.SendResponse(conn, fmt.Sprintf("%s OK [CAPABILITY %s] Authenticated", tag, capabilities))
 		return
 
 	default:
@@ -419,7 +546,7 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 
 		// Per RFC 3501, include CAPABILITY response code in OK response
 		// Only do this if security layer was not negotiated (TLS doesn't count as SASL security layer)
-		capabilities := "IMAP4rev1 AUTH=PLAIN LOGIN"
+		capabilities := "IMAP4rev1 AUTH=PLAIN LOGIN AUTH=OAUTHBEARER AUTH=XOAUTH2 SASL-IR"
 		if isTLS {
 			capabilities += " UIDPLUS IDLE NAMESPACE UNSELECT LITERAL+"
 		} else {
