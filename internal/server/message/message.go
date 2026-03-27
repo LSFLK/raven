@@ -181,28 +181,6 @@ func SearchMailboxMatchesTokens(targetDB *sql.DB, mailboxID int64, tokens []stri
 	return matches, nil
 }
 
-// evaluateSearchCriteria evaluates search criteria against messages
-// func evaluateSearchCriteria(messages []messageInfo, criteria string, charset string, email string, deps ServerDeps) []int {
-// 	var matchingSeqNums []int
-
-// 	// Default to ALL if no criteria specified
-// 	if strings.TrimSpace(criteria) == "" {
-// 		criteria = "ALL"
-// 	}
-
-// 	// Parse criteria into tokens
-// 	tokens := parseSearchTokens(criteria)
-
-// 	// Evaluate each message
-// 	for _, msg := range messages {
-// 		if matchesSearchCriteria(msg, tokens, charset, email, deps) {
-// 			matchingSeqNums = append(matchingSeqNums, msg.seqNum)
-// 		}
-// 	}
-
-// 	return matchingSeqNums
-// }
-
 // parseSearchTokens tokenizes search criteria
 func parseSearchTokens(criteria string) []string {
 	var tokens []string
