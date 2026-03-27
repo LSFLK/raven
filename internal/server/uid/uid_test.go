@@ -921,6 +921,40 @@ func TestUIDCopy_PreservesFlags(t *testing.T) {
 }
 
 // TestUIDSearch_DefaultBehavior tests UID SEARCH with unrecognized criteria.
+func TestUIDSearch_TEXTMultiWord(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	database := server.GetDatabaseFromServer(srv)
+
+	userID := server.CreateTestUser(t, database, "uiduser")
+	server.InsertTestMail(t, database, "uiduser", "Subject One", "sender@test.com", "uiduser@localhost", "INBOX")
+	server.InsertTestMail(t, database, "uiduser", "Subject Two", "sender@test.com", "uiduser@localhost", "INBOX")
+
+	inboxID, _ := server.GetMailboxID(t, database, userID, "INBOX")
+
+	state := &models.ClientState{
+		Authenticated:     true,
+		UserID:            userID,
+		Username:          "uiduser",
+		SelectedMailboxID: inboxID,
+	}
+
+	srv.HandleUID(conn, "U026", []string{"UID", "UID", "SEARCH", "TEXT", "Subject One"}, state)
+
+	response := conn.GetWrittenData()
+
+	if !strings.Contains(response, "* SEARCH 1") {
+		t.Errorf("Expected UID SEARCH TEXT to find UID 1, got: %s", response)
+	}
+	if strings.Contains(response, "* SEARCH 2") {
+		t.Errorf("Did not expect UID SEARCH TEXT to match UID 2, got: %s", response)
+	}
+	if !strings.Contains(response, "U026 OK UID SEARCH completed") {
+		t.Errorf("Expected OK response, got: %s", response)
+	}
+}
+
+// TestUIDSearch_DefaultBehavior tests UID SEARCH with unrecognized criteria.
 func TestUIDSearch_DefaultBehavior(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()
@@ -939,7 +973,7 @@ func TestUIDSearch_DefaultBehavior(t *testing.T) {
 	}
 
 	// UID SEARCH UNRECOGNIZED should not match all messages.
-	srv.HandleUID(conn, "U026", []string{"UID", "UID", "SEARCH", "UNRECOGNIZED"}, state)
+	srv.HandleUID(conn, "U027", []string{"UID", "UID", "SEARCH", "UNRECOGNIZED"}, state)
 
 	response := conn.GetWrittenData()
 
@@ -949,7 +983,7 @@ func TestUIDSearch_DefaultBehavior(t *testing.T) {
 	if strings.Contains(response, "* SEARCH 1") || strings.Contains(response, "* SEARCH 2") {
 		t.Errorf("Unexpected UID match for unrecognized criteria, got: %s", response)
 	}
-	if !strings.Contains(response, "U026 OK UID SEARCH completed") {
+	if !strings.Contains(response, "U027 OK UID SEARCH completed") {
 		t.Errorf("Expected OK response, got: %s", response)
 	}
 }

@@ -102,8 +102,7 @@ func HandleSearch(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 	}
 
 	email := resolveStateEmail(state)
-	criteria := strings.Join(parts[searchStart:], " ")
-	matches, err := SearchMailboxMatches(targetDB, state.SelectedMailboxID, criteria, charset, email, deps)
+	matches, err := SearchMailboxMatchesTokens(targetDB, state.SelectedMailboxID, parts[searchStart:], charset, email, deps)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO Search failed: %v", tag, err))
 		return
@@ -125,6 +124,12 @@ func HandleSearch(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 // SearchMailboxMatches evaluates IMAP SEARCH criteria against a mailbox and
 // returns the matching sequence numbers and UIDs from the selected mailbox.
 func SearchMailboxMatches(targetDB *sql.DB, mailboxID int64, criteria string, charset string, email string, deps ServerDeps) ([]SearchMatch, error) {
+	return SearchMailboxMatchesTokens(targetDB, mailboxID, parseSearchTokens(criteria), charset, email, deps)
+}
+
+// SearchMailboxMatchesTokens evaluates already-tokenized IMAP SEARCH criteria.
+// This preserves multi-word string arguments that were parsed by the command layer.
+func SearchMailboxMatchesTokens(targetDB *sql.DB, mailboxID int64, tokens []string, charset string, email string, deps ServerDeps) ([]SearchMatch, error) {
 	query := `
 		SELECT mm.message_id, mm.uid, mm.flags, mm.internal_date,
 		       ROW_NUMBER() OVER (ORDER BY mm.uid ASC) as seq_num
@@ -159,11 +164,10 @@ func SearchMailboxMatches(targetDB *sql.DB, mailboxID int64, criteria string, ch
 		return nil, err
 	}
 
-	if strings.TrimSpace(criteria) == "" {
-		criteria = "ALL"
+	if len(tokens) == 0 {
+		tokens = []string{"ALL"}
 	}
 
-	tokens := parseSearchTokens(criteria)
 	matches := make([]SearchMatch, 0, len(messages))
 	for _, msg := range messages {
 		if matchesSearchCriteria(msg, tokens, charset, email, deps) {
@@ -178,26 +182,26 @@ func SearchMailboxMatches(targetDB *sql.DB, mailboxID int64, criteria string, ch
 }
 
 // evaluateSearchCriteria evaluates search criteria against messages
-func evaluateSearchCriteria(messages []messageInfo, criteria string, charset string, email string, deps ServerDeps) []int {
-	var matchingSeqNums []int
+// func evaluateSearchCriteria(messages []messageInfo, criteria string, charset string, email string, deps ServerDeps) []int {
+// 	var matchingSeqNums []int
 
-	// Default to ALL if no criteria specified
-	if strings.TrimSpace(criteria) == "" {
-		criteria = "ALL"
-	}
+// 	// Default to ALL if no criteria specified
+// 	if strings.TrimSpace(criteria) == "" {
+// 		criteria = "ALL"
+// 	}
 
-	// Parse criteria into tokens
-	tokens := parseSearchTokens(criteria)
+// 	// Parse criteria into tokens
+// 	tokens := parseSearchTokens(criteria)
 
-	// Evaluate each message
-	for _, msg := range messages {
-		if matchesSearchCriteria(msg, tokens, charset, email, deps) {
-			matchingSeqNums = append(matchingSeqNums, msg.seqNum)
-		}
-	}
+// 	// Evaluate each message
+// 	for _, msg := range messages {
+// 		if matchesSearchCriteria(msg, tokens, charset, email, deps) {
+// 			matchingSeqNums = append(matchingSeqNums, msg.seqNum)
+// 		}
+// 	}
 
-	return matchingSeqNums
-}
+// 	return matchingSeqNums
+// }
 
 // parseSearchTokens tokenizes search criteria
 func parseSearchTokens(criteria string) []string {

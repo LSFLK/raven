@@ -151,11 +151,10 @@ func handleUIDSearch(deps ServerDeps, conn net.Conn, tag string, parts []string,
 		return
 	}
 
-	searchCriteria := strings.Join(parts[searchStart:], " ")
-	matches, err := message.SearchMailboxMatches(
+	matches, err := message.SearchMailboxMatchesTokens(
 		targetDB,
 		state.SelectedMailboxID,
-		searchCriteria,
+		parts[searchStart:],
 		charset,
 		resolveStateEmail(state),
 		deps,
