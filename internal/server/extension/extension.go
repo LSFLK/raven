@@ -41,7 +41,7 @@ func HandleNoop(deps ServerDeps, conn net.Conn, tag string, state *models.Client
 			return
 		}
 
-		currentRecent, err := db.GetUnseenCountPerUser(userDB, state.SelectedMailboxID)
+		currentRecent, err := db.GetRecentCountPerUser(userDB, state.SelectedMailboxID)
 		if err != nil {
 			currentRecent = 0
 		}
@@ -117,6 +117,7 @@ func HandleIdle(deps ServerDeps, conn net.Conn, tag string, state *models.Client
 
 	// Track previous state of the folder using new schema
 	prevCount, _ := db.GetMessageCountPerUser(userDB, state.SelectedMailboxID)
+	prevRecent, _ := db.GetRecentCountPerUser(userDB, state.SelectedMailboxID)
 	prevUnseen, _ := db.GetUnseenCountPerUser(userDB, state.SelectedMailboxID)
 
 	for {
@@ -125,6 +126,7 @@ func HandleIdle(deps ServerDeps, conn net.Conn, tag string, state *models.Client
 
 		// Check current mailbox state using new schema
 		count, _ := db.GetMessageCountPerUser(userDB, state.SelectedMailboxID)
+		recent, _ := db.GetRecentCountPerUser(userDB, state.SelectedMailboxID)
 		unseen, _ := db.GetUnseenCountPerUser(userDB, state.SelectedMailboxID)
 
 		// Notify about new messages
@@ -143,6 +145,10 @@ func HandleIdle(deps ServerDeps, conn net.Conn, tag string, state *models.Client
 			}
 		}
 
+		if recent != prevRecent && count == prevCount && recent > 0 {
+			deps.SendResponse(conn, fmt.Sprintf("* %d RECENT", recent))
+		}
+
 		// Notify about unseen count change
 		if unseen != prevUnseen {
 			deps.SendResponse(conn, fmt.Sprintf("* OK [UNSEEN %d] Message %d is first unseen", unseen, unseen))
@@ -150,6 +156,7 @@ func HandleIdle(deps ServerDeps, conn net.Conn, tag string, state *models.Client
 
 		// Update cached values
 		prevCount = count
+		prevRecent = recent
 		prevUnseen = unseen
 
 		// Check if client sent DONE (non-blocking read)

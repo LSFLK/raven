@@ -136,8 +136,8 @@ func HandleSelect(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 		count = 0
 	}
 
-	// Get unseen (recent) count using new schema
-	recent, err := db.GetUnseenCountPerUser(targetDB, mailboxID)
+	// Get recent count using the actual \Recent flag, not unseen messages.
+	recent, err := db.GetRecentCountPerUser(targetDB, mailboxID)
 	if err != nil {
 		recent = 0
 	}

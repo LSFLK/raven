@@ -15,6 +15,19 @@ import (
 	"raven/internal/server/utils"
 )
 
+func resolveStateEmail(state *models.ClientState) string {
+	if state.Email != "" {
+		return state.Email
+	}
+	if state.Username == "" {
+		return ""
+	}
+	if strings.Contains(state.Username, "@") {
+		return state.Username
+	}
+	return state.Username + "@localhost"
+}
+
 // ServerDeps defines the dependencies that UID handlers need from the server
 type ServerDeps interface {
 	SendResponse(conn net.Conn, response string)
@@ -121,82 +134,47 @@ func handleUIDSearch(deps ServerDeps, conn net.Conn, tag string, parts []string,
 		return
 	}
 
-	// Get search criteria (everything after "UID SEARCH")
-	searchCriteria := strings.Join(parts[3:], " ")
+	searchStart := 3
+	charset := "US-ASCII"
+	if len(parts) > 5 && strings.ToUpper(parts[3]) == "CHARSET" {
+		charset = strings.ToUpper(parts[4])
+		searchStart = 5
 
-	// Query all messages in mailbox with UIDs
-	rows, err := targetDB.Query(`
-		SELECT mm.message_id, mm.uid, mm.flags, mm.internal_date,
-			(SELECT COUNT(*) FROM message_mailbox mm2
-			 WHERE mm2.mailbox_id = mm.mailbox_id AND mm2.uid <= mm.uid) as seq_num
-		FROM message_mailbox mm
-		WHERE mm.mailbox_id = ?
-		ORDER BY mm.uid
-	`, state.SelectedMailboxID)
+		if charset != "US-ASCII" && charset != "UTF-8" {
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [BADCHARSET (US-ASCII UTF-8)] Charset not supported", tag))
+			return
+		}
+	}
 
+	if searchStart >= len(parts) {
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD UID SEARCH requires search criteria", tag))
+		return
+	}
+
+	matches, err := message.SearchMailboxMatchesTokens(
+		targetDB,
+		state.SelectedMailboxID,
+		parts[searchStart:],
+		charset,
+		resolveStateEmail(state),
+		deps,
+	)
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO UID SEARCH failed: %v", tag, err))
 		return
 	}
-	defer func() { _ = rows.Close() }()
 
-	// Build message info structures
-	type uidMessageInfo struct {
-		messageID    int64
-		uid          int
-		seqNum       int
-		flags        string
-		internalDate string
-	}
-
-	var messages []uidMessageInfo
-	for rows.Next() {
-		var msg uidMessageInfo
-		err := rows.Scan(&msg.messageID, &msg.uid, &msg.flags, &msg.internalDate, &msg.seqNum)
-		if err != nil {
-			continue
-		}
-		messages = append(messages, msg)
-	}
-
-	// Evaluate search criteria - returns matching UIDs
 	var matchingUIDs []string
-	criteriaUpper := strings.ToUpper(searchCriteria)
-
-	if criteriaUpper == "ALL" {
-		for _, msg := range messages {
-			matchingUIDs = append(matchingUIDs, strconv.Itoa(msg.uid))
-		}
-	} else if strings.Contains(criteriaUpper, "UID ") {
-		// Extract UID range
-		parts := strings.Fields(searchCriteria)
-		for i, part := range parts {
-			if strings.ToUpper(part) == "UID" && i+1 < len(parts) {
-				uidRange := parts[i+1]
-				if strings.Contains(uidRange, ":") {
-					rangeParts := strings.Split(uidRange, ":")
-					if len(rangeParts) == 2 {
-						start, _ := strconv.Atoi(rangeParts[0])
-						end, _ := strconv.Atoi(rangeParts[1])
-						for _, msg := range messages {
-							if msg.uid >= start && msg.uid <= end {
-								matchingUIDs = append(matchingUIDs, strconv.Itoa(msg.uid))
-							}
-						}
-					}
-				}
-				break
-			}
-		}
-	} else {
-		// Default: return all UIDs
-		for _, msg := range messages {
-			matchingUIDs = append(matchingUIDs, strconv.Itoa(msg.uid))
-		}
+	for _, match := range matches {
+		matchingUIDs = append(matchingUIDs, strconv.FormatInt(match.UID, 10))
 	}
 
-	// Return matching UIDs
-	deps.SendResponse(conn, fmt.Sprintf("* SEARCH %s", strings.Join(matchingUIDs, " ")))
+	if len(matchingUIDs) > 0 {
+		deps.SendResponse(conn, fmt.Sprintf("* SEARCH %s", strings.Join(matchingUIDs, " ")))
+	} else {
+		deps.SendResponse(conn, "* SEARCH")
+	}
+
 	deps.SendResponse(conn, fmt.Sprintf("%s OK UID SEARCH completed", tag))
 }
 

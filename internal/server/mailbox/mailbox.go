@@ -664,13 +664,17 @@ func HandleStatus(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 	}
 	statusValues["MESSAGES"] = messageCount
 
-	// Query recent/unseen count using new schema
-	recentCount, err := db.GetUnseenCountPerUser(userDB, mailboxID)
+	// RECENT and UNSEEN are distinct status items and must be sourced separately.
+	recentCount, err := db.GetRecentCountPerUser(userDB, mailboxID)
 	if err != nil {
 		recentCount = 0
 	}
+	unseenCount, err := db.GetUnseenCountPerUser(userDB, mailboxID)
+	if err != nil {
+		unseenCount = 0
+	}
 	statusValues["RECENT"] = recentCount
-	statusValues["UNSEEN"] = recentCount
+	statusValues["UNSEEN"] = unseenCount
 
 	// Get mailbox info for UID values
 	uidValidity, uidNext, err := db.GetMailboxInfoPerUser(userDB, mailboxID)

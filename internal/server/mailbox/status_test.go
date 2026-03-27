@@ -388,6 +388,30 @@ func TestStatusCommand_QuotedMailboxName(t *testing.T) {
 	}
 }
 
+func TestStatusCommand_InboxCaseInsensitive(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
+
+	database := server.GetDatabaseFromServer(srv)
+	server.CreateTestUser(t, database, "testuser")
+
+	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "Inbox", "(UIDVALIDITY)"}, state)
+
+	response := conn.GetWrittenData()
+	lines := strings.Split(strings.TrimSpace(response), "\r\n")
+
+	if len(lines) != 2 {
+		t.Fatalf("Expected 2 response lines, got %d: %v", len(lines), lines)
+	}
+	if !strings.Contains(lines[0], `* STATUS "Inbox" (UIDVALIDITY `) {
+		t.Errorf("Expected STATUS response for mixed-case Inbox, got: %s", lines[0])
+	}
+	if !strings.Contains(lines[1], "A001 OK STATUS completed") {
+		t.Errorf("Expected OK completion, got: %s", lines[1])
+	}
+}
+
 // TestStatusCommand_CustomMailbox tests STATUS command on a custom mailbox
 func TestStatusCommand_CustomMailbox(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
@@ -464,6 +488,38 @@ func TestStatusCommand_WithMessages(t *testing.T) {
 	// Check completion response
 	if !strings.Contains(lines[1], "A001 OK STATUS completed") {
 		t.Errorf("Expected OK completion, got: %s", lines[1])
+	}
+}
+
+func TestStatusCommand_RecentAndUnseenAreDistinct(t *testing.T) {
+	srv := server.SetupTestServerSimple(t)
+	conn := server.NewMockConn()
+	state := server.SetupAuthenticatedState(t, srv, "testuser")
+
+	database := server.GetDatabaseFromServer(srv)
+	server.CreateTestUser(t, database, "testuser")
+
+	recentSeenID := server.InsertTestMail(t, database, "testuser", "Recent Seen", "sender@example.com", "testuser@example.com", "INBOX")
+	unseenID := server.InsertTestMail(t, database, "testuser", "Unseen", "sender@example.com", "testuser@example.com", "INBOX")
+
+	server.UpdateMessageFlags(t, database, "testuser", recentSeenID, "\\Recent \\Seen")
+	server.UpdateMessageFlags(t, database, "testuser", unseenID, "")
+
+	srv.HandleStatus(conn, "A001", []string{"A001", "STATUS", "INBOX", "(RECENT", "UNSEEN)"}, state)
+
+	response := conn.GetWrittenData()
+	lines := strings.Split(strings.TrimSpace(response), "\r\n")
+
+	if len(lines) != 2 {
+		t.Fatalf("Expected 2 response lines, got %d: %v", len(lines), lines)
+	}
+
+	statusLine := lines[0]
+	if !strings.Contains(statusLine, "RECENT 1") {
+		t.Errorf("Expected RECENT 1, got: %s", statusLine)
+	}
+	if !strings.Contains(statusLine, "UNSEEN 1") {
+		t.Errorf("Expected UNSEEN 1, got: %s", statusLine)
 	}
 }
 

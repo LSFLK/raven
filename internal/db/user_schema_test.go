@@ -127,6 +127,22 @@ func TestGetMailboxByNamePerUser(t *testing.T) {
 	}
 }
 
+func TestGetMailboxByNamePerUser_INBOXCaseInsensitive(t *testing.T) {
+	db := setupTestDBPerUser(t)
+	defer func() { _ = db.Close() }()
+
+	createdID, _ := CreateMailboxPerUser(db, "INBOX", "\\Inbox")
+
+	retrievedID, err := GetMailboxByNamePerUser(db, "Inbox")
+	if err != nil {
+		t.Fatalf("GetMailboxByNamePerUser failed for mixed-case Inbox: %v", err)
+	}
+
+	if createdID != retrievedID {
+		t.Errorf("Expected mailbox ID %d, got %d", createdID, retrievedID)
+	}
+}
+
 func TestGetMailboxByNamePerUser_NotFound(t *testing.T) {
 	db := setupTestDBPerUser(t)
 	defer func() { _ = db.Close() }()
@@ -437,6 +453,30 @@ func TestGetUnseenCountPerUser(t *testing.T) {
 
 	if count != 2 {
 		t.Errorf("Expected unseen count 2, got %d", count)
+	}
+}
+
+func TestGetRecentCountPerUser(t *testing.T) {
+	db := setupTestDBPerUser(t)
+	defer func() { _ = db.Close() }()
+
+	mailboxID, _ := CreateMailboxPerUser(db, "INBOX", "\\Inbox")
+
+	for range 2 {
+		msgID, _ := CreateMessage(db, "Recent", "", "", time.Now(), 100)
+		_ = AddMessageToMailboxPerUser(db, msgID, mailboxID, "\\Recent", time.Now())
+	}
+
+	msgID, _ := CreateMessage(db, "Seen", "", "", time.Now(), 100)
+	_ = AddMessageToMailboxPerUser(db, msgID, mailboxID, "\\Seen", time.Now())
+
+	count, err := GetRecentCountPerUser(db, mailboxID)
+	if err != nil {
+		t.Fatalf("GetRecentCountPerUser failed: %v", err)
+	}
+
+	if count != 2 {
+		t.Errorf("Expected recent count 2, got %d", count)
 	}
 }
 

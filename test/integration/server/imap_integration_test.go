@@ -321,3 +321,116 @@ func TestIMAPServerToClient_DataConsistency(t *testing.T) {
 
 	_ = client.Logout()
 }
+
+func TestIMAPServerToClient_UIDStoreSeenPersistsAcrossReconnect(t *testing.T) {
+	dbManager := helpers.SetupTestDatabase(t)
+	defer helpers.TeardownTestDatabase(t, dbManager)
+
+	td := helpers.CreateTestUser(t, dbManager.DBManager, "alice@example.com")
+
+	userDB, err := dbManager.GetUserDB(td.Email)
+	if err != nil {
+		t.Fatalf("get user DB: %v", err)
+	}
+	inboxID, err := db.GetMailboxByNamePerUser(userDB, "INBOX")
+	if err != nil {
+		t.Fatalf("get INBOX id: %v", err)
+	}
+
+	msgID := helpers.CreateTestMessage(t, userDB, "Subject: Seen Regression\r\n\r\nBody")
+	helpers.LinkMessageToMailbox(t, userDB, msgID, inboxID)
+
+	imapServer := helpers.StartTestIMAPServer(t, dbManager.DBManager)
+	defer imapServer.Stop(t)
+
+	client := helpers.ConnectIMAP(t, imapServer.Address)
+	defer func() { _ = client.Close() }()
+
+	if err := client.Login("alice@example.com", "password"); err != nil {
+		t.Fatalf("login failed: %v", err)
+	}
+	if err := client.Select("INBOX"); err != nil {
+		t.Fatalf("select INBOX failed: %v", err)
+	}
+
+	searchResp, err := client.SendCommand("UID SEARCH UNSEEN")
+	if err != nil {
+		t.Fatalf("UID SEARCH UNSEEN failed: %v", err)
+	}
+	if !containsLine(searchResp, "* SEARCH 1") {
+		t.Fatalf("expected UID 1 to be unseen before STORE, got: %v", searchResp)
+	}
+
+	storeResp, err := client.SendCommand(`UID STORE 1 +FLAGS.SILENT (\Seen)`)
+	if err != nil {
+		t.Fatalf("UID STORE failed: %v", err)
+	}
+	if !strings.Contains(storeResp[len(storeResp)-1], "OK") {
+		t.Fatalf("UID STORE did not complete successfully: %v", storeResp)
+	}
+
+	fetchResp, err := client.SendCommand("UID FETCH 1 (UID FLAGS)")
+	if err != nil {
+		t.Fatalf("UID FETCH failed: %v", err)
+	}
+	if !responseContains(fetchResp, "UID 1") || !responseContains(fetchResp, `\Seen`) {
+		t.Fatalf("expected UID FETCH to show \\Seen immediately after STORE, got: %v", fetchResp)
+	}
+
+	var flags string
+	if err := userDB.QueryRow(`SELECT flags FROM message_mailbox WHERE mailbox_id = ? AND uid = 1`, inboxID).Scan(&flags); err != nil {
+		t.Fatalf("query stored flags: %v", err)
+	}
+	if !strings.Contains(flags, `\Seen`) {
+		t.Fatalf("expected persisted flags to contain \\Seen, got %q", flags)
+	}
+
+	_ = client.Logout()
+
+	client2 := helpers.ConnectIMAP(t, imapServer.Address)
+	defer func() { _ = client2.Close() }()
+
+	if err := client2.Login("alice@example.com", "password"); err != nil {
+		t.Fatalf("reconnect login failed: %v", err)
+	}
+	if err := client2.Select("INBOX"); err != nil {
+		t.Fatalf("reconnect select INBOX failed: %v", err)
+	}
+
+	searchResp, err = client2.SendCommand("UID SEARCH UNSEEN")
+	if err != nil {
+		t.Fatalf("reconnect UID SEARCH UNSEEN failed: %v", err)
+	}
+	if !containsLine(searchResp, "* SEARCH") {
+		t.Fatalf("expected empty SEARCH response after marking seen, got: %v", searchResp)
+	}
+	if responseContains(searchResp, "* SEARCH 1") {
+		t.Fatalf("unexpected unseen UID after reconnect, got: %v", searchResp)
+	}
+
+	fetchResp, err = client2.SendCommand("UID FETCH 1 (UID FLAGS)")
+	if err != nil {
+		t.Fatalf("reconnect UID FETCH failed: %v", err)
+	}
+	if !responseContains(fetchResp, "UID 1") || !responseContains(fetchResp, `\Seen`) {
+		t.Fatalf("expected reconnect UID FETCH to retain \\Seen, got: %v", fetchResp)
+	}
+}
+
+func containsLine(lines []string, want string) bool {
+	for _, line := range lines {
+		if line == want {
+			return true
+		}
+	}
+	return false
+}
+
+func responseContains(lines []string, want string) bool {
+	for _, line := range lines {
+		if strings.Contains(line, want) {
+			return true
+		}
+	}
+	return false
+}
