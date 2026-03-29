@@ -49,10 +49,29 @@
 #   make docker-build-sasl - Build SASL Docker image
 #   make docker-build-lmtp - Build LMTP Docker image
 #   make docker-build-imap - Build IMAP Docker image
+#   make docker-build-socketmap - Build Socketmap Docker image
 #   make docker-build-all  - Build combined Docker image
 #   make help              - Show all available targets
 
-.PHONY: test test-integration test-integration-db test-integration-server test-integration-delivery test-integration-sasl test-e2e test-e2e-delivery test-e2e-imap test-e2e-auth test-e2e-concurrency test-e2e-persistence test-e2e-coverage test-e2e-minimal test-integration-coverage test-integration-race test-db test-db-init test-db-domain test-db-user test-db-mailbox test-db-message test-db-blob test-db-role test-db-manager test-capability test-noop test-check test-close test-expunge test-authenticate test-login test-starttls test-select test-examine test-create test-list test-list-extended test-delete test-status test-search test-fetch test-store test-copy test-uid test-commands test-delivery test-parser test-parser-coverage test-sasl test-conf test-utils test-response test-storage test-models test-middleware test-selection test-core-server test-verbose test-coverage test-race clean docker-build docker-build-sasl docker-build-lmtp docker-build-imap docker-build-all docker-run docker-stop docker-clean docker-images docker-logs docker-logs-sasl docker-logs-lmtp docker-logs-imap docker-logs-all
+.PHONY: test test-integration test-integration-db test-integration-server \
+	test-integration-delivery test-integration-sasl test-e2e \
+	test-e2e-delivery test-e2e-imap test-e2e-auth test-e2e-concurrency \
+	test-e2e-persistence test-e2e-coverage test-e2e-minimal \
+	test-integration-coverage test-integration-race test-db test-db-init \
+	test-db-domain test-db-user test-db-mailbox test-db-message \
+	test-db-blob test-db-role test-db-manager test-capability test-noop \
+	test-check test-close test-expunge test-authenticate test-login \
+	test-starttls test-select test-examine test-create test-list \
+	test-list-extended test-delete test-status test-search test-fetch \
+	test-store test-copy test-uid test-commands test-delivery test-parser \
+	test-parser-coverage test-sasl test-conf test-utils test-response \
+	test-storage test-models test-middleware test-selection \
+	test-core-server test-verbose test-coverage test-race clean \
+	docker-build docker-build-sasl docker-build-lmtp docker-build-imap \
+	docker-build-socketmap docker-build-all docker-run docker-run-sasl \
+	docker-run-lmtp docker-run-imap docker-run-socketmap docker-run-all \
+	docker-stop docker-clean docker-images docker-logs docker-logs-sasl \
+	docker-logs-lmtp docker-logs-imap docker-logs-socketmap docker-logs-all
 
 # Build delivery service
 build-delivery:
@@ -502,6 +521,7 @@ VERSION ?= latest
 DOCKER_IMAGE_SASL := raven-sasl
 DOCKER_IMAGE_LMTP := raven-lmtp
 DOCKER_IMAGE_IMAP := raven-imap
+DOCKER_IMAGE_SOCKETMAP := raven-socketmap
 DOCKER_IMAGE_ALL := raven
 
 # ============================================================================
@@ -514,6 +534,7 @@ docker-build:
 	@$(MAKE) docker-build-sasl
 	@$(MAKE) docker-build-lmtp
 	@$(MAKE) docker-build-imap
+	@$(MAKE) docker-build-socketmap
 	@$(MAKE) docker-build-all
 
 # Build individual service images
@@ -528,6 +549,10 @@ docker-build-lmtp:
 docker-build-imap:
 	@echo "Building IMAP Docker image..."
 	docker build --target raven-imap -t $(DOCKER_IMAGE_IMAP):$(VERSION) -t $(DOCKER_IMAGE_IMAP):latest .
+
+docker-build-socketmap:
+	@echo "Building Socketmap Docker image..."
+	docker build --target raven-socketmap -t $(DOCKER_IMAGE_SOCKETMAP):$(VERSION) -t $(DOCKER_IMAGE_SOCKETMAP):latest .
 
 docker-build-all:
 	@echo "Building combined Docker image..."
@@ -547,15 +572,18 @@ docker-run-lmtp:
 docker-run-imap:
 	docker run -d --name raven-imap -p 143:143 -p 993:993 -v raven-data:/app/data $(DOCKER_IMAGE_IMAP):$(VERSION)
 
+docker-run-socketmap:
+	docker run -d --name raven-socketmap -p 9100:9100 -v $(PWD)/config/raven.yaml:/etc/raven/raven.yaml:ro $(DOCKER_IMAGE_SOCKETMAP):$(VERSION)
+
 docker-run-all:
-	docker run -d --name raven-all -p 143:143 -p 993:993 -p 24:24 -p 12345:12345 -v raven-data:/app/data -v $(PWD)/config/raven.yaml:/etc/raven/raven.yaml:ro $(DOCKER_IMAGE_ALL):$(VERSION)
+	docker run -d --name raven-all -p 143:143 -p 993:993 -p 24:24 -p 12345:12345 -p 9100:9100 -v raven-data:/app/data -v $(PWD)/config/raven.yaml:/etc/raven/raven.yaml:ro $(DOCKER_IMAGE_ALL):$(VERSION)
 
 # Stop and remove Docker containers
 docker-stop:
 	@echo "Stopping Docker containers..."
 	-docker-compose down
-	-docker stop raven-sasl raven-lmtp raven-imap raven-all 2>/dev/null || true
-	-docker rm raven-sasl raven-lmtp raven-imap raven-all 2>/dev/null || true
+	-docker stop raven-sasl raven-lmtp raven-imap raven-socketmap raven-all 2>/dev/null || true
+	-docker rm raven-sasl raven-lmtp raven-imap raven-socketmap raven-all 2>/dev/null || true
 
 # Clean Docker images and volumes
 docker-clean: docker-stop
@@ -563,6 +591,7 @@ docker-clean: docker-stop
 	-docker rmi $(DOCKER_IMAGE_SASL):$(VERSION) $(DOCKER_IMAGE_SASL):latest 2>/dev/null || true
 	-docker rmi $(DOCKER_IMAGE_LMTP):$(VERSION) $(DOCKER_IMAGE_LMTP):latest 2>/dev/null || true
 	-docker rmi $(DOCKER_IMAGE_IMAP):$(VERSION) $(DOCKER_IMAGE_IMAP):latest 2>/dev/null || true
+	-docker rmi $(DOCKER_IMAGE_SOCKETMAP):$(VERSION) $(DOCKER_IMAGE_SOCKETMAP):latest 2>/dev/null || true
 	-docker rmi $(DOCKER_IMAGE_ALL):$(VERSION) $(DOCKER_IMAGE_ALL):latest 2>/dev/null || true
 	-docker volume rm raven-data 2>/dev/null || true
 
@@ -583,6 +612,9 @@ docker-logs-lmtp:
 
 docker-logs-imap:
 	docker logs -f raven-imap
+
+docker-logs-socketmap:
+	docker logs -f raven-socketmap
 
 docker-logs-all:
 	docker logs -f raven-all

@@ -69,6 +69,17 @@ jobs:
             ghcr.io/lsflk/raven-imap:latest
             ghcr.io/lsflk/raven-imap:${{ steps.version.outputs.VERSION }}
 
+      - name: Build and push raven-socketmap
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          target: raven-socketmap
+          push: true
+          tags: |
+            ghcr.io/lsflk/raven-socketmap:latest
+            ghcr.io/lsflk/raven-socketmap:${{ steps.version.outputs.VERSION }}
+
       - name: Build and push raven (combined)
         uses: docker/build-push-action@v5
         with:
