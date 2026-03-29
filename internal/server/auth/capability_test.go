@@ -74,6 +74,7 @@ func TestCapabilityCommand_RFCCompliance(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := server.SetupTestServerSimple(t)
+			oauthReady := srv.GetServer().GetConfig() != nil && srv.GetServer().GetOAuthValidator() != nil
 			var conn server.MockConnInterface
 
 			if tt.connType == "tls" {
@@ -93,6 +94,12 @@ func TestCapabilityCommand_RFCCompliance(t *testing.T) {
 			}
 
 			capLine := lines[0]
+
+			if oauthReady {
+				tt.expectCaps = append(tt.expectCaps, "AUTH=OAUTHBEARER", "AUTH=XOAUTH2", "SASL-IR")
+			} else {
+				tt.forbidCaps = append(tt.forbidCaps, "AUTH=OAUTHBEARER", "AUTH=XOAUTH2", "SASL-IR")
+			}
 
 			// Check required capabilities using exact token matching
 			for _, cap := range tt.expectCaps {

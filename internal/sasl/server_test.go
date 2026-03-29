@@ -188,32 +188,35 @@ func TestCPIDCommand(t *testing.T) {
 	// Read all responses - server sends MECH lines followed by DONE
 	reader := bufio.NewReader(conn)
 
-	// Read first MECH line
-	response1, err := reader.ReadString('\n')
-	if err != nil {
-		t.Fatalf("Failed to read first MECH response: %v", err)
-	}
-	if !strings.HasPrefix(response1, "MECH\t") {
-		t.Errorf("Expected first MECH response, got %q", response1)
+	mechs := map[string]bool{}
+	for {
+		line, readErr := reader.ReadString('\n')
+		if readErr != nil {
+			t.Fatalf("Failed to read CPID response: %v", readErr)
+		}
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "DONE" {
+			break
+		}
+		if strings.HasPrefix(trimmed, "MECH\t") {
+			parts := strings.Split(trimmed, "\t")
+			if len(parts) >= 2 {
+				mechs[parts[1]] = true
+			}
+		}
 	}
 
-	// Read second MECH line
-	response2, err := reader.ReadString('\n')
-	if err != nil {
-		t.Fatalf("Failed to read second MECH response: %v", err)
+	if !mechs["PLAIN"] {
+		t.Error("Expected PLAIN mechanism to be announced")
 	}
-	if !strings.HasPrefix(response2, "MECH\t") {
-		t.Errorf("Expected second MECH response, got %q", response2)
+	if !mechs["LOGIN"] {
+		t.Error("Expected LOGIN mechanism to be announced")
 	}
-
-	// Read DONE line
-	response3, err := reader.ReadString('\n')
-	if err != nil {
-		t.Fatalf("Failed to read DONE response: %v", err)
+	if !mechs["OAUTHBEARER"] {
+		t.Error("Expected OAUTHBEARER mechanism to be announced")
 	}
-	expectedResponse := "DONE\n"
-	if response3 != expectedResponse {
-		t.Errorf("Expected response %q, got %q", expectedResponse, response3)
+	if !mechs["XOAUTH2"] {
+		t.Error("Expected XOAUTH2 mechanism to be announced")
 	}
 }
 
@@ -958,18 +961,35 @@ func TestMultipleCommandsInSession(t *testing.T) {
 
 	// Send CPID
 	_, _ = fmt.Fprintf(conn, "CPID\t12345\n")
-	// Read all MECH responses
-	response, _ = reader.ReadString('\n') // First MECH
-	if !strings.HasPrefix(response, "MECH") {
-		t.Errorf("Expected MECH response, got: %s", response)
+	mechs := map[string]bool{}
+	for {
+		line, readErr := reader.ReadString('\n')
+		if readErr != nil {
+			t.Fatalf("Failed to read CPID response: %v", readErr)
+		}
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "DONE" {
+			break
+		}
+		if strings.HasPrefix(trimmed, "MECH\t") {
+			parts := strings.Split(trimmed, "\t")
+			if len(parts) >= 2 {
+				mechs[parts[1]] = true
+			}
+		}
 	}
-	response, _ = reader.ReadString('\n') // Second MECH
-	if !strings.HasPrefix(response, "MECH") {
-		t.Errorf("Expected MECH response, got: %s", response)
+
+	if !mechs["PLAIN"] {
+		t.Error("Expected PLAIN mechanism during CPID")
 	}
-	response, _ = reader.ReadString('\n') // DONE
-	if !strings.HasPrefix(response, "DONE") {
-		t.Errorf("Expected DONE response, got: %s", response)
+	if !mechs["LOGIN"] {
+		t.Error("Expected LOGIN mechanism during CPID")
+	}
+	if !mechs["OAUTHBEARER"] {
+		t.Error("Expected OAUTHBEARER mechanism during CPID")
+	}
+	if !mechs["XOAUTH2"] {
+		t.Error("Expected XOAUTH2 mechanism during CPID")
 	}
 
 	// Send AUTH
