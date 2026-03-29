@@ -74,6 +74,28 @@ func (s *IMAPServer) initOAuthValidation() {
 	s.oauthVal = validator
 }
 
+func (s *IMAPServer) oauthSASLReady() bool {
+	return s.cfg != nil && s.oauthVal != nil
+}
+
+func (s *IMAPServer) greetingCapabilities(isTLS bool) string {
+	capabilities := []string{"IMAP4rev1"}
+
+	if isTLS {
+		capabilities = append(capabilities, "AUTH=PLAIN", "LOGIN")
+	} else {
+		capabilities = append(capabilities, "STARTTLS", "LOGINDISABLED")
+	}
+
+	if s.oauthSASLReady() {
+		capabilities = append(capabilities, "AUTH=OAUTHBEARER", "AUTH=XOAUTH2", "SASL-IR")
+	}
+
+	capabilities = append(capabilities, "UIDPLUS", "IDLE", "LITERAL+")
+
+	return strings.Join(capabilities, " ")
+}
+
 // GetConfig returns cached process configuration loaded at startup.
 func (s *IMAPServer) GetConfig() *conf.Config {
 	return s.cfg
@@ -109,7 +131,7 @@ func (s *IMAPServer) HandleConnection(conn net.Conn) {
 	}
 
 	// Greeting - advertise basic capabilities in greeting
-	s.sendResponse(conn, "* OK [CAPABILITY IMAP4rev1 STARTTLS LOGINDISABLED AUTH=OAUTHBEARER AUTH=XOAUTH2 SASL-IR UIDPLUS IDLE LITERAL+] SQLite IMAP server ready")
+	s.sendResponse(conn, fmt.Sprintf("* OK [CAPABILITY %s] SQLite IMAP server ready", s.greetingCapabilities(false)))
 
 	handleClient(s, conn, state)
 }
@@ -213,7 +235,7 @@ func (s *IMAPServer) HandleSSLConnection(conn net.Conn) {
 	clientHandler := func(conn net.Conn, state *models.ClientState) {
 		// Send greeting for SSL/TLS connections
 		// TLS is active, so AUTH=PLAIN and LOGIN are allowed (no STARTTLS needed)
-		s.sendResponse(conn, "* OK [CAPABILITY IMAP4rev1 AUTH=PLAIN LOGIN AUTH=OAUTHBEARER AUTH=XOAUTH2 SASL-IR UIDPLUS IDLE LITERAL+] SQLite IMAP server ready")
+		s.sendResponse(conn, fmt.Sprintf("* OK [CAPABILITY %s] SQLite IMAP server ready", s.greetingCapabilities(true)))
 		handleClient(s, conn, state)
 	}
 	auth.HandleSSLConnection(clientHandler, conn)

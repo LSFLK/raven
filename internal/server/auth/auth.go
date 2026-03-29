@@ -40,10 +40,35 @@ type ClientHandler func(conn net.Conn, state *models.ClientState)
 
 // ===== CAPABILITY =====
 
-func HandleCapability(deps ServerDeps, conn net.Conn, tag string, state *models.ClientState) {
-	// Base capabilities
+func oauthSASLReady(deps ServerDeps) bool {
+	return deps.GetConfig() != nil && deps.GetOAuthValidator() != nil
+}
+
+func buildCapabilities(deps ServerDeps, isTLS bool) []string {
 	capabilities := []string{"IMAP4rev1"}
 
+	if isTLS {
+		capabilities = append(capabilities, "AUTH=PLAIN", "LOGIN")
+	} else {
+		capabilities = append(capabilities, "STARTTLS", "LOGINDISABLED")
+	}
+
+	if oauthSASLReady(deps) {
+		capabilities = append(capabilities, "AUTH=OAUTHBEARER", "AUTH=XOAUTH2", "SASL-IR")
+	}
+
+	capabilities = append(capabilities,
+		"UIDPLUS",
+		"IDLE",
+		"NAMESPACE",
+		"UNSELECT",
+		"LITERAL+",
+	)
+
+	return capabilities
+}
+
+func HandleCapability(deps ServerDeps, conn net.Conn, tag string, state *models.ClientState) {
 	// Detect TLS: real TLS connection or test mock that advertises TLS
 	isTLS := false
 	if _, ok := conn.(*tls.Conn); ok {
@@ -56,23 +81,7 @@ func HandleCapability(deps ServerDeps, conn net.Conn, tag string, state *models.
 		}
 	}
 
-	if isTLS {
-		// TLS is active → allow authentication
-		capabilities = append(capabilities, "AUTH=PLAIN", "LOGIN", "AUTH=OAUTHBEARER", "AUTH=XOAUTH2", "SASL-IR")
-	} else {
-		// Plain connection → require STARTTLS and disable LOGIN.
-		// OAUTH mechanisms are advertised for client discovery, but AUTH still enforces TLS.
-		capabilities = append(capabilities, "STARTTLS", "LOGINDISABLED", "AUTH=OAUTHBEARER", "AUTH=XOAUTH2", "SASL-IR")
-	}
-
-	// Add extension capabilities
-	capabilities = append(capabilities,
-		"UIDPLUS",
-		"IDLE",
-		"NAMESPACE",
-		"UNSELECT",
-		"LITERAL+",
-	)
+	capabilities := buildCapabilities(deps, isTLS)
 
 	// Send CAPABILITY response
 	deps.SendResponse(conn, "* CAPABILITY "+strings.Join(capabilities, " "))
@@ -322,8 +331,7 @@ func HandleAuthenticate(deps ServerDeps, conn net.Conn, tag string, parts []stri
 			state.RoleMailboxIDs = roleMailboxIDs
 		}
 
-		capabilities := "IMAP4rev1 AUTH=PLAIN LOGIN AUTH=OAUTHBEARER AUTH=XOAUTH2 SASL-IR"
-		capabilities += " UIDPLUS IDLE NAMESPACE UNSELECT LITERAL+"
+		capabilities := strings.Join(buildCapabilities(deps, true), " ")
 		deps.SendResponse(conn, fmt.Sprintf("%s OK [CAPABILITY %s] Authenticated", tag, capabilities))
 		return
 
@@ -544,14 +552,8 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 			}
 		}
 
-		// Per RFC 3501, include CAPABILITY response code in OK response
-		// Only do this if security layer was not negotiated (TLS doesn't count as SASL security layer)
-		capabilities := "IMAP4rev1 AUTH=PLAIN LOGIN AUTH=OAUTHBEARER AUTH=XOAUTH2 SASL-IR"
-		if isTLS {
-			capabilities += " UIDPLUS IDLE NAMESPACE UNSELECT LITERAL+"
-		} else {
-			capabilities += " STARTTLS LOGINDISABLED UIDPLUS IDLE NAMESPACE UNSELECT LITERAL+"
-		}
+		// Per RFC 3501, include CAPABILITY response code in OK response.
+		capabilities := strings.Join(buildCapabilities(deps, isTLS), " ")
 		deps.SendResponse(conn, fmt.Sprintf("%s OK [CAPABILITY %s] Authenticated", tag, capabilities))
 	} else {
 		body, _ := io.ReadAll(resp.Body)
