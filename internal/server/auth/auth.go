@@ -37,7 +37,13 @@ type ClientHandler func(conn net.Conn, state *models.ClientState)
 
 // ===== CAPABILITY =====
 
-func HandleCapability(deps ServerDeps, conn net.Conn, tag string, state *models.ClientState) {
+func HandleCapability(deps ServerDeps, conn net.Conn, tag string, parts []string, state *models.ClientState) {
+	// RFC 3501 says CAPABILITY takes no arguments
+	if len(parts) > 2 {
+		deps.SendResponse(conn, fmt.Sprintf("%s BAD CAPABILITY takes no arguments", tag))
+		return
+	}
+
 	// Base capabilities
 	capabilities := []string{"IMAP4rev1"}
 

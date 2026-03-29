@@ -33,7 +33,7 @@ func TestCapabilityCommand_NonTLSConnection(t *testing.T) {
 	}
 
 	// Test CAPABILITY command
-	srv.HandleCapability(conn, "A001", state)
+	srv.HandleCapability(conn, "A001", []string{"A001", "CAPABILITY"}, state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -98,7 +98,7 @@ func TestCapabilityCommand_TLSConnection(t *testing.T) {
 	}
 
 	// Test CAPABILITY command
-	srv.HandleCapability(conn, "B002", state)
+	srv.HandleCapability(conn, "B002", []string{"B002", "CAPABILITY"}, state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -149,7 +149,7 @@ func TestCapabilityCommand_ResponseFormat(t *testing.T) {
 		Authenticated: false,
 	}
 
-	srv.HandleCapability(conn, "C003", state)
+	srv.HandleCapability(conn, "C003", []string{"C003", "CAPABILITY"}, state)
 
 	response := conn.GetWrittenData()
 	
@@ -203,8 +203,8 @@ func TestCapabilityCommand_MultipleInvocations(t *testing.T) {
 	}
 
 	// Call CAPABILITY multiple times with different tags
-	srv.HandleCapability(conn, "D001", state)
-	srv.HandleCapability(conn, "D002", state)
+	srv.HandleCapability(conn, "D001", []string{"D001", "CAPABILITY"}, state)
+	srv.HandleCapability(conn, "D002", []string{"D002", "CAPABILITY"}, state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -246,7 +246,7 @@ func TestCapabilityCommand_AuthenticationStateDoesNotAffectCapabilities(t *testi
 	unauthState := &models.ClientState{
 		Authenticated: false,
 	}
-	srv.HandleCapability(conn1, "E001", unauthState)
+	srv.HandleCapability(conn1, "E001", []string{"E001", "CAPABILITY"}, unauthState)
 	unauthResponse := conn1.GetWrittenData()
 
 	// Test with authenticated state using a new connection
@@ -255,7 +255,7 @@ func TestCapabilityCommand_AuthenticationStateDoesNotAffectCapabilities(t *testi
 		Authenticated: true,
 		Username:      "testuser",
 	}
-	srv.HandleCapability(conn2, "E002", authState)
+	srv.HandleCapability(conn2, "E002", []string{"E002", "CAPABILITY"}, authState)
 	authResponse := conn2.GetWrittenData()
 
 	// Extract capability lines (first line of each response)
@@ -283,7 +283,7 @@ func BenchmarkCapabilityCommand(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		conn := NewMockConn()
-		srv.HandleCapability(conn, "BENCH", state)
+		srv.HandleCapability(conn, "BENCH", []string{"BENCH", "CAPABILITY"}, state)
 	}
 }
 
@@ -303,7 +303,7 @@ func TestCapabilityCommand_ConcurrentAccess(t *testing.T) {
 			state := &models.ClientState{
 				Authenticated: false,
 			}
-			srv.HandleCapability(conn, "CONCURRENT", state)
+			srv.HandleCapability(conn, "CONCURRENT", []string{"CONCURRENT", "CAPABILITY"}, state)
 			responses[index] = conn.GetWrittenData()
 			done <- index
 		}(i)

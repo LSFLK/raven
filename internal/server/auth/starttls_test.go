@@ -209,7 +209,7 @@ func TestStartTLS_RFCExampleSequence(t *testing.T) {
 	conn := server.NewMockConn()
 	state := &models.ClientState{Authenticated: false}
 
-	s.HandleCapability(conn, "a001", state)
+	s.HandleCapability(conn, "a001", []string{"a001", "CAPABILITY"}, state)
 	response := conn.GetWrittenData()
 
 	// Should include STARTTLS and LOGINDISABLED
@@ -233,7 +233,7 @@ func TestStartTLS_RFCExampleSequence(t *testing.T) {
 	tlsConn := server.NewMockTLSConn()
 	tlsState := &models.ClientState{Authenticated: false}
 
-	s.HandleCapability(tlsConn, "a003", tlsState)
+	s.HandleCapability(tlsConn, "a003", []string{"a003", "CAPABILITY"}, tlsState)
 	tlsResponse := tlsConn.GetWrittenData()
 
 	// Should NOT include STARTTLS or LOGINDISABLED on TLS connection
@@ -263,14 +263,14 @@ func TestStartTLS_CapabilityMustBeReissued(t *testing.T) {
 	plainConn := server.NewMockConn()
 	plainState := &models.ClientState{Authenticated: false}
 
-	s.HandleCapability(plainConn, "A001", plainState)
+	s.HandleCapability(plainConn, "A001", []string{"A001", "CAPABILITY"}, plainState)
 	plainResponse := plainConn.GetWrittenData()
 
 	// After STARTTLS - TLS connection
 	tlsConn := server.NewMockTLSConn()
 	tlsState := &models.ClientState{Authenticated: false}
 
-	s.HandleCapability(tlsConn, "A002", tlsState)
+	s.HandleCapability(tlsConn, "A002", []string{"A002", "CAPABILITY"}, tlsState)
 	tlsResponse := tlsConn.GetWrittenData()
 
 	// Verify capabilities are different

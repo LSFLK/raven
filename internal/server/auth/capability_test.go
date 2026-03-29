@@ -83,7 +83,7 @@ func TestCapabilityCommand_RFCCompliance(t *testing.T) {
 			}
 
 			state := &models.ClientState{Authenticated: false}
-			srv.HandleCapability(conn, "TEST", state)
+			srv.HandleCapability(conn, "TEST", []string{"TEST", "CAPABILITY"}, state)
 
 			response := conn.GetWrittenData()
 			lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -131,7 +131,7 @@ func TestCapabilityCommand_TagHandling(t *testing.T) {
 			conn := server.NewMockConn()
 			state := &models.ClientState{Authenticated: false}
 
-			srv.HandleCapability(conn, tc.tag, state)
+			srv.HandleCapability(conn, tc.tag, []string{tc.tag, "CAPABILITY"}, state)
 
 			response := conn.GetWrittenData()
 			lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -157,7 +157,7 @@ func TestCapabilityCommand_CapabilityFormatting(t *testing.T) {
 	conn := server.NewMockConn()
 	state := &models.ClientState{Authenticated: false}
 
-	srv.HandleCapability(conn, "FORMAT", state)
+	srv.HandleCapability(conn, "FORMAT", []string{"FORMAT", "CAPABILITY"}, state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -214,7 +214,7 @@ func TestCapabilityCommand_EdgeCases(t *testing.T) {
 		conn := server.NewMockConn()
 		state := &models.ClientState{Authenticated: false}
 
-		srv.HandleCapability(conn, "", state)
+		srv.HandleCapability(conn, "", []string{"", "CAPABILITY"}, state)
 
 		response := conn.GetWrittenData()
 		// Should still work with empty tag
@@ -237,7 +237,7 @@ func TestCapabilityCommand_EdgeCases(t *testing.T) {
 			}
 		}()
 
-		srv.HandleCapability(conn, "NIL", nil)
+		srv.HandleCapability(conn, "NIL", []string{"NIL", "CAPABILITY"}, nil)
 	})
 }
 
@@ -247,7 +247,7 @@ func TestCapabilityCommand_ResponseTiming(t *testing.T) {
 	conn := server.NewMockConn()
 	state := &models.ClientState{Authenticated: false}
 
-	srv.HandleCapability(conn, "TIMING", state)
+	srv.HandleCapability(conn, "TIMING", []string{"TIMING", "CAPABILITY"}, state)
 
 	response := conn.GetWrittenData()
 	lines := strings.Split(strings.TrimSpace(response), "\r\n")
@@ -281,7 +281,8 @@ func TestCapabilityCommand_MemoryUsage(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		conn := server.NewMockConn()
 		state := &models.ClientState{Authenticated: false}
-		srv.HandleCapability(conn, fmt.Sprintf("MEM%d", i), state)
+		tag := fmt.Sprintf("MEM%d", i)
+		srv.HandleCapability(conn, tag, []string{tag, "CAPABILITY"}, state)
 
 		// Verify response is still correct
 		response := conn.GetWrittenData()
@@ -308,7 +309,7 @@ func TestCapabilityCommand_StateIsolation(t *testing.T) {
 	// Get capability response for each state
 	for i, state := range states {
 		conn := server.NewMockConn()
-		srv.HandleCapability(conn, fmt.Sprintf("STATE%d", i), state)
+		srv.HandleCapability(conn, fmt.Sprintf("STATE%d", []string{fmt.Sprintf("STATE%d", "CAPABILITY"}, i), state)
 		responses[i] = conn.GetWrittenData()
 	}
 
