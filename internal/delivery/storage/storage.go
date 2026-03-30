@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"database/sql"
 	"fmt"
 	"log"
 	"strings"
@@ -97,28 +96,12 @@ func (s *Storage) DeliverMessage(recipient string, msg *parser.Message, folder s
 			msg.Headers["X-Rspamd-Action"], msg.Headers["X-Spam-Status"])
 	}
 
-	// Get shared database for role mailbox check
 	sharedDB := s.dbManager.GetSharedDB()
 
-	// Check if this is a role mailbox
-	roleMailboxID, roleErr := db.GetRoleMailboxByEmail(sharedDB, recipient)
-
-	var targetDB *sql.DB
-	var err error
-
-	if roleErr == nil {
-		// This is a role mailbox - deliver to role mailbox database
-		targetDB, err = s.dbManager.GetRoleMailboxDB(roleMailboxID)
-		if err != nil {
-			return fmt.Errorf("failed to get role mailbox database: %w", err)
-		}
-		log.Printf("Delivering to role mailbox: %s (ID: %d)", recipient, roleMailboxID)
-	} else {
-		// Not a role mailbox - deliver to regular user mailbox (identified by email from IDP)
-		targetDB, err = s.dbManager.GetUserDB(recipient)
-		if err != nil {
-			return fmt.Errorf("failed to get user database: %w", err)
-		}
+	// Deliver to the recipient's mailbox database (identified by email from IDP)
+	targetDB, err := s.dbManager.GetUserDB(recipient)
+	if err != nil {
+		return fmt.Errorf("failed to get user database: %w", err)
 	}
 
 	// Get or create the target mailbox in the per-user database

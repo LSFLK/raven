@@ -17,7 +17,6 @@ import (
 	"raven/internal/auth/oauthbearer"
 	"raven/internal/blobstorage"
 	"raven/internal/conf"
-	"raven/internal/db"
 	"raven/internal/models"
 )
 
@@ -27,7 +26,6 @@ type ServerDeps interface {
 	ExtractUsername(username string) string
 	GetUserDomain(username string) string
 	EnsureUserAndMailboxes(email string) error
-	GetDBManager() *db.DBManager
 	GetConfig() *conf.Config
 	GetOAuthValidator() *oauthbearer.Validator
 	GetCertPath() string
@@ -323,14 +321,6 @@ func HandleAuthenticate(deps ServerDeps, conn net.Conn, tag string, parts []stri
 		state.Username = actualUsername
 		state.Email = email
 
-		roleMailboxIDs, err := db.GetUserRoleAssignments(deps.GetDBManager().GetSharedDB(), email)
-		if err != nil {
-			log.Printf("Failed to load role assignments for OAUTHBEARER user %s: %v", email, err)
-			state.RoleMailboxIDs = []int64{}
-		} else {
-			state.RoleMailboxIDs = roleMailboxIDs
-		}
-
 		capabilities := strings.Join(buildCapabilities(deps, true), " ")
 		deps.SendResponse(conn, fmt.Sprintf("%s OK [CAPABILITY %s] Authenticated", tag, capabilities))
 		return
@@ -529,17 +519,6 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 		state.Authenticated = true
 		state.Username = actualUsername
 		state.Email = email
-
-		// Load role mailbox assignments for this user
-		roleMailboxIDs, err := db.GetUserRoleAssignments(deps.GetDBManager().GetSharedDB(), email)
-		if err != nil {
-			log.Printf("Failed to load role assignments for user %s: %v", email, err)
-			// Don't fail authentication, just continue without role mailboxes
-			state.RoleMailboxIDs = []int64{}
-		} else {
-			state.RoleMailboxIDs = roleMailboxIDs
-			log.Printf("User %s has %d role mailbox assignments", email, len(roleMailboxIDs))
-		}
 
 		// Detect if TLS is active
 		isTLS := false

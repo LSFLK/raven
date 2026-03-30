@@ -63,13 +63,13 @@ func TestGetSharedDB(t *testing.T) {
 	}
 
 	var count int
-	err = sharedDB.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='role_mailboxes'").Scan(&count)
+	err = sharedDB.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='blobs'").Scan(&count)
 	if err != nil {
-		t.Fatalf("Failed to query role_mailboxes table: %v", err)
+		t.Fatalf("Failed to query blobs table: %v", err)
 	}
 
 	if count != 1 {
-		t.Error("Expected role_mailboxes table to exist in shared database")
+		t.Error("Expected blobs table to exist in shared database")
 	}
 }
 
@@ -178,78 +178,6 @@ func TestGetUserDB_DefaultMailboxes(t *testing.T) {
 	}
 }
 
-func TestGetRoleMailboxDB(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "db_manager_test_*")
-	if err != nil {
-		t.Fatalf("Failed to create temp directory: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	manager, err := NewDBManager(tmpDir)
-	if err != nil {
-		t.Fatalf("NewDBManager failed: %v", err)
-	}
-	defer func() { _ = manager.Close() }()
-
-	roleID := int64(456)
-	roleDB, err := manager.GetRoleMailboxDB(roleID)
-	if err != nil {
-		t.Fatalf("GetRoleMailboxDB failed: %v", err)
-	}
-
-	if roleDB == nil {
-		t.Fatal("Expected non-nil role mailbox database")
-	}
-
-	dbPath := filepath.Join(tmpDir, "role_db_456.db")
-	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		t.Error("Expected role mailbox database file to be created")
-	}
-
-	var count int
-	err = roleDB.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='mailboxes'").Scan(&count)
-	if err != nil {
-		t.Fatalf("Failed to query mailboxes table: %v", err)
-	}
-
-	if count != 1 {
-		t.Error("Expected mailboxes table to exist in role mailbox database")
-	}
-}
-
-func TestGetRoleMailboxDB_Caching(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "db_manager_test_*")
-	if err != nil {
-		t.Fatalf("Failed to create temp directory: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	manager, err := NewDBManager(tmpDir)
-	if err != nil {
-		t.Fatalf("NewDBManager failed: %v", err)
-	}
-	defer func() { _ = manager.Close() }()
-
-	roleID := int64(456)
-	roleDB1, err := manager.GetRoleMailboxDB(roleID)
-	if err != nil {
-		t.Fatalf("First GetRoleMailboxDB failed: %v", err)
-	}
-
-	roleDB2, err := manager.GetRoleMailboxDB(roleID)
-	if err != nil {
-		t.Fatalf("Second GetRoleMailboxDB failed: %v", err)
-	}
-
-	if roleDB1 != roleDB2 {
-		t.Error("Expected same database connection from cache")
-	}
-
-	if len(manager.roleDBCache) != 1 {
-		t.Errorf("Expected 1 cached role mailbox database, got %d", len(manager.roleDBCache))
-	}
-}
-
 func TestClose(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "db_manager_test_*")
 	if err != nil {
@@ -264,7 +192,6 @@ func TestClose(t *testing.T) {
 
 	_, _ = manager.GetUserDB(testEmailFromID(1))
 	_, _ = manager.GetUserDB(testEmailFromID(2))
-	_, _ = manager.GetRoleMailboxDB(1)
 
 	err = manager.Close()
 	if err != nil {
@@ -273,10 +200,6 @@ func TestClose(t *testing.T) {
 
 	if len(manager.userDBCache) != 0 {
 		t.Errorf("Expected empty user DB cache after close, got %d entries", len(manager.userDBCache))
-	}
-
-	if len(manager.roleDBCache) != 0 {
-		t.Errorf("Expected empty role DB cache after close, got %d entries", len(manager.roleDBCache))
 	}
 }
 
@@ -328,7 +251,7 @@ func TestSharedDBTables(t *testing.T) {
 
 	sharedDB := manager.GetSharedDB()
 
-	expectedTables := []string{"role_mailboxes", "user_role_assignments", "blobs"}
+	expectedTables := []string{"blobs"}
 	for _, tableName := range expectedTables {
 		var count int
 		err = sharedDB.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", tableName).Scan(&count)
@@ -395,10 +318,6 @@ func TestSharedDBIndexes(t *testing.T) {
 	sharedDB := manager.GetSharedDB()
 
 	expectedIndexes := []string{
-		"idx_role_mailboxes_email",
-		"idx_role_assignments_user",
-		"idx_role_assignments_role",
-		"idx_role_assignments_active",
 		"idx_blobs_hash",
 	}
 

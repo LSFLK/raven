@@ -540,48 +540,6 @@ func TestUnselectCommand_NoExpunge(t *testing.T) {
 // Additional Coverage Tests
 // ============================================================================
 
-func TestSelectCommand_RoleMailboxInvalidPath(t *testing.T) {
-	srv := server.SetupTestServerSimple(t)
-	conn := server.NewMockConn()
-	database := server.GetDatabaseFromServer(srv)
-
-	userID := server.CreateTestUser(t, database, "testuser")
-	state := &models.ClientState{
-		Authenticated: true,
-		UserID:        userID,
-		Username:      "testuser",
-	}
-
-	// Invalid role path (missing mailbox name)
-	srv.HandleSelect(conn, "A012", []string{"A012", "SELECT", "Roles/user@example.com"}, state)
-
-	response := conn.GetWrittenData()
-	if !strings.Contains(response, "A012 NO [TRYCREATE] Invalid role mailbox path") {
-		t.Errorf("Expected invalid role path error, got: %s", response)
-	}
-}
-
-func TestSelectCommand_RoleMailboxNotExist(t *testing.T) {
-	srv := server.SetupTestServerSimple(t)
-	conn := server.NewMockConn()
-	database := server.GetDatabaseFromServer(srv)
-
-	userID := server.CreateTestUser(t, database, "testuser")
-	state := &models.ClientState{
-		Authenticated: true,
-		UserID:        userID,
-		Username:      "testuser",
-	}
-
-	// Non-existent role mailbox
-	srv.HandleSelect(conn, "A013", []string{"A013", "SELECT", "Roles/nonexistent@example.com/INBOX"}, state)
-
-	response := conn.GetWrittenData()
-	if !strings.Contains(response, "A013 NO [TRYCREATE] Role mailbox does not exist") {
-		t.Errorf("Expected role mailbox not exist error, got: %s", response)
-	}
-}
-
 func TestCloseCommand_DeletesMarkedMessages(t *testing.T) {
 	srv := server.SetupTestServerSimple(t)
 	conn := server.NewMockConn()

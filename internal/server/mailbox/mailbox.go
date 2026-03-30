@@ -16,8 +16,6 @@ import (
 type ServerDeps interface {
 	SendResponse(conn net.Conn, response string)
 	GetUserDB(email string) (*sql.DB, error)
-	GetSharedDB() *sql.DB
-	GetDBManager() *db.DBManager
 	GetS3Storage() *blobstorage.S3BlobStorage
 }
 
@@ -72,70 +70,6 @@ func HandleList(deps ServerDeps, conn net.Conn, tag string, parts []string, stat
 	for _, mailboxName := range matches {
 		attrs := utils.GetMailboxAttributes(mailboxName)
 		deps.SendResponse(conn, fmt.Sprintf("* LIST (%s) \"/\" \"%s\"", attrs, mailboxName))
-	}
-
-	// List role mailboxes if user has any assigned
-	if len(state.RoleMailboxIDs) > 0 {
-		sharedDB := deps.GetSharedDB()
-
-		// Collect all role mailbox paths first
-		var allRolePaths []string
-
-		for _, roleMailboxID := range state.RoleMailboxIDs {
-			// Get role mailbox email
-			roleEmail, err := db.GetRoleMailboxByID(sharedDB, roleMailboxID)
-			if err != nil {
-				continue
-			}
-
-			// Get role mailbox database
-			roleDB, err := deps.GetDBManager().GetRoleMailboxDB(roleMailboxID)
-			if err != nil {
-				continue
-			}
-
-			// Get mailboxes in the role mailbox (userID 0 for role mailboxes)
-			roleMailboxes, err := db.GetUserMailboxesPerUser(roleDB)
-			if err != nil {
-				continue
-			}
-
-			// Build full paths for role mailboxes
-			rolePrefix := fmt.Sprintf("Roles/%s/", roleEmail)
-			for _, mbx := range roleMailboxes {
-				allRolePaths = append(allRolePaths, rolePrefix+mbx)
-			}
-
-			// Add the role folder itself
-			allRolePaths = append(allRolePaths, fmt.Sprintf("Roles/%s", roleEmail))
-		}
-
-		// Add the top-level Roles folder
-		allRolePaths = append(allRolePaths, "Roles")
-
-		// Filter and list role paths
-		roleMatches := utils.FilterMailboxes(allRolePaths, reference, mailboxPattern)
-		for _, matchedPath := range roleMatches {
-			// Skip if this doesn't start with "Roles" - prevents duplicate personal mailboxes
-			if !strings.HasPrefix(matchedPath, "Roles") {
-				continue
-			}
-
-			// Determine attributes based on the path
-			if matchedPath == "Roles" {
-				// Top-level Roles folder
-				deps.SendResponse(conn, fmt.Sprintf("* LIST (\\Noselect \\HasChildren) \"/\" \"%s\"", matchedPath))
-			} else if strings.Count(matchedPath, "/") == 1 {
-				// Roles/email@domain - folder level
-				deps.SendResponse(conn, fmt.Sprintf("* LIST (\\Noselect \\HasChildren) \"/\" \"%s\"", matchedPath))
-			} else {
-				// Actual mailbox: Roles/email@domain/INBOX
-				parts := strings.Split(matchedPath, "/")
-				mailboxName := parts[len(parts)-1]
-				attrs := utils.GetMailboxAttributes(mailboxName)
-				deps.SendResponse(conn, fmt.Sprintf("* LIST (%s) \"/\" \"%s\"", attrs, matchedPath))
-			}
-		}
 	}
 
 	deps.SendResponse(conn, fmt.Sprintf("%s OK LIST completed", tag))
@@ -241,70 +175,6 @@ func HandleLsub(deps ServerDeps, conn net.Conn, tag string, parts []string, stat
 	for _, mailboxName := range matches {
 		attrs := utils.GetMailboxAttributes(mailboxName)
 		deps.SendResponse(conn, fmt.Sprintf("* LSUB (%s) \"/\" \"%s\"", attrs, mailboxName))
-	}
-
-	// Include role mailboxes in LSUB (auto-subscribed)
-	if len(state.RoleMailboxIDs) > 0 {
-		sharedDB := deps.GetSharedDB()
-
-		// Collect all role mailbox paths
-		var allRolePaths []string
-
-		for _, roleMailboxID := range state.RoleMailboxIDs {
-			// Get role mailbox email
-			roleEmail, err := db.GetRoleMailboxByID(sharedDB, roleMailboxID)
-			if err != nil {
-				continue
-			}
-
-			// Get role mailbox database
-			roleDB, err := deps.GetDBManager().GetRoleMailboxDB(roleMailboxID)
-			if err != nil {
-				continue
-			}
-
-			// Get mailboxes in the role mailbox
-			roleMailboxes, err := db.GetUserMailboxesPerUser(roleDB)
-			if err != nil {
-				continue
-			}
-
-			// Build full paths for role mailboxes
-			rolePrefix := fmt.Sprintf("Roles/%s/", roleEmail)
-			for _, mbx := range roleMailboxes {
-				allRolePaths = append(allRolePaths, rolePrefix+mbx)
-			}
-
-			// Add the role folder itself
-			allRolePaths = append(allRolePaths, fmt.Sprintf("Roles/%s", roleEmail))
-		}
-
-		// Add the top-level Roles folder
-		allRolePaths = append(allRolePaths, "Roles")
-
-		// Filter and list role paths for LSUB
-		roleMatches := utils.FilterMailboxes(allRolePaths, reference, mailboxPattern)
-		for _, matchedPath := range roleMatches {
-			// Skip if this doesn't start with "Roles"
-			if !strings.HasPrefix(matchedPath, "Roles") {
-				continue
-			}
-
-			// Determine attributes based on the path
-			if matchedPath == "Roles" {
-				// Top-level Roles folder
-				deps.SendResponse(conn, fmt.Sprintf("* LSUB (\\Noselect \\HasChildren) \"/\" \"%s\"", matchedPath))
-			} else if strings.Count(matchedPath, "/") == 1 {
-				// Roles/email@domain - folder level
-				deps.SendResponse(conn, fmt.Sprintf("* LSUB (\\Noselect \\HasChildren) \"/\" \"%s\"", matchedPath))
-			} else {
-				// Actual mailbox: Roles/email@domain/INBOX
-				parts := strings.Split(matchedPath, "/")
-				mailboxName := parts[len(parts)-1]
-				attrs := utils.GetMailboxAttributes(mailboxName)
-				deps.SendResponse(conn, fmt.Sprintf("* LSUB (%s) \"/\" \"%s\"", attrs, matchedPath))
-			}
-		}
 	}
 
 	deps.SendResponse(conn, fmt.Sprintf("%s OK LSUB completed", tag))

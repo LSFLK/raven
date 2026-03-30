@@ -814,7 +814,6 @@ func TestAuthenticateUser_RoleAssignmentsSuccess(t *testing.T) {
 		t.Log("Authentication succeeded")
 		// Role assignments should be loaded (or empty array if none exist)
 		// The function handles role loading errors gracefully
-		t.Logf("Role mailbox IDs: %v", state.RoleMailboxIDs)
 	}
 }
 

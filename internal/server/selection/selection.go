@@ -15,8 +15,6 @@ import (
 type ServerDeps interface {
 	SendResponse(conn net.Conn, response string)
 	GetUserDB(email string) (*sql.DB, error)
-	GetSharedDB() *sql.DB
-	GetDBManager() *db.DBManager
 	GetS3Storage() *blobstorage.S3BlobStorage
 }
 
@@ -51,9 +49,7 @@ func HandleSelect(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 	state.SelectedFolder = folder
 	stateEmail := resolveStateEmail(state)
 
-	// Check if this is a role mailbox path (e.g., "Roles/ceo@openmail.lk/INBOX")
 	var targetDB *sql.DB
-	var actualMailboxName string
 
 	// RFC 3501: INBOX is case-insensitive - normalize all variants to "INBOX"
 	normalizeInbox := func(name string) string {
@@ -63,56 +59,16 @@ func HandleSelect(deps ServerDeps, conn net.Conn, tag string, parts []string, st
 		return name
 	}
 
-	if strings.HasPrefix(folder, "Roles/") {
-		// Parse role mailbox path: Roles/email@domain.com/MAILBOX
-		pathParts := strings.SplitN(folder, "/", 3)
-		if len(pathParts) < 3 {
-			deps.SendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Invalid role mailbox path", tag))
-			return
-		}
-
-		roleEmail := pathParts[1]
-		actualMailboxName = normalizeInbox(pathParts[2])
-
-		// Get role mailbox ID from email
-		sharedDB := deps.GetSharedDB()
-		roleMailboxID, err := db.GetRoleMailboxByEmail(sharedDB, roleEmail)
-		if err != nil {
-			deps.SendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Role mailbox does not exist", tag))
-			return
-		}
-
-		// Check if user is assigned to this role mailbox
-		isAssigned, err := db.IsUserAssignedToRoleMailbox(sharedDB, stateEmail, roleMailboxID)
-		if err != nil || !isAssigned {
-			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHORIZATIONFAILED] Not authorized to access this role mailbox", tag))
-			return
-		}
-
-		// Get role mailbox database
-		targetDB, err = deps.GetDBManager().GetRoleMailboxDB(roleMailboxID)
-		if err != nil {
-			deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
-			return
-		}
-
-		state.IsRoleMailbox = true
-		state.SelectedRoleMailboxID = roleMailboxID
-	} else {
-		// Regular user mailbox
-		var err error
-		targetDB, err = deps.GetUserDB(stateEmail)
-		if err != nil {
-			deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
-			return
-		}
-		actualMailboxName = normalizeInbox(folder)
-		state.IsRoleMailbox = false
-		state.SelectedRoleMailboxID = 0
+	// Regular user mailbox
+	var err error
+	targetDB, err = deps.GetUserDB(stateEmail)
+	if err != nil {
+		deps.SendResponse(conn, fmt.Sprintf("%s NO Database error", tag))
+		return
 	}
 
 	// Get mailbox ID using new schema
-	mailboxID, err := db.GetMailboxByNamePerUser(targetDB, actualMailboxName)
+	mailboxID, err := db.GetMailboxByNamePerUser(targetDB, normalizeInbox(folder))
 	if err != nil {
 		deps.SendResponse(conn, fmt.Sprintf("%s NO [TRYCREATE] Mailbox does not exist", tag))
 		return
@@ -227,13 +183,7 @@ func HandleClose(deps ServerDeps, conn net.Conn, tag string, state *models.Clien
 	// TODO: Add ReadOnly field to ClientState to properly handle EXAMINE
 
 	// Get user database
-	var userDB *sql.DB
-	var err error
-	if state.IsRoleMailbox {
-		userDB, err = deps.GetDBManager().GetRoleMailboxDB(state.SelectedRoleMailboxID)
-	} else {
-		userDB, err = deps.GetUserDB(resolveStateEmail(state))
-	}
+	userDB, err := deps.GetUserDB(resolveStateEmail(state))
 	if err != nil {
 		// Clear selection and return
 		state.SelectedMailboxID = 0

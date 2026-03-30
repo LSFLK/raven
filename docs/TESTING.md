@@ -75,7 +75,6 @@ make test-db-user          # User management
 make test-db-mailbox       # Mailbox operations
 make test-db-message       # Message management
 make test-db-blob          # Blob storage
-make test-db-role          # Role mailboxes
 make test-db-subscription  # Subscription management
 make test-db-manager       # DB manager tests
 
@@ -219,7 +218,7 @@ The CI pipeline consists of **14 parallel jobs** organized into logical groups:
 - Database initialization
 - Domain, user, and mailbox management
 - Message and blob storage
-- Role mailboxes and subscriptions
+- Subscriptions and delivery queue management
 - Delivery queue management
 
 #### 2. IMAP Authentication & Session (`test-imap-auth`)
