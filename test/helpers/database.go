@@ -164,8 +164,6 @@ func AssertDatabaseExists(t *testing.T, basePath string, dbType string, identifi
 		dbPath = filepath.Join(basePath, "shared.db")
 	case "user":
 		dbPath = filepath.Join(basePath, fmt.Sprintf("user_%s.db", identifier))
-	case "role":
-		dbPath = filepath.Join(basePath, fmt.Sprintf("role_db_%s.db", identifier))
 	default:
 		t.Fatalf("Unknown database type: %s", dbType)
 	}

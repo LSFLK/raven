@@ -10,7 +10,6 @@
 #   make test-db-mailbox   - Run mailbox operations tests
 #   make test-db-message   - Run message management tests
 #   make test-db-blob      - Run blob storage tests
-#   make test-db-role      - Run role mailbox tests
 #   make test-db-manager   - Run DB manager tests
 #   make test-conf         - Run configuration tests
 #   make test-utils        - Run server utilities tests
@@ -197,10 +196,6 @@ test-db-message:
 test-db-blob:
 	go test -v ./internal/db -run "TestStoreBlob|TestGetBlob|TestDecrementBlobReference"
 
-# Run role mailbox tests
-test-db-role:
-	go test -v ./internal/db -run "TestRoleMailbox|TestAssignUser|TestGetRoleMailboxAssigned"
-
 # Run subscription tests
 test-db-subscription:
 	go test -v ./internal/db -run "TestSubscribe|TestUnsubscribe|TestIsMailboxSubscribed"
@@ -211,7 +206,7 @@ test-db-delivery:
 
 # Run DB manager tests
 test-db-manager:
-	go test -v ./internal/db -run "TestGetSharedDB|TestGetUserDB|TestGetRoleMailboxDB|TestClose|TestCaching"
+	go test -v ./internal/db -run "TestGetSharedDB|TestGetUserDB|TestClose|TestCaching"
 
 # Run all database tests with verbose output and coverage
 test-db-all:
@@ -228,14 +223,12 @@ test-db-all:
 	@go test -v ./internal/db -run "TestCreateMessage|TestAddMessageToMailbox|TestGetMessages|TestMessageFlags"
 	@echo "\n=== Blob Storage Tests ==="
 	@go test -v ./internal/db -run "TestStoreBlob|TestGetBlob|TestDecrementBlobReference"
-	@echo "\n=== Role Mailbox Tests ==="
-	@go test -v ./internal/db -run "TestRoleMailbox|TestAssignUser|TestGetRoleMailboxAssigned"
 	@echo "\n=== Subscription Tests ==="
 	@go test -v ./internal/db -run "TestSubscribe|TestUnsubscribe|TestIsMailboxSubscribed"
 	@echo "\n=== Delivery & Outbound Queue Tests ==="
 	@go test -v ./internal/db -run "TestRecordDelivery|TestQueueOutbound|TestGetPendingOutbound|TestUpdateOutboundStatus|TestRetryOutbound"
 	@echo "\n=== DB Manager Tests ==="
-	@go test -v ./internal/db -run "TestGetSharedDB|TestGetUserDB|TestGetRoleMailboxDB|TestClose|TestCaching"
+	@go test -v ./internal/db -run "TestGetSharedDB|TestGetUserDB|TestClose|TestCaching"
 	@echo "\n=== Full Database Test Suite with Coverage ==="
 	@go test -v -cover ./internal/db/...
 
@@ -653,7 +646,6 @@ help:
 	@echo "  test-db-mailbox        - Run mailbox operations tests"
 	@echo "  test-db-message        - Run message management tests"
 	@echo "  test-db-blob           - Run blob storage tests"
-	@echo "  test-db-role           - Run role mailbox tests"
 	@echo "  test-db-subscription   - Run subscription tests"
 	@echo "  test-db-delivery       - Run delivery & outbound queue tests"
 	@echo "  test-db-manager        - Run DB manager tests"

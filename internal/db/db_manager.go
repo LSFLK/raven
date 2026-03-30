@@ -15,7 +15,6 @@ type DBManager struct {
 	basePath    string
 	sharedDB    *sql.DB
 	userDBCache map[string]*sql.DB
-	roleDBCache map[int64]*sql.DB
 	cacheMutex  sync.RWMutex
 }
 
@@ -29,7 +28,6 @@ func NewDBManager(basePath string) (*DBManager, error) {
 	manager := &DBManager{
 		basePath:    basePath,
 		userDBCache: make(map[string]*sql.DB),
-		roleDBCache: make(map[int64]*sql.DB),
 	}
 
 	// Initialize shared database
@@ -97,60 +95,6 @@ func (m *DBManager) GetUserDB(email string) (*sql.DB, error) {
 
 	return db, nil
 }
-
-// GetRoleMailboxDB returns a database connection for a specific role mailbox
-func (m *DBManager) GetRoleMailboxDB(roleMailboxID int64) (*sql.DB, error) {
-	// Check cache first
-	m.cacheMutex.RLock()
-	if db, exists := m.roleDBCache[roleMailboxID]; exists {
-		m.cacheMutex.RUnlock()
-		return db, nil
-	}
-	m.cacheMutex.RUnlock()
-
-	// Create or open role mailbox database
-	m.cacheMutex.Lock()
-	defer m.cacheMutex.Unlock()
-
-	// Double-check after acquiring write lock
-	if db, exists := m.roleDBCache[roleMailboxID]; exists {
-		return db, nil
-	}
-
-	dbPath := m.getRoleMailboxDBPath(roleMailboxID)
-
-	// Check if database file exists
-	exists := false
-	if _, err := os.Stat(dbPath); err == nil {
-		exists = true
-	}
-
-	// Open database
-	db, err := sql.Open("sqlite3", dbPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open role mailbox database: %v", err)
-	}
-
-	// Enable foreign key constraints
-	if _, err = db.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("failed to enable foreign keys: %v", err)
-	}
-
-	// Initialize schema if this is a new database (use userID 0 for role mailbox)
-	if !exists {
-		if err := m.initUserDB(db); err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("failed to initialize role mailbox database: %v", err)
-		}
-	}
-
-	// Cache the connection
-	m.roleDBCache[roleMailboxID] = db
-
-	return db, nil
-}
-
 // initSharedDB initializes the shared database
 func (m *DBManager) initSharedDB() error {
 	sharedPath := filepath.Join(m.basePath, "shared.db")
@@ -164,17 +108,6 @@ func (m *DBManager) initSharedDB() error {
 	if _, err = db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		_ = db.Close()
 		return err
-	}
-
-	// Create shared tables
-	if err := createRoleMailboxesTable(db); err != nil {
-		_ = db.Close()
-		return fmt.Errorf("failed to create role_mailboxes table: %v", err)
-	}
-
-	if err := createUserRoleAssignmentsTable(db); err != nil {
-		_ = db.Close()
-		return fmt.Errorf("failed to create user_role_assignments table: %v", err)
 	}
 
 	// Create blobs table in shared database for deduplication across all users
@@ -255,12 +188,6 @@ func (m *DBManager) initUserDB(db *sql.DB) error {
 func (m *DBManager) getUserDBPath(email string) string {
 	return filepath.Join(m.basePath, fmt.Sprintf("user_%s.db", email))
 }
-
-// getRoleMailboxDBPath returns the file path for a role mailbox's database
-func (m *DBManager) getRoleMailboxDBPath(roleMailboxID int64) string {
-	return filepath.Join(m.basePath, fmt.Sprintf("role_db_%d.db", roleMailboxID))
-}
-
 // Close closes all database connections
 func (m *DBManager) Close() error {
 	var lastErr error
@@ -281,14 +208,6 @@ func (m *DBManager) Close() error {
 			lastErr = err
 		}
 		delete(m.userDBCache, email)
-	}
-
-	// Close all role mailbox databases
-	for roleID, db := range m.roleDBCache {
-		if err := db.Close(); err != nil {
-			lastErr = err
-		}
-		delete(m.roleDBCache, roleID)
 	}
 
 	return lastErr

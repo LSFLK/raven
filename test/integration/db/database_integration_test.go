@@ -44,7 +44,7 @@ func TestDBManagerToSharedDB_SuccessFlow(t *testing.T) {
 		t.Fatalf("Error iterating shared database tables: %v", err)
 	}
 
-	requiredTables := []string{"role_mailboxes", "user_role_assignments", "blobs"}
+	requiredTables := []string{"blobs"}
 	for _, table := range requiredTables {
 		if !tables[table] {
 			t.Errorf("Expected shared table %q to exist", table)
