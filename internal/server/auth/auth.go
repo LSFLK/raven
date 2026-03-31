@@ -251,9 +251,16 @@ func HandleAuthenticate(deps ServerDeps, conn net.Conn, tag string, parts []stri
 			return
 		}
 
-		accessToken, _, _, err := oauthbearer.ParseInitialClientResponseDetails(authData)
+		accessToken, _, saslUser, err := oauthbearer.ParseInitialClientResponseDetails(authData)
 		if err != nil {
 			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Invalid OAuth payload", tag))
+			return
+		}
+
+		saslUserEmail := normalizeEmail(saslUser)
+		if saslUserEmail == "" {
+			log.Printf("OAUTHBEARER: rejected non-email SASL user field: %q", saslUser)
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
 			return
 		}
 
@@ -306,7 +313,14 @@ func HandleAuthenticate(deps ServerDeps, conn net.Conn, tag string, parts []stri
 		if email == "" && cfg.Domain != "" && !strings.Contains(identity, "@") {
 			email = strings.TrimSpace(identity) + "@" + strings.Trim(strings.TrimSpace(cfg.Domain), ".")
 		}
+		email = normalizeEmail(email)
 		if email == "" {
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
+			return
+		}
+
+		if !strings.EqualFold(saslUserEmail, email) {
+			log.Printf("OAUTHBEARER: SASL user %q does not match resolved mailbox email %q", saslUserEmail, email)
 			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
 			return
 		}
