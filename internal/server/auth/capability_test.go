@@ -239,6 +239,20 @@ func TestCapabilityCommand_EdgeCases(t *testing.T) {
 
 		srv.HandleCapability(conn, "NIL", []string{"NIL", "CAPABILITY"}, nil)
 	})
+
+	t.Run("WithArguments", func(t *testing.T) {
+		srv := server.SetupTestServerSimple(t)
+		conn := server.NewMockConn()
+		state := &models.ClientState{Authenticated: false}
+
+		// RFC 3501 says CAPABILITY takes no arguments
+		srv.HandleCapability(conn, "A001", []string{"A001", "CAPABILITY", "EXTRA"}, state)
+
+		response := conn.GetWrittenData()
+		if !strings.Contains(response, "A001 BAD CAPABILITY takes no arguments") {
+			t.Errorf("Expected BAD response for CAPABILITY with arguments, got: %s", response)
+		}
+	})
 }
 
 // TestCapabilityCommand_ResponseTiming tests response timing and ordering
@@ -309,7 +323,8 @@ func TestCapabilityCommand_StateIsolation(t *testing.T) {
 	// Get capability response for each state
 	for i, state := range states {
 		conn := server.NewMockConn()
-		srv.HandleCapability(conn, fmt.Sprintf("STATE%d", []string{fmt.Sprintf("STATE%d", "CAPABILITY"}, i), state)
+		tag := fmt.Sprintf("STATE%d", i)
+		srv.HandleCapability(conn, tag, []string{tag, "CAPABILITY"}, state)
 		responses[i] = conn.GetWrittenData()
 	}
 
