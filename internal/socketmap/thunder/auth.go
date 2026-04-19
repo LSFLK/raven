@@ -20,7 +20,7 @@ var (
 func Authenticate(host, port string, tokenRefreshSeconds int) (*Auth, error) {
 	log.Printf("  ┌─ Thunder Authentication ─────────")
 
-	// Step 1: Get DEVELOP App ID using shared utility
+	// Step 1: Get Console App ID using shared utility
 	// This will try environment variables first, then fall back to extracting from thunder logs
 	developAppID, err := conf.GetApplicationID()
 	if err != nil {
@@ -33,7 +33,7 @@ func Authenticate(host, port string, tokenRefreshSeconds int) (*Auth, error) {
 		log.Printf("  │ To fix this issue:")
 		log.Printf("  │ 1. Check thunder-setup logs: docker logs thunder-setup")
 		log.Printf("  │ 2. Extract App ID manually and set environment:")
-		log.Printf("  │    export THUNDER_DEVELOP_APP_ID=$(docker logs thunder-setup 2>&1 | grep 'DEVELOP_APP_ID:' | grep -o '[a-f0-9-]\\{36\\}')")
+		log.Printf(`  │    export THUNDER_DEVELOP_APP_ID=$(docker logs thunder-setup 2>&1 | grep 'CONSOLE_APP_ID:' | grep -o '[a-f0-9-]\{36\}')`)
 		log.Printf("  │ 3. Or if running in Docker, mount the Docker socket:")
 		log.Printf("  │    volumes: ['/var/run/docker.sock:/var/run/docker.sock']")
 		log.Printf("  └───────────────────────────────────")

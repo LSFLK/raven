@@ -77,7 +77,7 @@ func StartTestIMAPServer(t *testing.T, dbManager *db.DBManager) *TestIMAPServer 
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprintf(w, `{"id":%q,"type":"test-user","organization_unit":""}`,
+		_, _ = fmt.Fprintf(w, `{"id":%q,"type":"test-user","ouId":""}`,
 			emailID,
 		)
 	})

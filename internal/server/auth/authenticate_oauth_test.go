@@ -96,6 +96,33 @@ func TestAuthenticateOAuth_InvalidTokenRejected(t *testing.T) {
 	}
 }
 
+func TestAuthenticateOAuth_RejectsBareUsernameInSASLUser(t *testing.T) {
+	tmpDir := t.TempDir()
+	mustWriteConfig(t, tmpDir, "https://issuer.example.com", "https://jwks.example.com/jwks", []string{"raven-imap"})
+
+	restore := mustChdir(t, tmpDir)
+	defer restore()
+
+	s, cleanup := server.SetupTestServer(t)
+	defer cleanup()
+
+	payload := fmt.Sprintf("user=user2\x01auth=Bearer %s\x01\x01", "not-a-jwt")
+	encoded := base64.StdEncoding.EncodeToString([]byte(payload))
+
+	conn := server.NewMockTLSConn()
+	state := &models.ClientState{Authenticated: false}
+
+	s.HandleAuthenticate(conn, "A903A", []string{"A903A", "AUTHENTICATE", "XOAUTH2", encoded}, state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "A903A NO [AUTHENTICATIONFAILED] Authentication failed") {
+		t.Fatalf("expected auth failure, got: %s", response)
+	}
+	if state.Authenticated {
+		t.Fatal("expected unauthenticated state")
+	}
+}
+
 func TestAuthenticateOAuth_SuccessWithJWKS(t *testing.T) {
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -139,7 +166,7 @@ func TestAuthenticateOAuth_SuccessWithJWKS(t *testing.T) {
 		t.Fatalf("failed to sign token: %v", err)
 	}
 
-	payload := fmt.Sprintf("user=user2\x01auth=Bearer %s\x01\x01", token)
+	payload := fmt.Sprintf("user=user2@example.com\x01auth=Bearer %s\x01\x01", token)
 	encoded := base64.StdEncoding.EncodeToString([]byte(payload))
 
 	conn := server.NewMockTLSConn()
@@ -156,6 +183,66 @@ func TestAuthenticateOAuth_SuccessWithJWKS(t *testing.T) {
 	}
 	if state.Email != "user2@example.com" {
 		t.Fatalf("unexpected state email: %q", state.Email)
+	}
+}
+
+func TestAuthenticateOAuth_RejectsSASLUserEmailMismatch(t *testing.T) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate rsa key: %v", err)
+	}
+
+	issuer := "https://issuer.example.com"
+	aud := "raven-imap"
+
+	jwkN, jwkE := rsaPublicJWK(t, &priv.PublicKey)
+	jwksServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"keys": []map[string]string{{
+				"kty": "RSA",
+				"kid": "kid-auth-2",
+				"n":   jwkN,
+				"e":   jwkE,
+			}},
+		})
+	}))
+	defer jwksServer.Close()
+
+	tmpDir := t.TempDir()
+	mustWriteConfig(t, tmpDir, issuer, jwksServer.URL, []string{aud})
+
+	restore := mustChdir(t, tmpDir)
+	defer restore()
+
+	s, cleanup := server.SetupTestServer(t)
+	defer cleanup()
+
+	token, err := signToken(priv, "kid-auth-2", jwt.MapClaims{
+		"iss":      issuer,
+		"aud":      []string{aud},
+		"exp":      time.Now().Add(2 * time.Minute).Unix(),
+		"username": "user2",
+		"email":    "user2@silver.example.com",
+		"sub":      "subject-2",
+	})
+	if err != nil {
+		t.Fatalf("failed to sign token: %v", err)
+	}
+
+	payload := fmt.Sprintf("user=user2@example.com\x01auth=Bearer %s\x01\x01", token)
+	encoded := base64.StdEncoding.EncodeToString([]byte(payload))
+
+	conn := server.NewMockTLSConn()
+	state := &models.ClientState{Authenticated: false}
+
+	s.HandleAuthenticate(conn, "A905", []string{"A905", "AUTHENTICATE", "OAUTHBEARER", encoded}, state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "A905 NO [AUTHENTICATIONFAILED] Authentication failed") {
+		t.Fatalf("expected auth failure, got: %s", response)
+	}
+	if state.Authenticated {
+		t.Fatal("expected unauthenticated state")
 	}
 }
 

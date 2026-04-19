@@ -961,8 +961,8 @@ func TestGroupEmailDelivery(t *testing.T) {
 
 		case "/users/user-1":
 			_ = writeJSON(w, map[string]any{
-				"id":               "user-1",
-				"organizationUnit": "ou-1",
+				"id":   "user-1",
+				"ouId": "ou-1",
 				"attributes": map[string]string{
 					"username": "alice",
 				},
@@ -970,8 +970,8 @@ func TestGroupEmailDelivery(t *testing.T) {
 
 		case "/users/user-2":
 			_ = writeJSON(w, map[string]any{
-				"id":               "user-2",
-				"organizationUnit": "ou-2",
+				"id":   "user-2",
+				"ouId": "ou-2",
 				"attributes": map[string]string{
 					"username": "bob",
 				},

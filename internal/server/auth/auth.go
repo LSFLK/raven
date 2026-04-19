@@ -249,9 +249,16 @@ func HandleAuthenticate(deps ServerDeps, conn net.Conn, tag string, parts []stri
 			return
 		}
 
-		accessToken, _, _, err := oauthbearer.ParseInitialClientResponseDetails(authData)
+		accessToken, _, saslUser, err := oauthbearer.ParseInitialClientResponseDetails(authData)
 		if err != nil {
 			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Invalid OAuth payload", tag))
+			return
+		}
+
+		saslUserEmail := normalizeEmail(saslUser)
+		if saslUserEmail == "" {
+			log.Printf("OAUTHBEARER: rejected non-email SASL user field: %q", saslUser)
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
 			return
 		}
 
@@ -304,7 +311,14 @@ func HandleAuthenticate(deps ServerDeps, conn net.Conn, tag string, parts []stri
 		if email == "" && cfg.Domain != "" && !strings.Contains(identity, "@") {
 			email = strings.TrimSpace(identity) + "@" + strings.Trim(strings.TrimSpace(cfg.Domain), ".")
 		}
+		email = normalizeEmail(email)
 		if email == "" {
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
+			return
+		}
+
+		if !strings.EqualFold(saslUserEmail, email) {
+			log.Printf("OAUTHBEARER: SASL user %q does not match resolved mailbox email %q", saslUserEmail, email)
 			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
 			return
 		}
@@ -392,6 +406,13 @@ func HandleLogout(deps ServerDeps, conn net.Conn, tag string) {
 
 // Extract common authentication logic
 func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username string, password string, state *models.ClientState) {
+	loginEmail := normalizeEmail(username)
+	if loginEmail == "" {
+		log.Printf("LOGIN: rejected non-email login identity: %q", username)
+		deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
+		return
+	}
+
 	// Load authentication service configuration
 	cfg, err := conf.LoadConfig()
 	if err != nil {
@@ -406,9 +427,9 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 	}
 
 	// Determine the username to use for authentication
-	authUsername := deps.ExtractUsername(username)
+	authUsername := deps.ExtractUsername(loginEmail)
 	if authUsername == "" {
-		authUsername = username
+		authUsername = loginEmail
 	}
 
 	// Prepare JSON body
@@ -455,7 +476,7 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 		var authResp struct {
 			ID               string `json:"id"`
 			Type             string `json:"type"`
-			OrganizationUnit string `json:"organization_unit"`
+			OrganizationUnit string `json:"ouId"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&authResp); err != nil {
 			log.Printf("LOGIN: failed to decode auth response: %v", err)
@@ -470,42 +491,35 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 
 		log.Printf("Accepting login for user: %s (type=%s)", username, authResp.Type)
 
-		derivedDomain := ""
+		parts := strings.SplitN(loginEmail, "@", 2)
+		loginDomain := strings.Trim(strings.TrimSpace(parts[1]), ".")
+
+		expectedDomain := ""
 		if authResp.OrganizationUnit != "" {
-			if strings.Contains(username, "@") {
-				derivedDomain = resolveDomainFromOrganizationUnit(cfg.AuthServerURL, authResp.OrganizationUnit, authUsername, password)
-				if derivedDomain == "" {
-					log.Printf("LOGIN: unable to resolve OU-derived domain for login '%s'", username)
-					deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
-					return
-				}
+			derivedDomain := resolveDomainFromOrganizationUnit(cfg.AuthServerURL, authResp.OrganizationUnit, authUsername, password)
+			expectedDomain = strings.Trim(strings.TrimSpace(derivedDomain), ".")
+		}
 
-				loginEmail := normalizeEmail(username)
-				if loginEmail == "" {
-					log.Printf("LOGIN: invalid login identity format: %s", username)
-					deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
-					return
-				}
-
-				parts := strings.SplitN(loginEmail, "@", 2)
-				loginDomain := strings.Trim(strings.TrimSpace(parts[1]), ".")
-				expectedDomain := strings.Trim(strings.TrimSpace(derivedDomain), ".")
-				if !strings.EqualFold(loginDomain, expectedDomain) {
-					log.Printf("LOGIN: login domain '%s' does not match OU-derived domain '%s' for user '%s'", loginDomain, expectedDomain, username)
-					deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
-					return
-				}
-			} else if !strings.Contains(authResp.ID, "@") {
-				derivedDomain = resolveDomainFromOrganizationUnit(cfg.AuthServerURL, authResp.OrganizationUnit, authUsername, password)
+		if expectedDomain == "" {
+			if idEmail := normalizeEmail(authResp.ID); idEmail != "" {
+				idParts := strings.SplitN(idEmail, "@", 2)
+				expectedDomain = strings.Trim(strings.TrimSpace(idParts[1]), ".")
 			}
 		}
 
-		email := resolveMailboxEmail(username, authResp.ID, derivedDomain)
-		if email == "" {
-			log.Printf("LOGIN: unable to resolve mailbox email from login '%s' and auth id '%s'", username, authResp.ID)
+		if expectedDomain == "" {
+			log.Printf("LOGIN: unable to resolve expected IdP domain for login '%s'", loginEmail)
 			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
 			return
 		}
+
+		if !strings.EqualFold(loginDomain, expectedDomain) {
+			log.Printf("LOGIN: login domain '%s' does not match OU-derived domain '%s' for user '%s'", loginDomain, expectedDomain, loginEmail)
+			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
+			return
+		}
+
+		email := loginEmail
 
 		actualUsername := deps.ExtractUsername(email)
 

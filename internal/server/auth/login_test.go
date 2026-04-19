@@ -262,6 +262,21 @@ func TestLoginCommand_ResponseFormat(t *testing.T) {
 	}
 }
 
+func TestLoginCommand_RejectsUsernameWithoutDomain(t *testing.T) {
+	s, cleanup := server.SetupTestServer(t)
+	defer cleanup()
+
+	conn := server.NewMockTLSConn()
+	state := &models.ClientState{Authenticated: false}
+
+	s.HandleLogin(conn, "A018", []string{"A018", "LOGIN", "user1", "password123"}, state)
+
+	response := conn.GetWrittenData()
+	if !strings.Contains(response, "A018 NO [AUTHENTICATIONFAILED]") {
+		t.Fatalf("Expected AUTHENTICATIONFAILED for non-email username, got: %s", response)
+	}
+}
+
 // TestLoginCommand_MultipleAttempts tests multiple LOGIN attempts
 func TestLoginCommand_MultipleAttempts(t *testing.T) {
 	s, cleanup := server.SetupTestServer(t)

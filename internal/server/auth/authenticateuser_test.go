@@ -17,7 +17,7 @@ import (
 
 func writeAuthOK(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"id":"testuser@example.com","type":"test-user","organization_unit":""}`))
+	_, _ = w.Write([]byte(`{"id":"testuser@example.com","type":"test-user","ouId":""}`))
 }
 
 // setupTestConfig creates a temporary config file and returns cleanup function
@@ -97,7 +97,7 @@ func TestAuthenticateUser_ConfigLoadError(t *testing.T) {
 	state := &models.ClientState{}
 
 	// Try to login
-	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user", "pass"}, state)
+	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user@example.com", "pass"}, state)
 
 	response := conn.GetWrittenData()
 
@@ -132,7 +132,7 @@ func TestAuthenticateUser_MissingDomain(t *testing.T) {
 	conn := server.NewMockTLSConn()
 	state := &models.ClientState{}
 
-	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user", "pass"}, state)
+	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user@example.com", "pass"}, state)
 
 	response := conn.GetWrittenData()
 
@@ -158,7 +158,7 @@ func TestAuthenticateUser_MissingAuthServerURL(t *testing.T) {
 	conn := server.NewMockTLSConn()
 	state := &models.ClientState{}
 
-	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user", "pass"}, state)
+	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user@example.com", "pass"}, state)
 
 	response := conn.GetWrittenData()
 
@@ -204,7 +204,7 @@ func TestAuthenticateUser_UsernameWithDomain(t *testing.T) {
 	}
 }
 
-// TestAuthenticateUser_UsernameWithoutDomain tests authentication with bare username
+// TestAuthenticateUser_UsernameWithoutDomain rejects bare username logins.
 func TestAuthenticateUser_UsernameWithoutDomain(t *testing.T) {
 	// Create mock auth server
 	authServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -227,15 +227,14 @@ func TestAuthenticateUser_UsernameWithoutDomain(t *testing.T) {
 	conn := server.NewMockTLSConn()
 	state := &models.ClientState{}
 
-	// Login with bare username (domain should come from IdP email identity)
+	// Login with bare username must be rejected.
 	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "bareuser", "password"}, state)
 
 	response := conn.GetWrittenData()
 	t.Logf("Response: %s", response)
 
-	// Successful login proves domain is resolved without relying on config domain.
-	if strings.Contains(response, "OK") {
-		t.Log("Authentication succeeded as expected")
+	if !strings.Contains(response, "NO [AUTHENTICATIONFAILED]") {
+		t.Fatalf("Expected bare username authentication failure, got: %s", response)
 	}
 }
 
@@ -244,7 +243,7 @@ func TestAuthenticateUser_SubdomainEmailFromIDP(t *testing.T) {
 	authServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"id":"user2@silver.example.com","type":"test-user","organization_unit":"silver"}`))
+		_, _ = w.Write([]byte(`{"id":"user2@silver.example.com","type":"test-user","ouId":"silver"}`))
 	}))
 	defer authServer.Close()
 
@@ -262,7 +261,7 @@ func TestAuthenticateUser_SubdomainEmailFromIDP(t *testing.T) {
 	conn := server.NewMockTLSConn()
 	state := &models.ClientState{}
 
-	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user2", "password"}, state)
+	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user2@silver.example.com", "password"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A001 OK") {
@@ -285,7 +284,7 @@ func TestAuthenticateUser_SubdomainEmailFromOrgUnitHierarchy(t *testing.T) {
 		case "/auth/credentials/authenticate":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"silveruser","organization_unit":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
+			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"silveruser","ouId":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
 		case "/flow/execute":
 			var payload map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -368,7 +367,7 @@ func TestAuthenticateUser_SubdomainEmailFromOrgUnitHierarchy(t *testing.T) {
 	conn := server.NewMockTLSConn()
 	state := &models.ClientState{}
 
-	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user2", "password"}, state)
+	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user2@silver.example.com", "password"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A001 OK") {
@@ -395,7 +394,7 @@ func TestAuthenticateUser_UsernameWithDomainMismatchFromOrgUnit(t *testing.T) {
 		case "/auth/credentials/authenticate":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"silveruser","organization_unit":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
+			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"silveruser","ouId":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
 		case "/flow/execute":
 			var payload map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -464,7 +463,7 @@ func TestAuthenticateUser_UsernameWithDomainMatchesOrgUnit(t *testing.T) {
 		case "/auth/credentials/authenticate":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"silveruser","organization_unit":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
+			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"silveruser","ouId":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
 		case "/flow/execute":
 			var payload map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -539,7 +538,7 @@ func TestAuthenticateUser_AuthServerUnavailable(t *testing.T) {
 	conn := server.NewMockTLSConn()
 	state := &models.ClientState{}
 
-	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user", "pass"}, state)
+	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user@example.com", "pass"}, state)
 
 	response := conn.GetWrittenData()
 
@@ -583,7 +582,7 @@ func TestAuthenticateUser_AuthenticationSuccess(t *testing.T) {
 	conn := server.NewMockTLSConn()
 	state := &models.ClientState{}
 
-	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "testuser", "testpass"}, state)
+	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "testuser@example.com", "testpass"}, state)
 
 	response := conn.GetWrittenData()
 
@@ -629,7 +628,7 @@ func TestAuthenticateUser_AuthenticationFailure(t *testing.T) {
 	conn := server.NewMockTLSConn()
 	state := &models.ClientState{}
 
-	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user", "wrongpass"}, state)
+	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user@example.com", "wrongpass"}, state)
 
 	response := conn.GetWrittenData()
 
@@ -686,7 +685,7 @@ func TestAuthenticateUser_VariousStatusCodes(t *testing.T) {
 			conn := server.NewMockTLSConn()
 			state := &models.ClientState{}
 
-			s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user", "pass"}, state)
+			s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user@example.com", "pass"}, state)
 
 			response := conn.GetWrittenData()
 
@@ -729,7 +728,7 @@ func TestAuthenticateUser_TLSConnectionCapabilities(t *testing.T) {
 	conn := server.NewMockTLSConn()
 	state := &models.ClientState{}
 
-	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user", "pass"}, state)
+	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user@example.com", "pass"}, state)
 
 	response := conn.GetWrittenData()
 
@@ -774,7 +773,7 @@ func TestAuthenticateUser_PlainConnectionCapabilities(t *testing.T) {
 	state := &models.ClientState{}
 
 	// This will fail due to TLS requirement in HandleLogin, but demonstrates the test structure
-	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user", "pass"}, state)
+	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user@example.com", "pass"}, state)
 
 	response := conn.GetWrittenData()
 	t.Logf("Response on plain connection: %s", response)
@@ -806,7 +805,7 @@ func TestAuthenticateUser_RoleAssignmentsSuccess(t *testing.T) {
 	conn := server.NewMockTLSConn()
 	state := &models.ClientState{}
 
-	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "testuser", "testpass"}, state)
+	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "testuser@example.com", "testpass"}, state)
 
 	response := conn.GetWrittenData()
 
@@ -822,11 +821,12 @@ func TestAuthenticateUser_UsernameExtraction(t *testing.T) {
 	testCases := []struct {
 		name     string
 		username string
+		expectNo bool
 	}{
-		{"Simple username", "john"},
-		{"Username with dots", "john.doe"},
-		{"Username with numbers", "user123"},
-		{"Full email", "user@example.com"},
+		{"Simple username", "john", true},
+		{"Username with dots", "john.doe", true},
+		{"Username with numbers", "user123", true},
+		{"Full email", "user@example.com", false},
 	}
 
 	for _, tc := range testCases {
@@ -855,7 +855,13 @@ func TestAuthenticateUser_UsernameExtraction(t *testing.T) {
 			response := conn.GetWrittenData()
 			t.Logf("Response for username '%s': %s", tc.username, response)
 
-			if strings.Contains(response, "OK") {
+			if tc.expectNo {
+				if !strings.Contains(response, "NO [AUTHENTICATIONFAILED]") {
+					t.Fatalf("Expected non-email login rejection for %q, got: %s", tc.username, response)
+				}
+			}
+
+			if !tc.expectNo && strings.Contains(response, "OK") {
 				t.Logf("Username extraction succeeded for: %s", tc.username)
 			}
 		})

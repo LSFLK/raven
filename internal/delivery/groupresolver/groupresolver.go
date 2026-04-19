@@ -325,7 +325,7 @@ type userRecord struct {
 func (gr *GroupResolver) fetchUserByID(assertion, userID string) (*userRecord, error) {
 	type userResponse struct {
 		ID                  string `json:"id"`
-		OrganizationUnit    string `json:"organizationUnit"`
+		OrganizationUnit    string `json:"ouId"`
 		OrganizationUnitAlt string `json:"organization_unit"`
 		Username            string `json:"username"`
 		UserName            string `json:"userName"`

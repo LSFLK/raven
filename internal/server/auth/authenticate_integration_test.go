@@ -261,9 +261,9 @@ auth_server_url: %s
 	t.Logf("Response with domain in username: %s", response)
 }
 
-// TestAuthenticatePlain_UsernameWithoutDomain tests authentication with bare username
+// TestAuthenticatePlain_UsernameWithoutDomain rejects bare username credentials.
 func TestAuthenticatePlain_UsernameWithoutDomain(t *testing.T) {
-	// Username without @ should have configured domain appended
+	// Bare usernames must be rejected.
 	authServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -317,7 +317,9 @@ auth_server_url: %s
 	s.HandleAuthenticate(conn, "A001", []string{"A001", "AUTHENTICATE", "PLAIN"}, state)
 
 	response = conn.GetWrittenData()
-	t.Logf("Response without domain in username: %s", response)
+	if !strings.Contains(response, "A001 NO [AUTHENTICATIONFAILED]") {
+		t.Fatalf("Expected AUTHENTICATIONFAILED for bare username, got: %s", response)
+	}
 }
 
 // TestAuthenticatePlain_AuthenticationFailure tests failed authentication
