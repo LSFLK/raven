@@ -6,7 +6,7 @@ import (
 
 // Auth holds Thunder authentication state
 type Auth struct {
-	DevelopAppID  string
+	DevelopAppID string
 	FlowID       string
 	BearerToken  string
 	ExpiresAt    time.Time
@@ -34,10 +34,10 @@ type OrgUnitResponse struct {
 
 // UsersResponse represents the response from Thunder Users API
 type UsersResponse struct {
-	TotalResults int          `json:"totalResults"`
-	StartIndex   int          `json:"startIndex"`
-	Count        int          `json:"count"`
-	Users        []User       `json:"users"`
+	TotalResults int           `json:"totalResults"`
+	StartIndex   int           `json:"startIndex"`
+	Count        int           `json:"count"`
+	Users        []User        `json:"users"`
 	Links        []interface{} `json:"links"`
 }
 
@@ -60,6 +60,22 @@ type GroupsResponse struct {
 
 // Group represents a Thunder group
 type Group struct {
+	ID                 string `json:"id"`
+	Name               string `json:"name"`
+	OrganizationUnitID string `json:"ouId"`
+}
+
+// RolesResponse represents the response from Thunder Roles API.
+type RolesResponse struct {
+	TotalResults int           `json:"totalResults"`
+	StartIndex   int           `json:"startIndex"`
+	Count        int           `json:"count"`
+	Roles        []Role        `json:"roles"`
+	Links        []interface{} `json:"links"`
+}
+
+// Role represents a Thunder role.
+type Role struct {
 	ID                 string `json:"id"`
 	Name               string `json:"name"`
 	OrganizationUnitID string `json:"ouId"`

@@ -11,27 +11,30 @@ import (
 	"raven/internal/socketmap/thunder"
 )
 
-// UserExists checks if a user exists in Thunder IDP
-func UserExists(email string, cfg *config.Config, cacheManager *cache.Cache) bool {
+// ResolveMailboxIdentity validates an address and returns the mailbox identity path.
+func ResolveMailboxIdentity(email string, cfg *config.Config, cacheManager *cache.Cache) (bool, string) {
 	log.Printf("    ┌─ User Lookup ───────────────────")
 	log.Printf("    │ Email: %s", email)
-	
+
 	// Check cache first (read lock)
 	cacheKey := "user:" + email
 	entry, found := cacheManager.Get(cacheKey)
-	
+
 	now := time.Now()
-	
+
 	if found {
 		// Cache hit - check if still valid
 		if !cacheManager.IsExpired(entry) {
 			log.Printf("    │ ✓ CACHE HIT (fresh)")
 			log.Printf("    │ Cached result: exists=%v", entry.Exists)
+			if entry.Data != "" {
+				log.Printf("    │ Cached mailbox identity: %s", entry.Data)
+			}
 			log.Printf("    │ Expires: %s", entry.Expires.Format("15:04:05"))
 			log.Printf("    └─────────────────────────────────")
-			return entry.Exists
+			return entry.Exists, entry.Data
 		}
-		
+
 		// Cache expired - check if we should refresh
 		cacheAge := now.Sub(entry.LastUpdate).Seconds()
 		log.Printf("    │ ✓ CACHE HIT (stale)")
@@ -41,6 +44,8 @@ func UserExists(email string, cfg *config.Config, cacheManager *cache.Cache) boo
 		log.Printf("    │ ✗ CACHE MISS")
 		log.Printf("    │ Querying IDP...")
 	}
+
+	mailboxIdentity := email
 
 	// Query Thunder IDP for user validation first.
 	exists, err := thunder.ValidateUser(email, cfg.ThunderHost, cfg.ThunderPort, cfg.TokenRefreshSeconds)
@@ -60,16 +65,29 @@ func UserExists(email string, cfg *config.Config, cacheManager *cache.Cache) boo
 		}
 	}
 
+	// Validate role-based mailbox addresses (e.g., admin@domain).
+	if !exists && strings.Contains(email, "@") {
+		roleExists, roleMailboxIdentity, roleErr := thunder.ValidateRoleAddress(email, cfg.ThunderHost, cfg.ThunderPort, cfg.TokenRefreshSeconds)
+		if roleErr != nil {
+			log.Printf("    │ ⚠ Role lookup failed: %v", roleErr)
+		} else if roleExists {
+			log.Printf("    │ ✓ Role found; treating as existing user")
+			exists = true
+			mailboxIdentity = roleMailboxIdentity
+		}
+	}
+
 	if !exists {
-		log.Printf("    │ User/group not found - Thunder unavailable or no match")
+		log.Printf("    │ User/group/role not found - Thunder unavailable or no match")
 	}
 
 	log.Printf("    │ IDP result: exists=%v", exists)
-	
+
 	// Only cache positive results (exists=true)
 	if exists {
 		cacheManager.Set(cacheKey, cache.Entry{
 			Exists:     true,
+			Data:       mailboxIdentity,
 			Expires:    now.Add(cacheManager.GetTTL()),
 			LastUpdate: now,
 		})
@@ -77,21 +95,33 @@ func UserExists(email string, cfg *config.Config, cacheManager *cache.Cache) boo
 	} else {
 		log.Printf("    │ ℹ Negative result NOT cached (will query IDP next time)")
 	}
-	
+
 	log.Printf("    └─────────────────────────────────")
 
+	if exists {
+		return true, mailboxIdentity
+	}
+
+	return false, ""
+}
+
+// UserExists checks if a user, group, or role mailbox exists in Thunder IDP.
+func UserExists(email string, cfg *config.Config, cacheManager *cache.Cache) bool {
+	exists, _ := ResolveMailboxIdentity(email, cfg, cacheManager)
 	return exists
 }
 
 // HandleUserExistsMap handles the user-exists map lookup
 func HandleUserExistsMap(key string, cfg *config.Config, cacheManager *cache.Cache) string {
 	log.Printf("  │ Checking if user exists...")
-	exists := UserExists(key, cfg, cacheManager)
+	exists, mailboxPath := ResolveMailboxIdentity(key, cfg, cacheManager)
 
 	if exists {
 		// For virtual_mailbox_maps, Postfix expects a mailbox pathname
-		mailboxPath := key
-		
+		if mailboxPath == "" {
+			mailboxPath = key
+		}
+
 		log.Printf("  │ ✓ USER FOUND: %s", key)
 		log.Printf("  │ Response: OK %s", mailboxPath)
 		log.Printf("  └─────────────────────────────────────")
