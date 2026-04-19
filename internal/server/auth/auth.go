@@ -530,11 +530,6 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 		}
 
 		email := loginEmail
-		if email == "" {
-			log.Printf("LOGIN: unable to resolve mailbox email from login '%s'", loginEmail)
-			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
-			return
-		}
 
 		actualUsername := deps.ExtractUsername(email)
 
