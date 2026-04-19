@@ -47,6 +47,10 @@ func NewSession(conn net.Conn, stor *storage.Storage, cfg *config.Config, gr *gr
 
 // Handle handles the LMTP session
 func (s *Session) Handle() error {
+	if s.identityRes != nil {
+		defer func() { _ = s.identityRes.Close() }()
+	}
+
 	// Set connection timeout
 	if s.config.LMTP.Timeout > 0 {
 		timeout := time.Duration(s.config.LMTP.Timeout) * time.Second
@@ -366,13 +370,21 @@ func (s *Session) handleDATA() error {
 	// Deliver to each envelope recipient (LMTP requires per-recipient response)
 	folder := s.config.Delivery.DefaultFolder
 	results := make(map[string]error, len(s.recipients))
+	deliveredTargets := make(map[string]error, len(s.recipients))
 	for _, recipient := range s.recipients {
 		targetRecipient := recipient
 		if mappedRecipient, ok := s.recipientMap[recipient]; ok && mappedRecipient != "" {
 			targetRecipient = mappedRecipient
 		}
 
-		results[recipient] = s.storage.DeliverMessage(targetRecipient, msg, folder)
+		if err, alreadyDelivered := deliveredTargets[targetRecipient]; alreadyDelivered {
+			results[recipient] = err
+			continue
+		}
+
+		err := s.storage.DeliverMessage(targetRecipient, msg, folder)
+		deliveredTargets[targetRecipient] = err
+		results[recipient] = err
 	}
 
 	// Send per-recipient responses
@@ -407,7 +419,7 @@ func (s *Session) resolveMailboxIdentity(recipient string) (string, error) {
 		return recipient, nil
 	}
 
-	identity, err := s.identityRes(recipient)
+	identity, err := s.identityRes.Resolve(recipient)
 	if err != nil {
 		return "", err
 	}
