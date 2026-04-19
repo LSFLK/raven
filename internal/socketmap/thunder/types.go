@@ -44,7 +44,7 @@ type UsersResponse struct {
 // User represents a Thunder user
 type User struct {
 	ID               string                 `json:"id"`
-	OrganizationUnit string                 `json:"organizationUnit"`
+	OrganizationUnit string                 `json:"ouId"`
 	Type             string                 `json:"type"`
 	Attributes       map[string]interface{} `json:"attributes"`
 }
@@ -62,5 +62,5 @@ type GroupsResponse struct {
 type Group struct {
 	ID                 string `json:"id"`
 	Name               string `json:"name"`
-	OrganizationUnitID string `json:"organizationUnitId"`
+	OrganizationUnitID string `json:"ouId"`
 }

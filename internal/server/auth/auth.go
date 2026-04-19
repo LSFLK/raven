@@ -486,7 +486,7 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 		var authResp struct {
 			ID               string `json:"id"`
 			Type             string `json:"type"`
-			OrganizationUnit string `json:"organization_unit"`
+			OrganizationUnit string `json:"ouId"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&authResp); err != nil {
 			log.Printf("LOGIN: failed to decode auth response: %v", err)

@@ -53,19 +53,12 @@ func ValidateGroupAddress(email, host, port string, tokenRefreshSeconds int) (bo
 	log.Printf("      │ OU ID: %s", ouID)
 
 	client := GetHTTPClient()
-	escapedGroupName := escapeFilterValue(groupName)
-	filter := fmt.Sprintf("name eq \"%s\"", escapedGroupName)
-
 	baseURL := fmt.Sprintf("https://%s:%s/groups", host, port)
 	req, err := http.NewRequest("GET", baseURL, nil)
 	if err != nil {
 		log.Printf("      │ ✗ Failed to create request: %v", err)
 		return false, err
 	}
-
-	q := req.URL.Query()
-	q.Add("filter", filter)
-	req.URL.RawQuery = q.Encode()
 
 	req.Header.Set("Authorization", "Bearer "+auth.BearerToken)
 	req.Header.Set("Content-Type", "application/json")
@@ -102,7 +95,7 @@ func ValidateGroupAddress(email, host, port string, tokenRefreshSeconds int) (bo
 	}
 
 	for _, group := range groupsResp.Groups {
-		if group.OrganizationUnitID == ouID && group.Name == groupName {
+		if group.OrganizationUnitID == ouID && strings.EqualFold(group.Name, groupName) {
 			log.Printf("      │ ✓ Group found and OU matches")
 			return true, nil
 		}

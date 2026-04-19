@@ -194,12 +194,12 @@ func extractApplicationIDFromThunderLogs() (string, error) {
 		return "", fmt.Errorf("docker logs failed: %w", err)
 	}
 
-	// Search for "DEVELOP_APP_ID:" in logs
-	// Log format: [INFO] DEVELOP_APP_ID: 019cdc47-3537-74ee-951e-3f50e48786ab
+	// Search for "CONSOLE_APP_ID:" in logs
+	// Log format: [INFO] CONSOLE_APP_ID: 019cdc47-3537-74ee-951e-3f50e48786ab
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
-		// Look for line containing DEVELOP_APP_ID (case-insensitive)
-		if strings.Contains(line, "DEVELOP_APP_ID") || strings.Contains(line, "develop_app_id") {
+		// Look for line containing CONSOLE_APP_ID (case-insensitive)
+		if strings.Contains(line, "CONSOLE_APP_ID") || strings.Contains(line, "console_app_id") {
 			match := uuidRegex.FindString(line)
 			if match != "" {
 				log.Printf("✓ Application ID extracted from thunder logs: %s", match)

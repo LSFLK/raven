@@ -17,7 +17,7 @@ import (
 
 func writeAuthOK(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"id":"testuser@example.com","type":"test-user","organization_unit":""}`))
+	_, _ = w.Write([]byte(`{"id":"testuser@example.com","type":"test-user","ouId":""}`))
 }
 
 // setupTestConfig creates a temporary config file and returns cleanup function
@@ -243,7 +243,7 @@ func TestAuthenticateUser_SubdomainEmailFromIDP(t *testing.T) {
 	authServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"id":"user2@silver.example.com","type":"test-user","organization_unit":"silver"}`))
+		_, _ = w.Write([]byte(`{"id":"user2@silver.example.com","type":"test-user","ouId":"silver"}`))
 	}))
 	defer authServer.Close()
 
@@ -284,7 +284,7 @@ func TestAuthenticateUser_SubdomainEmailFromOrgUnitHierarchy(t *testing.T) {
 		case "/auth/credentials/authenticate":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"silveruser","organization_unit":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
+			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"silveruser","ouId":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
 		case "/flow/execute":
 			var payload map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -394,7 +394,7 @@ func TestAuthenticateUser_UsernameWithDomainMismatchFromOrgUnit(t *testing.T) {
 		case "/auth/credentials/authenticate":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"silveruser","organization_unit":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
+			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"silveruser","ouId":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
 		case "/flow/execute":
 			var payload map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -463,7 +463,7 @@ func TestAuthenticateUser_UsernameWithDomainMatchesOrgUnit(t *testing.T) {
 		case "/auth/credentials/authenticate":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"silveruser","organization_unit":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
+			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"silveruser","ouId":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
 		case "/flow/execute":
 			var payload map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
