@@ -23,8 +23,10 @@ type Session struct {
 	storage       *storage.Storage
 	config        *config.Config
 	groupResolver *groupresolver.GroupResolver
+	identityRes   identityResolver
 	mailFrom      string
 	recipients    []string
+	recipientMap  map[string]string
 	helo          string
 }
 
@@ -37,7 +39,9 @@ func NewSession(conn net.Conn, stor *storage.Storage, cfg *config.Config, gr *gr
 		storage:       stor,
 		config:        cfg,
 		groupResolver: gr,
+		identityRes:   newIdentityResolver(cfg),
 		recipients:    make([]string, 0),
+		recipientMap:  make(map[string]string),
 	}
 }
 
@@ -221,7 +225,15 @@ func (s *Session) handleRCPT(args string) error {
 		if len(s.recipients) >= s.config.LMTP.MaxRecipients {
 			return s.sendResponse(452, "Too many recipients")
 		}
+
+		mailboxIdentity, resolveErr := s.resolveMailboxIdentity(recipient)
+		if resolveErr != nil {
+			log.Printf("Warning: failed to resolve mailbox identity for %s: %v", recipient, resolveErr)
+			mailboxIdentity = recipient
+		}
+
 		s.recipients = append(s.recipients, recipient)
+		s.recipientMap[recipient] = mailboxIdentity
 	}
 
 	return s.sendResponse(250, "2.1.5 Recipient OK")
@@ -351,9 +363,17 @@ func (s *Session) handleDATA() error {
 		}
 	}
 
-	// Deliver to each recipient (LMTP requires per-recipient response)
+	// Deliver to each envelope recipient (LMTP requires per-recipient response)
 	folder := s.config.Delivery.DefaultFolder
-	results := s.storage.DeliverToMultipleRecipients(s.recipients, msg, folder)
+	results := make(map[string]error, len(s.recipients))
+	for _, recipient := range s.recipients {
+		targetRecipient := recipient
+		if mappedRecipient, ok := s.recipientMap[recipient]; ok && mappedRecipient != "" {
+			targetRecipient = mappedRecipient
+		}
+
+		results[recipient] = s.storage.DeliverMessage(targetRecipient, msg, folder)
+	}
 
 	// Send per-recipient responses
 	for _, recipient := range s.recipients {
@@ -369,6 +389,7 @@ func (s *Session) handleDATA() error {
 	// Reset session state
 	s.mailFrom = ""
 	s.recipients = make([]string, 0)
+	s.recipientMap = make(map[string]string)
 
 	return nil
 }
@@ -377,7 +398,24 @@ func (s *Session) handleDATA() error {
 func (s *Session) handleRSET() error {
 	s.mailFrom = ""
 	s.recipients = make([]string, 0)
+	s.recipientMap = make(map[string]string)
 	return s.sendResponse(250, "Reset state")
+}
+
+func (s *Session) resolveMailboxIdentity(recipient string) (string, error) {
+	if s.identityRes == nil {
+		return recipient, nil
+	}
+
+	identity, err := s.identityRes(recipient)
+	if err != nil {
+		return "", err
+	}
+	if identity == "" {
+		return recipient, nil
+	}
+
+	return identity, nil
 }
 
 // handleNOOP handles the NOOP command

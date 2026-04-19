@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -95,6 +96,7 @@ func (m *DBManager) GetUserDB(email string) (*sql.DB, error) {
 
 	return db, nil
 }
+
 // initSharedDB initializes the shared database
 func (m *DBManager) initSharedDB() error {
 	sharedPath := filepath.Join(m.basePath, "shared.db")
@@ -130,7 +132,7 @@ func (m *DBManager) initSharedDB() error {
 func (m *DBManager) initUserDB(db *sql.DB) error {
 	// Create user tables
 	// Note: blobs table is now in shared database for cross-user deduplication
-	
+
 	if err := createMailboxesTablePerUser(db); err != nil {
 		return fmt.Errorf("failed to create mailboxes table: %v", err)
 	}
@@ -186,8 +188,14 @@ func (m *DBManager) initUserDB(db *sql.DB) error {
 
 // getUserDBPath returns the file path for a user's database
 func (m *DBManager) getUserDBPath(email string) string {
+	if strings.HasSuffix(email, ".db") {
+		// Preserve explicit mailbox identity paths (for example role_<name>@<domain>.db).
+		return filepath.Join(m.basePath, email)
+	}
+
 	return filepath.Join(m.basePath, fmt.Sprintf("user_%s.db", email))
 }
+
 // Close closes all database connections
 func (m *DBManager) Close() error {
 	var lastErr error
