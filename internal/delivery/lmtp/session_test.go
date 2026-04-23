@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -387,6 +388,145 @@ func TestSession_HandleRCPT(t *testing.T) {
 
 	if session.recipients[0] != "recipient@example.com" {
 		t.Errorf("Expected recipient 'recipient@example.com', got %s", session.recipients[0])
+	}
+}
+
+func TestSession_HandleRCPT_StoresResolvedMailboxIdentity(t *testing.T) {
+	session, conn, _ := setupTestSession(t)
+	session.identityRes = identityResolverFunc(func(recipient string) (string, error) {
+		return "role_testrole@example.com.db", nil
+	})
+
+	conn.writeString("LHLO client.example.com\r\n")
+	conn.writeString("MAIL FROM:<sender@example.com>\r\n")
+	conn.writeString("RCPT TO:<testrole@example.com>\r\n")
+	conn.writeString("QUIT\r\n")
+
+	_ = session.Handle()
+
+	if len(session.recipients) != 1 {
+		t.Fatalf("Expected 1 recipient, got %d", len(session.recipients))
+	}
+
+	if got := session.recipients[0]; got != "testrole@example.com" {
+		t.Fatalf("Expected envelope recipient testrole@example.com, got %s", got)
+	}
+
+	if got := session.recipientMap["testrole@example.com"]; got != "role_testrole@example.com.db" {
+		t.Fatalf("Expected resolved identity role_testrole@example.com.db, got %s", got)
+	}
+}
+
+func TestSession_HandleDATA_DeliversToResolvedIdentity(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "lmtp_resolved_identity_*")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	dbManager, err := db.NewDBManager(tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create DB manager: %v", err)
+	}
+	defer func() { _ = dbManager.Close() }()
+
+	stor := storage.NewStorage(dbManager)
+	cfg := config.DefaultConfig()
+	cfg.LMTP.Hostname = "test.example.com"
+	cfg.LMTP.MaxSize = 1024 * 1024
+	cfg.LMTP.Timeout = 5
+	cfg.Delivery.DefaultFolder = "INBOX"
+
+	conn := newMockConn()
+	session := NewSession(conn, stor, cfg, nil)
+	session.identityRes = identityResolverFunc(func(recipient string) (string, error) {
+		if recipient == "testrole@example.com" {
+			return "role_testrole@example.com.db", nil
+		}
+		return recipient, nil
+	})
+
+	conn.writeString("LHLO client.example.com\r\n")
+	conn.writeString("MAIL FROM:<sender@example.com>\r\n")
+	conn.writeString("RCPT TO:<testrole@example.com>\r\n")
+	conn.writeString("DATA\r\n")
+	conn.writeString("From: sender@example.com\r\n")
+	conn.writeString("To: testrole@example.com\r\n")
+	conn.writeString("Subject: Role delivery\r\n")
+	conn.writeString("\r\n")
+	conn.writeString("hello role\r\n")
+	conn.writeString(".\r\n")
+	conn.writeString("QUIT\r\n")
+
+	_ = session.Handle()
+
+	roleDBPath := filepath.Join(tmpDir, "role_testrole@example.com.db")
+	if _, err := os.Stat(roleDBPath); err != nil {
+		t.Fatalf("Expected role database file to exist at %s: %v", roleDBPath, err)
+	}
+
+	written := conn.getWritten()
+	if !strings.Contains(written, "Message accepted for delivery to <testrole@example.com>") {
+		t.Fatalf("Expected LMTP response to reference envelope recipient, got: %s", written)
+	}
+}
+
+func TestSession_HandleDATA_DeduplicatesMappedRecipients(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "lmtp_dedup_identity_*")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	dbManager, err := db.NewDBManager(tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create DB manager: %v", err)
+	}
+	defer func() { _ = dbManager.Close() }()
+
+	stor := storage.NewStorage(dbManager)
+	cfg := config.DefaultConfig()
+	cfg.LMTP.Hostname = "test.example.com"
+	cfg.LMTP.MaxSize = 1024 * 1024
+	cfg.LMTP.Timeout = 5
+	cfg.Delivery.DefaultFolder = "INBOX"
+
+	conn := newMockConn()
+	session := NewSession(conn, stor, cfg, nil)
+	session.identityRes = identityResolverFunc(func(recipient string) (string, error) {
+		if recipient == "team-alias@example.com" || recipient == "team-role@example.com" {
+			return "role_team@example.com.db", nil
+		}
+		return recipient, nil
+	})
+
+	conn.writeString("LHLO client.example.com\r\n")
+	conn.writeString("MAIL FROM:<sender@example.com>\r\n")
+	conn.writeString("RCPT TO:<team-alias@example.com>\r\n")
+	conn.writeString("RCPT TO:<team-role@example.com>\r\n")
+	conn.writeString("DATA\r\n")
+	conn.writeString("From: sender@example.com\r\n")
+	conn.writeString("To: team-alias@example.com, team-role@example.com\r\n")
+	conn.writeString("Subject: Dedup delivery\r\n")
+	conn.writeString("\r\n")
+	conn.writeString("hello team\r\n")
+	conn.writeString(".\r\n")
+	conn.writeString("QUIT\r\n")
+
+	_ = session.Handle()
+
+	roleDB, err := dbManager.GetUserDB("role_team@example.com.db")
+	if err != nil {
+		t.Fatalf("Failed to open role database: %v", err)
+	}
+
+	var messageCount int
+	if err := roleDB.QueryRow("SELECT COUNT(*) FROM messages").Scan(&messageCount); err != nil {
+		t.Fatalf("Failed to query messages count: %v", err)
+	}
+
+	if messageCount != 1 {
+		t.Fatalf("Expected exactly 1 message after deduped delivery, got %d", messageCount)
 	}
 }
 

@@ -17,6 +17,7 @@ type Config struct {
 	LMTP        LMTPConfig         `yaml:"lmtp"`
 	Database    DatabaseConfig     `yaml:"database"`
 	Delivery    DeliveryConfig     `yaml:"delivery"`
+	Socketmap   SocketmapConfig    `yaml:"socketmap"`
 	Logging     LoggingConfig      `yaml:"logging"`
 	BlobStorage blobstorage.Config `yaml:"blob_storage"`
 	IDPBaseURL  string             // IDP base URL (loaded from raven.yaml auth_server_url)
@@ -46,6 +47,14 @@ type DeliveryConfig struct {
 	RejectUnknownUser bool     `yaml:"reject_unknown_user"` // Reject messages for unknown users
 }
 
+// SocketmapConfig controls optional socketmap identity resolution in LMTP.
+type SocketmapConfig struct {
+	Enabled        bool   `yaml:"enabled"`
+	Network        string `yaml:"network"`         // tcp or unix
+	Address        string `yaml:"address"`         // host:port for tcp, socket path for unix
+	TimeoutSeconds int    `yaml:"timeout_seconds"` // Connection/read/write timeout
+}
+
 // LoggingConfig holds logging configuration
 type LoggingConfig struct {
 	Level  string `yaml:"level"`  // log level: debug, info, warn, error
@@ -72,6 +81,12 @@ func DefaultConfig() *Config {
 			QuotaLimit:        1073741824, // 1GB
 			AllowedDomains:    []string{},
 			RejectUnknownUser: false,
+		},
+		Socketmap: SocketmapConfig{
+			Enabled:        false,
+			Network:        "tcp",
+			Address:        "",
+			TimeoutSeconds: 2,
 		},
 		Logging: LoggingConfig{
 			Level:  "info",
@@ -197,6 +212,20 @@ func (c *Config) Validate() error {
 
 	if c.Delivery.QuotaEnabled && c.Delivery.QuotaLimit <= 0 {
 		return fmt.Errorf("quota_limit must be positive when quota is enabled")
+	}
+
+	if c.Socketmap.Enabled {
+		if c.Socketmap.Network != "tcp" && c.Socketmap.Network != "unix" {
+			return fmt.Errorf("socketmap network must be tcp or unix")
+		}
+
+		if c.Socketmap.Address == "" {
+			return fmt.Errorf("socketmap address cannot be empty when enabled")
+		}
+
+		if c.Socketmap.TimeoutSeconds <= 0 {
+			return fmt.Errorf("socketmap timeout_seconds must be positive when enabled")
+		}
 	}
 
 	// Validate logging config

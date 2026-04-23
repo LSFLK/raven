@@ -112,6 +112,39 @@ func TestGetUserDB(t *testing.T) {
 	}
 }
 
+func TestGetUserDB_RoleMailboxIdentityPath(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "db_manager_test_*")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	manager, err := NewDBManager(tmpDir)
+	if err != nil {
+		t.Fatalf("NewDBManager failed: %v", err)
+	}
+	defer func() { _ = manager.Close() }()
+
+	identity := "role_testrole@testorg.example.db"
+	userDB, err := manager.GetUserDB(identity)
+	if err != nil {
+		t.Fatalf("GetUserDB failed: %v", err)
+	}
+	if userDB == nil {
+		t.Fatal("Expected non-nil user database")
+	}
+
+	roleDBPath := filepath.Join(tmpDir, identity)
+	if _, err := os.Stat(roleDBPath); os.IsNotExist(err) {
+		t.Errorf("Expected role database file to be created at %s", roleDBPath)
+	}
+
+	legacyPath := filepath.Join(tmpDir, fmt.Sprintf("user_%s.db", identity))
+	if _, err := os.Stat(legacyPath); err == nil {
+		t.Errorf("Did not expect legacy user-prefixed path to exist: %s", legacyPath)
+	}
+}
+
 func TestGetUserDB_Caching(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "db_manager_test_*")
 	if err != nil {
