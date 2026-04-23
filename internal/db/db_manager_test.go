@@ -125,7 +125,7 @@ func TestGetUserDB_RoleMailboxIdentityPath(t *testing.T) {
 	}
 	defer func() { _ = manager.Close() }()
 
-	identity := "role_testrole@aravindahwk.org.db"
+	identity := "role_testrole@testorg.example.db"
 	userDB, err := manager.GetUserDB(identity)
 	if err != nil {
 		t.Fatalf("GetUserDB failed: %v", err)
