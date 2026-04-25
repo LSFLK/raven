@@ -259,6 +259,36 @@ func TestIdentityPrecedence(t *testing.T) {
 	}
 }
 
+func TestExtractClaims_GrantTypeAndClientID(t *testing.T) {
+	claims := extractClaims(jwt.MapClaims{
+		"grant_type": "client_credentials",
+		"client_id":  "client-a",
+	})
+
+	if claims.GrantType != "client_credentials" {
+		t.Fatalf("expected grant type client_credentials, got %q", claims.GrantType)
+	}
+
+	if claims.ClientID != "client-a" {
+		t.Fatalf("expected client_id client-a, got %q", claims.ClientID)
+	}
+}
+
+func TestExtractClaims_GrantTypeAndClientIDFallbacks(t *testing.T) {
+	claims := extractClaims(jwt.MapClaims{
+		"gty":      "client_credentials",
+		"clientId": "client-b",
+	})
+
+	if claims.GrantType != "client_credentials" {
+		t.Fatalf("expected grant type client_credentials from gty, got %q", claims.GrantType)
+	}
+
+	if claims.ClientID != "client-b" {
+		t.Fatalf("expected client_id client-b from clientId, got %q", claims.ClientID)
+	}
+}
+
 func TestValidateAccessToken_ConcurrentJWKSRefreshSingleflight(t *testing.T) {
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {

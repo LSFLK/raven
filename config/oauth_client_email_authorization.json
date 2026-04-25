@@ -1,0 +1,9 @@
+{
+  "client_id_1": [
+    "email1@example.com",
+    "email2@example.com"
+  ],
+  "client_id_2": [
+    "email3@example.com"
+  ]
+}
