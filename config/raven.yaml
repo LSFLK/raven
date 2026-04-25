@@ -10,6 +10,12 @@ oauth_jwks_url: "https://idp.example.com/.well-known/jwks.json"
 oauth_audience:
   - "raven-imap"
 oauth_clock_skew_seconds: 60
+# Optional JSON mapping for client_credentials sender authorization:
+# {
+#   "client_id_1": ["email1@example.com", "email2@example.com"],
+#   "client_id_2": ["email3@example.com"]
+# }
+oauth_client_email_authorization_file: "./config/oauth_client_email_authorization.json"
 
 # SASL Authentication Scope
 # Controls where SASL authentication is enforced
@@ -28,4 +34,3 @@ blob_storage:
   access_key: "your-access-key"
   secret_key: "your-secret-key"
   timeout: 30 # seconds
-
