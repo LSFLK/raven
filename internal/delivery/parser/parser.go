@@ -148,6 +148,17 @@ func ParseMessage(r io.Reader) (*Message, error) {
 }
 
 // ParseMIMEMessage parses a raw MIME message into structured components for database storage
+// unfoldHeaderValue removes RFC 2822 folding whitespace from a stored header value.
+// Handles both CRLF and LF folding, and encoded-word bleed from adjacent headers.
+func unfoldHeaderValue(value string) string {
+	// Remove CRLF+WSP and LF+WSP folding
+	value = strings.ReplaceAll(value, "\r\n\t", " ")
+	value = strings.ReplaceAll(value, "\r\n ", " ")
+	value = strings.ReplaceAll(value, "\n\t", " ")
+	value = strings.ReplaceAll(value, "\n ", " ")
+	return strings.TrimSpace(value)
+}
+
 func ParseMIMEMessage(rawMessage string) (*ParsedMessage, error) {
 	parsed := &ParsedMessage{
 		RawMessage: rawMessage,
@@ -588,9 +599,11 @@ func ReconstructMessageWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, messa
 
 	// If we have stored headers, use them
 	if len(headers) > 0 {
-		// Write all headers in original order
+		// Write all headers in original order, unfolding any stored folding whitespace
 		for _, header := range headers {
-			buf.WriteString(fmt.Sprintf("%s: %s\r\n", header["name"], header["value"]))
+			name := strings.TrimSpace(header["name"])
+			value := unfoldHeaderValue(header["value"])
+			buf.WriteString(fmt.Sprintf("%s: %s\r\n", name, value))
 		}
 		fmt.Printf("DEBUG ReconstructMessage: Wrote %d stored headers\n", len(headers))
 	} else {
@@ -609,6 +622,9 @@ func ReconstructMessageWithSharedDBAndS3(sharedDB *sql.DB, userDB *sql.DB, messa
 		if err != nil {
 			return "", fmt.Errorf("failed to get message metadata: %v", err)
 		}
+
+		// Unfold subject in case it was stored with folding or bleed intact
+		subject = unfoldHeaderValue(subject)
 
 		if len(fromAddrs) > 0 {
 			buf.WriteString(fmt.Sprintf("From: %s\r\n", strings.Join(fromAddrs, ", ")))
@@ -1160,7 +1176,9 @@ func ReadDataCommand(r *bufio.Reader, maxSize int64) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// extractAllHeaders extracts all headers from raw message preserving order and multi-line values
+// extractAllHeaders parses RFC 2822-compliant headers, preserving order and handling
+// multi-line continuations. Only lines starting with space/tab extend the previous header,
+// preventing malformed headers from corrupting adjacent fields.
 func extractAllHeaders(rawMessage string) []MessageHeader {
 	var headers []MessageHeader
 	lines := strings.Split(rawMessage, "\n")
@@ -1171,7 +1189,7 @@ func extractAllHeaders(rawMessage string) []MessageHeader {
 	for _, line := range lines {
 		line = strings.TrimRight(line, "\r")
 
-		// Empty line marks end of headers
+		// Empty line marks end of headers section
 		if line == "" {
 			// Save last header if exists
 			if currentHeaderName != "" {
@@ -1184,13 +1202,21 @@ func extractAllHeaders(rawMessage string) []MessageHeader {
 			break
 		}
 
-		// Check if this is a continuation line (starts with space or tab)
+		// Continuation line MUST start with SP or HTAB — RFC 2822 §2.2.3
 		if len(line) > 0 && (line[0] == ' ' || line[0] == '\t') {
 			if currentHeaderName != "" {
-				// Append to current header value preserving the line break
-				currentHeaderValue.WriteString("\r\n")
-				currentHeaderValue.WriteString(line)
+				// Fold the continuation into the current header value as a single space
+				currentHeaderValue.WriteString(" ")
+				currentHeaderValue.WriteString(strings.TrimSpace(line))
 			}
+			// If no previous header exists, silently skip — never append to nothing
+			continue
+		}
+
+		// Must contain a colon to be a valid header field
+		colonIdx := strings.Index(line, ":")
+		if colonIdx < 1 {
+			// This is what prevents X-SG-EID bleed into Subject.
 			continue
 		}
 
@@ -1205,15 +1231,9 @@ func extractAllHeaders(rawMessage string) []MessageHeader {
 			currentHeaderValue.Reset()
 		}
 
-		// Parse new header
-		colonIdx := strings.Index(line, ":")
-		if colonIdx != -1 {
-			currentHeaderName = strings.TrimSpace(line[:colonIdx])
-			currentHeaderValue.WriteString(strings.TrimSpace(line[colonIdx+1:]))
-		} else {
-			// Malformed header, skip it
-			currentHeaderName = ""
-		}
+		// Parse new header field
+		currentHeaderName = strings.TrimSpace(line[:colonIdx])
+		currentHeaderValue.WriteString(strings.TrimSpace(line[colonIdx+1:]))
 	}
 
 	return headers
