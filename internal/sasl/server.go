@@ -483,7 +483,7 @@ func (s *Server) handleOAuthBearer(conn net.Conn, id, resp string, respProvided 
 		return
 	}
 
-	accessToken, _, _, err := oauthbearer.ParseInitialClientResponseDetails(resp)
+	accessToken, _, saslUser, err := oauthbearer.ParseInitialClientResponseDetails(resp)
 	if err != nil {
 		response := fmt.Sprintf("FAIL\t%s\treason=Invalid OAUTHBEARER payload\n", id)
 		_, _ = conn.Write([]byte(response))
@@ -513,6 +513,20 @@ func (s *Server) handleOAuthBearer(conn net.Conn, id, resp string, respProvided 
 		_, _ = conn.Write([]byte(response))
 		log.Printf("SASL sent: %s", strings.TrimSpace(response))
 		return
+	}
+
+	saslUserEmail := normalizeOAuthIdentity(saslUser, s.oauthConfig.Domain)
+	if saslUserEmail != "" && !strings.EqualFold(saslUserEmail, user) {
+		roleAccess := oauthbearer.EvaluateRoleAccess(saslUserEmail, claims)
+		if roleAccess == nil {
+			log.Printf("SASL OAUTHBEARER: SASL user %q does not match resolved mailbox email %q", saslUserEmail, user)
+			response := fmt.Sprintf("FAIL\t%s\treason=Invalid credentials\n", id)
+			_, _ = conn.Write([]byte(response))
+			log.Printf("SASL sent: %s", strings.TrimSpace(response))
+			return
+		}
+		log.Printf("SASL OAUTHBEARER: role-based access granted token_user=%q role=%q mailbox=%q", user, roleAccess.Role, roleAccess.MailboxIdentity)
+		user = roleAccess.MailboxIdentity
 	}
 
 	response := fmt.Sprintf("OK\t%s\tuser=%s\n", id, user)
