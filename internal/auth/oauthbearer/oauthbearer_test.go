@@ -415,6 +415,31 @@ func TestEvaluateRoleAccess_TrailingDotDomain(t *testing.T) {
 	}
 }
 
+func TestEvaluateRoleAccess_RejectsUnsafeComponents(t *testing.T) {
+	// Each input is a SASL user= value whose local or domain part contains
+	// characters that must never make it into the mailbox identity, even
+	// when the token roles claim happens to match.
+	cases := map[string]string{
+		"path traversal in domain":  "admin@..",
+		"double dot inside domain":  "admin@co..com",
+		"slash in domain":           "admin@co/com",
+		"backslash in domain":       "admin@co\\com",
+		"slash in local":            "ad/min@co.com",
+		"double dot in local":       "ad..min@co.com",
+		"non-ascii in domain":       "admin@cö.com",
+		"whitespace inside local":   "ad min@co.com",
+		"null byte in domain":       "admin@co.com\x00evil",
+	}
+	for name, addr := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := EvaluateRoleAccess(addr, Claims{Roles: []string{"admin", "ad..min", "ad/min", "ad min"}})
+			if got != nil {
+				t.Fatalf("expected nil for unsafe address %q, got %#v", addr, got)
+			}
+		})
+	}
+}
+
 func signToken(priv *rsa.PrivateKey, kid string, claims jwt.MapClaims) (string, error) {
 	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	tok.Header["kid"] = kid

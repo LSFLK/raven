@@ -328,11 +328,11 @@ func EvaluateRoleAccess(saslUserEmail string, claims Claims) *RoleAccessRequest 
 	}
 	local := strings.ToLower(strings.TrimSpace(saslUserEmail[:at]))
 	domain := strings.ToLower(strings.Trim(strings.TrimSpace(saslUserEmail[at+1:]), "."))
-	if local == "" || domain == "" {
+	if !isSafeMailboxComponent(local) || !isSafeMailboxComponent(domain) {
 		return nil
 	}
 	for _, role := range claims.Roles {
-		if strings.EqualFold(strings.TrimSpace(role), local) {
+		if strings.EqualFold(role, local) {
 			return &RoleAccessRequest{
 				Role:            local,
 				Domain:          domain,
@@ -341,6 +341,27 @@ func EvaluateRoleAccess(saslUserEmail string, claims Claims) *RoleAccessRequest 
 		}
 	}
 	return nil
+}
+
+// isSafeMailboxComponent restricts the local/domain parts that get
+// embedded into a filesystem-style mailbox identity (role_<local>@<domain>.db)
+// to a conservative ASCII allowlist. Rejects empty input and any
+// sequence ("..", "/", "\\", control chars, etc.) that could escape the
+// mailbox namespace if the identity is later used as a path.
+func isSafeMailboxComponent(s string) bool {
+	if s == "" || strings.Contains(s, "..") {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= '0' && r <= '9':
+		case r == '.' || r == '-' || r == '_' || r == '+':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func ParseInitialClientResponseDetails(encoded string) (token string, authzid string, user string, err error) {
