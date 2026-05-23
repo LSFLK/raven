@@ -358,6 +358,118 @@ func TestValidateAccessToken_ConcurrentJWKSRefreshSingleflight(t *testing.T) {
 	}
 }
 
+func TestExtractClaims_RolesArray(t *testing.T) {
+	c := extractClaims(jwt.MapClaims{
+		"email": "alice@example.com",
+		"roles": []any{"admin", " support ", ""},
+	})
+	if len(c.Roles) != 2 || c.Roles[0] != "admin" || c.Roles[1] != "support" {
+		t.Fatalf("expected [admin support], got %#v", c.Roles)
+	}
+}
+
+func TestExtractClaims_RolesString(t *testing.T) {
+	c := extractClaims(jwt.MapClaims{
+		"email": "alice@example.com",
+		"roles": "admin",
+	})
+	if len(c.Roles) != 1 || c.Roles[0] != "admin" {
+		t.Fatalf("expected [admin], got %#v", c.Roles)
+	}
+}
+
+func TestExtractClaims_RoleSingularFallback(t *testing.T) {
+	c := extractClaims(jwt.MapClaims{
+		"email": "alice@example.com",
+		"role":  "admin",
+	})
+	if len(c.Roles) != 1 || c.Roles[0] != "admin" {
+		t.Fatalf("expected [admin] via singular role, got %#v", c.Roles)
+	}
+}
+
+func TestExtractClaims_NoRoles(t *testing.T) {
+	c := extractClaims(jwt.MapClaims{
+		"email": "alice@example.com",
+	})
+	if len(c.Roles) != 0 {
+		t.Fatalf("expected no roles, got %#v", c.Roles)
+	}
+}
+
+func TestEvaluateRoleAccess_Match(t *testing.T) {
+	got := EvaluateRoleAccess("admin@co.com", Claims{Roles: []string{"admin"}})
+	if got == nil {
+		t.Fatal("expected role access, got nil")
+	}
+	if got.Role != "admin" || got.Domain != "co.com" || got.MailboxIdentity != "role_admin@co.com.db" {
+		t.Fatalf("unexpected role access: %#v", got)
+	}
+}
+
+func TestEvaluateRoleAccess_CaseInsensitive(t *testing.T) {
+	got := EvaluateRoleAccess("ADMIN@CO.COM", Claims{Roles: []string{"Admin"}})
+	if got == nil {
+		t.Fatal("expected role access, got nil")
+	}
+	if got.MailboxIdentity != "role_admin@co.com.db" {
+		t.Fatalf("expected lowercased mailbox identity, got %q", got.MailboxIdentity)
+	}
+}
+
+func TestEvaluateRoleAccess_NotARole(t *testing.T) {
+	got := EvaluateRoleAccess("bob@co.com", Claims{Roles: []string{"admin"}})
+	if got != nil {
+		t.Fatalf("expected nil, got %#v", got)
+	}
+}
+
+func TestEvaluateRoleAccess_NoAt(t *testing.T) {
+	got := EvaluateRoleAccess("adminco.com", Claims{Roles: []string{"admin"}})
+	if got != nil {
+		t.Fatalf("expected nil for address without @, got %#v", got)
+	}
+}
+
+func TestEvaluateRoleAccess_EmptyRoles(t *testing.T) {
+	got := EvaluateRoleAccess("admin@co.com", Claims{})
+	if got != nil {
+		t.Fatalf("expected nil for empty roles, got %#v", got)
+	}
+}
+
+func TestEvaluateRoleAccess_TrailingDotDomain(t *testing.T) {
+	got := EvaluateRoleAccess("admin@co.com.", Claims{Roles: []string{"admin"}})
+	if got == nil || got.Domain != "co.com" || got.MailboxIdentity != "role_admin@co.com.db" {
+		t.Fatalf("expected trailing-dot trimmed, got %#v", got)
+	}
+}
+
+func TestEvaluateRoleAccess_RejectsUnsafeComponents(t *testing.T) {
+	// Each input is a SASL user= value whose local or domain part contains
+	// characters that must never make it into the mailbox identity, even
+	// when the token roles claim happens to match.
+	cases := map[string]string{
+		"path traversal in domain": "admin@..",
+		"double dot inside domain": "admin@co..com",
+		"slash in domain":          "admin@co/com",
+		"backslash in domain":      "admin@co\\com",
+		"slash in local":           "ad/min@co.com",
+		"double dot in local":      "ad..min@co.com",
+		"non-ascii in domain":      "admin@cö.com",
+		"whitespace inside local":  "ad min@co.com",
+		"null byte in domain":      "admin@co.com\x00evil",
+	}
+	for name, addr := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := EvaluateRoleAccess(addr, Claims{Roles: []string{"admin", "ad..min", "ad/min", "ad min"}})
+			if got != nil {
+				t.Fatalf("expected nil for unsafe address %q, got %#v", addr, got)
+			}
+		})
+	}
+}
+
 func signToken(priv *rsa.PrivateKey, kid string, claims jwt.MapClaims) (string, error) {
 	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	tok.Header["kid"] = kid

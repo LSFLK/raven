@@ -1569,4 +1569,3 @@ func TestGetMessageHeaders(t *testing.T) {
 		}
 	}
 }
-

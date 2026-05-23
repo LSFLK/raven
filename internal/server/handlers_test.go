@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"raven/internal/models"
-	
 )
 
 // HasCapabilityToken is a helper to check capability tokens exactly (avoids substring matches like LOGIN in LOGINDISABLED)
@@ -152,7 +151,7 @@ func TestCapabilityCommand_ResponseFormat(t *testing.T) {
 	srv.HandleCapability(conn, "C003", state)
 
 	response := conn.GetWrittenData()
-	
+
 	// Check that response ends with CRLF
 	if !strings.HasSuffix(response, "\r\n") {
 		t.Errorf("Response should end with CRLF")
@@ -222,7 +221,7 @@ func TestCapabilityCommand_MultipleInvocations(t *testing.T) {
 		t.Errorf("Expected 'D001 OK CAPABILITY completed', got: %s", lines[1])
 	}
 
-	// Check second invocation  
+	// Check second invocation
 	if !strings.HasPrefix(lines[2], "* CAPABILITY ") {
 		t.Errorf("Third response should be CAPABILITY, got: %s", lines[2])
 	}
@@ -236,7 +235,7 @@ func TestCapabilityCommand_MultipleInvocations(t *testing.T) {
 	}
 }
 
-// TestCapabilityCommand_AuthenticationStateDoesNotAffectCapabilities tests that 
+// TestCapabilityCommand_AuthenticationStateDoesNotAffectCapabilities tests that
 // authentication state doesn't change capabilities (connection type does)
 func TestCapabilityCommand_AuthenticationStateDoesNotAffectCapabilities(t *testing.T) {
 	srv := SetupTestServerSimple(t)
@@ -268,7 +267,7 @@ func TestCapabilityCommand_AuthenticationStateDoesNotAffectCapabilities(t *testi
 	// Capability list should be the same regardless of authentication state
 	// (for the same connection type)
 	if unauthCapLine != authCapLine {
-		t.Errorf("Capabilities should be same regardless of auth state:\nUnauth: %s\nAuth:   %s", 
+		t.Errorf("Capabilities should be same regardless of auth state:\nUnauth: %s\nAuth:   %s",
 			unauthCapLine, authCapLine)
 	}
 }
@@ -290,7 +289,7 @@ func BenchmarkCapabilityCommand(b *testing.B) {
 // TestCapabilityCommand_ConcurrentAccess tests concurrent CAPABILITY requests
 func TestCapabilityCommand_ConcurrentAccess(t *testing.T) {
 	srv := SetupTestServerSimple(t)
-	
+
 	// Number of concurrent requests
 	const numRequests = 10
 	responses := make([]string, numRequests)
@@ -318,7 +317,7 @@ func TestCapabilityCommand_ConcurrentAccess(t *testing.T) {
 	baseResponse := responses[0]
 	for i := 1; i < numRequests; i++ {
 		if responses[i] != baseResponse {
-			t.Errorf("Concurrent request %d produced different response:\nBase: %s\nGot:  %s", 
+			t.Errorf("Concurrent request %d produced different response:\nBase: %s\nGot:  %s",
 				i, baseResponse, responses[i])
 		}
 	}

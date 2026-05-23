@@ -28,8 +28,8 @@ import (
 )
 
 var (
-	testUserMu       sync.Mutex
-	testUserNextID   int64 = 1
+	testUserMu        sync.Mutex
+	testUserNextID    int64 = 1
 	testUserIDByEmail       = map[string]int64{}
 	testUserEmailByID       = map[int64]string{}
 )

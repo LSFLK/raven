@@ -385,10 +385,10 @@ type sslTrackingConn struct {
 }
 
 func (c *sslTrackingConn) Read(_ []byte) (int, error)         { return 0, os.ErrClosed }
-func (c *sslTrackingConn) Write(b []byte) (int, error)         { return len(b), nil }
-func (c *sslTrackingConn) Close() error                        { c.closed = true; return nil }
-func (c *sslTrackingConn) LocalAddr() net.Addr                 { return nil }
-func (c *sslTrackingConn) RemoteAddr() net.Addr                { return nil }
-func (c *sslTrackingConn) SetDeadline(_ time.Time) error       { return nil }
-func (c *sslTrackingConn) SetReadDeadline(_ time.Time) error   { return nil }
-func (c *sslTrackingConn) SetWriteDeadline(_ time.Time) error  { return nil }
+func (c *sslTrackingConn) Write(b []byte) (int, error)        { return len(b), nil }
+func (c *sslTrackingConn) Close() error                       { c.closed = true; return nil }
+func (c *sslTrackingConn) LocalAddr() net.Addr                { return nil }
+func (c *sslTrackingConn) RemoteAddr() net.Addr               { return nil }
+func (c *sslTrackingConn) SetDeadline(_ time.Time) error      { return nil }
+func (c *sslTrackingConn) SetReadDeadline(_ time.Time) error  { return nil }
+func (c *sslTrackingConn) SetWriteDeadline(_ time.Time) error { return nil }

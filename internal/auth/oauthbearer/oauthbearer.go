@@ -38,9 +38,18 @@ type Claims struct {
 	Subject            string
 	Issuer             string
 	Audience           []string
+	Roles              []string
 	ExpiresAt          time.Time
 	GrantType          string
 	ClientID           string
+}
+
+// RoleAccessRequest describes a role-based mailbox access derived from a
+// SASL user=<email> field and the validated token claims.
+type RoleAccessRequest struct {
+	Role            string
+	Domain          string
+	MailboxIdentity string
 }
 
 func (c Claims) Identity() string {
@@ -296,6 +305,10 @@ func extractClaims(claims jwt.MapClaims) Claims {
 		result.Issuer = strings.TrimSpace(iss)
 	}
 	result.Audience = audienceList(claims["aud"])
+	result.Roles = stringListClaim(claims["roles"])
+	if len(result.Roles) == 0 {
+		result.Roles = stringListClaim(claims["role"])
+	}
 	if expUnix, ok := claimAsInt64(claims, "exp"); ok {
 		result.ExpiresAt = time.Unix(expUnix, 0)
 	}
@@ -319,6 +332,57 @@ func extractClaims(claims jwt.MapClaims) Claims {
 		log.Printf("OAUTHBEARER: extracted client_credentials claims grant_type=%q client_id=%q", result.GrantType, result.ClientID)
 	}
 	return result
+}
+
+// EvaluateRoleAccess returns a non-nil result when saslUserEmail is a
+// role-based address (role@domain) AND the token's roles claim contains
+// that role (case-insensitive). Callers should fall back to the normal
+// personal-mailbox match when this returns nil.
+func EvaluateRoleAccess(saslUserEmail string, claims Claims) *RoleAccessRequest {
+	saslUserEmail = strings.TrimSpace(saslUserEmail)
+	if saslUserEmail == "" || len(claims.Roles) == 0 {
+		return nil
+	}
+	at := strings.LastIndex(saslUserEmail, "@")
+	if at <= 0 || at == len(saslUserEmail)-1 {
+		return nil
+	}
+	local := strings.ToLower(strings.TrimSpace(saslUserEmail[:at]))
+	domain := strings.ToLower(strings.Trim(strings.TrimSpace(saslUserEmail[at+1:]), "."))
+	if !isSafeMailboxComponent(local) || !isSafeMailboxComponent(domain) {
+		return nil
+	}
+	for _, role := range claims.Roles {
+		if strings.EqualFold(role, local) {
+			return &RoleAccessRequest{
+				Role:            local,
+				Domain:          domain,
+				MailboxIdentity: "role_" + local + "@" + domain + ".db",
+			}
+		}
+	}
+	return nil
+}
+
+// isSafeMailboxComponent restricts the local/domain parts that get
+// embedded into a filesystem-style mailbox identity (role_<local>@<domain>.db)
+// to a conservative ASCII allowlist. Rejects empty input and any
+// sequence ("..", "/", "\\", control chars, etc.) that could escape the
+// mailbox namespace if the identity is later used as a path.
+func isSafeMailboxComponent(s string) bool {
+	if s == "" || strings.Contains(s, "..") {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= '0' && r <= '9':
+		case r == '.' || r == '-' || r == '_' || r == '+':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func ParseInitialClientResponseDetails(encoded string) (token string, authzid string, user string, err error) {
@@ -438,6 +502,39 @@ func claimAsString(claims jwt.MapClaims, key string) string {
 		return ""
 	}
 	return strings.TrimSpace(s)
+}
+
+func stringListClaim(raw any) []string {
+	switch t := raw.(type) {
+	case nil:
+		return nil
+	case string:
+		s := strings.TrimSpace(t)
+		if s == "" {
+			return nil
+		}
+		return []string{s}
+	case []any:
+		out := make([]string, 0, len(t))
+		for _, v := range t {
+			if s, ok := v.(string); ok {
+				if trimmed := strings.TrimSpace(s); trimmed != "" {
+					out = append(out, trimmed)
+				}
+			}
+		}
+		return out
+	case []string:
+		out := make([]string, 0, len(t))
+		for _, s := range t {
+			if trimmed := strings.TrimSpace(s); trimmed != "" {
+				out = append(out, trimmed)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 func audienceList(raw any) []string {

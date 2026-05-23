@@ -325,13 +325,13 @@ func processFetchForMessage(deps ServerDeps, conn net.Conn, messageID, uid int64
 					// Debug: Show parts structure
 					fmt.Printf("DEBUG FETCH: Looking up part %v for message %d, have %d parts\n", partPath, messageID, len(parts))
 					for i, p := range parts {
-						fmt.Printf("  Part %d: id=%v, part_number=%v, parent_part_id=%v, content_type=%v\n", 
+						fmt.Printf("  Part %d: id=%v, part_number=%v, parent_part_id=%v, content_type=%v\n",
 							i, p["id"], p["part_number"], p["parent_part_id"], p["content_type"])
 					}
-					
+
 					// Map IMAP part number path to database part
 					target := mapIMAPPartPathToDBPart(parts, partPath)
-					
+
 					fmt.Printf("DEBUG FETCH: mapIMAPPartPathToDBPart returned: %v\n", target != nil)
 
 					payload := ""

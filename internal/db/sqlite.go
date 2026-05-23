@@ -444,8 +444,6 @@ func UserExists(db *sql.DB, username string, domainID int64) (bool, error) {
 	return count > 0, err
 }
 
-
-
 // Mailbox management functions
 
 func CreateMailbox(db *sql.DB, userID int64, name string, specialUse string) (int64, error) {
@@ -1248,6 +1246,7 @@ func GetMessageHeaders(db *sql.DB, messageID int64) ([]map[string]string, error)
 
 	return headers, rows.Err()
 }
+
 // createDefaultMailboxes creates default mailboxes for a new user.
 // Kept here with other schema helpers so migrations and initialization stay together.
 func createDefaultMailboxes(db *sql.DB) error {

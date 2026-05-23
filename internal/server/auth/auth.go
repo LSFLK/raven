@@ -317,15 +317,21 @@ func HandleAuthenticate(deps ServerDeps, conn net.Conn, tag string, parts []stri
 			return
 		}
 
+		mailboxEmail := email
 		if !strings.EqualFold(saslUserEmail, email) {
-			log.Printf("OAUTHBEARER: SASL user %q does not match resolved mailbox email %q", saslUserEmail, email)
-			deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
-			return
+			roleAccess := oauthbearer.EvaluateRoleAccess(saslUserEmail, claims)
+			if roleAccess == nil {
+				log.Printf("OAUTHBEARER: SASL user %q does not match resolved mailbox email %q", saslUserEmail, email)
+				deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
+				return
+			}
+			log.Printf("OAUTHBEARER: role-based access granted token_user=%q role=%q mailbox=%q", email, roleAccess.Role, roleAccess.MailboxIdentity)
+			mailboxEmail = roleAccess.MailboxIdentity
 		}
 
-		actualUsername := deps.ExtractUsername(email)
+		actualUsername := deps.ExtractUsername(mailboxEmail)
 
-		if err := deps.EnsureUserAndMailboxes(email); err != nil {
+		if err := deps.EnsureUserAndMailboxes(mailboxEmail); err != nil {
 			log.Printf("Failed to initialize user database for OAUTHBEARER: %v", err)
 			deps.SendResponse(conn, fmt.Sprintf("%s NO [SERVERBUG] Server error", tag))
 			return
@@ -333,7 +339,7 @@ func HandleAuthenticate(deps ServerDeps, conn net.Conn, tag string, parts []stri
 
 		state.Authenticated = true
 		state.Username = actualUsername
-		state.Email = email
+		state.Email = mailboxEmail
 
 		capabilities := strings.Join(buildCapabilities(deps, true), " ")
 		deps.SendResponse(conn, fmt.Sprintf("%s OK [CAPABILITY %s] Authenticated", tag, capabilities))

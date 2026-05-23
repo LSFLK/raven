@@ -190,7 +190,21 @@ func TestSASLPlainWithoutInitialResponse(t *testing.T) {
 	if !strings.HasPrefix(contResponse, "CONT\t3") {
 		t.Errorf("Expected CONT response, got: %s", contResponse)
 	}
-	t.Log("✓ PLAIN authentication continuation handled correctly")
+	t.Log("✓ PLAIN authentication continuation prompt handled correctly")
+
+	// Send base64 credentials in CONT
+	username := "alice"
+	password := "validpass123"
+	credentials := fmt.Sprintf("\x00%s\x00%s", username, password)
+	encoded := base64.StdEncoding.EncodeToString([]byte(credentials))
+
+	client.SendCommand("CONT\t3\t" + encoded)
+	authResponse := client.ReadResponse()
+
+	if !strings.HasPrefix(authResponse, "OK\t3") {
+		t.Errorf("Expected OK response, got: %s", authResponse)
+	}
+	t.Log("✓ PLAIN authentication via CONT handled correctly")
 }
 
 // TestSASLInvalidMechanism tests authentication with unsupported mechanism
@@ -619,18 +633,32 @@ func TestSASLLoginMechanism(t *testing.T) {
 	}
 	t.Log("✓ LOGIN mechanism requests username as expected")
 
-	// Try LOGIN mechanism with response (should fail as not fully implemented)
-	client.SendCommand("AUTH\t2\tLOGIN\tservice=smtp\tresp=dGVzdA==") // base64 "test"
+	// Try LOGIN mechanism with continuation
+	username := "alice"
+	encodedUsername := base64.StdEncoding.EncodeToString([]byte(username))
+	client.SendCommand("CONT\t1\t" + encodedUsername)
 
-	failResponse := client.ReadResponse()
-	t.Logf("LOGIN mechanism with response: %s", failResponse)
+	contPasswordResponse := client.ReadResponse()
+	t.Logf("LOGIN mechanism password continuation response: %s", contPasswordResponse)
 
-	// Should get FAIL for incomplete implementation
-	if !strings.HasPrefix(failResponse, "FAIL\t2") {
-		t.Errorf("Expected FAIL response for LOGIN with response, got: %s", failResponse)
+	// Should get CONT asking for password
+	if !strings.HasPrefix(contPasswordResponse, "CONT\t1") {
+		t.Errorf("Expected CONT response for LOGIN password, got: %s", contPasswordResponse)
 	}
-	if !strings.Contains(failResponse, "LOGIN not fully implemented") {
-		t.Errorf("Expected 'LOGIN not fully implemented' message, got: %s", failResponse)
+	if !strings.Contains(contPasswordResponse, "Password:") {
+		t.Errorf("Expected 'Password:' prompt, got: %s", contPasswordResponse)
 	}
-	t.Log("✓ LOGIN mechanism correctly indicates incomplete implementation")
+	t.Log("✓ LOGIN mechanism requests password as expected")
+
+	password := "validpass123"
+	encodedPassword := base64.StdEncoding.EncodeToString([]byte(password))
+	client.SendCommand("CONT\t1\t" + encodedPassword)
+
+	authResponse := client.ReadResponse()
+	t.Logf("LOGIN mechanism auth response: %s", authResponse)
+
+	if !strings.HasPrefix(authResponse, "OK\t1") {
+		t.Errorf("Expected OK response, got: %s", authResponse)
+	}
+	t.Log("✓ LOGIN mechanism authenticates successfully")
 }

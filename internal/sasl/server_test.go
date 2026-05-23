@@ -1352,3 +1352,125 @@ func TestSASLScopeConfiguration(t *testing.T) {
 		})
 	}
 }
+
+// TestLoginMechanismWithInitialResponse tests LOGIN authentication mechanism when username is provided in the initial AUTH command
+func TestLoginMechanismWithInitialResponse(t *testing.T) {
+	socketPath := getSocketPath(t)
+
+	authServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer authServer.Close()
+
+	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com", conf.SASLScopeAll)
+
+	// Start server
+	go func() { _ = server.Start() }()
+	defer func() { _ = server.Shutdown() }()
+	time.Sleep(100 * time.Millisecond)
+
+	// Connect to the socket
+	conn, err := net.Dial("unix", socketPath)
+	if err != nil {
+		t.Fatalf("Failed to connect to socket: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	// Encode username: testuser
+	encodedUser := base64.StdEncoding.EncodeToString([]byte("testuser"))
+
+	// Send AUTH command with LOGIN mechanism and initial response (username)
+	_, _ = fmt.Fprintf(conn, "AUTH\t1\tLOGIN\tservice=smtp\tresp=%s\n", encodedUser)
+
+	// Read response
+	reader := bufio.NewReader(conn)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("Failed to read response: %v", err)
+	}
+
+	// Should get a request for password
+	expectedResponse := "CONT\t1\tPassword:\n"
+	if response != expectedResponse {
+		t.Errorf("Expected %q, got: %q", expectedResponse, response)
+	}
+
+	// Send password: testpass
+	encodedPass := base64.StdEncoding.EncodeToString([]byte("testpass"))
+	_, _ = fmt.Fprintf(conn, "CONT\t1\t%s\n", encodedPass)
+
+	// Read response
+	response2, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("Failed to read second response: %v", err)
+	}
+
+	// Should get OK response
+	if !strings.HasPrefix(response2, "OK\t1\t") {
+		t.Errorf("Expected OK response, got: %q", response2)
+	}
+}
+
+// TestDoSProtection tests that concurrent auth attempts are correctly limited
+func TestDoSProtection(t *testing.T) {
+	socketPath := getSocketPath(t)
+
+	authServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer authServer.Close()
+
+	server := sasl.NewServer(socketPath, "", authServer.URL, "example.com", conf.SASLScopeAll)
+
+	// Start server
+	go func() { _ = server.Start() }()
+	defer func() { _ = server.Shutdown() }()
+	time.Sleep(100 * time.Millisecond)
+
+	// Connect to the socket
+	conn, err := net.Dial("unix", socketPath)
+	if err != nil {
+		t.Fatalf("Failed to connect to socket: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	reader := bufio.NewReader(conn)
+
+	// Spawn maxAuthStatesPerConn (10) active auth states
+	// We will use LOGIN without initial response so they remain active
+	for i := 1; i <= 10; i++ {
+		_, _ = fmt.Fprintf(conn, "AUTH\t%d\tLOGIN\tservice=smtp\n", i)
+		response, err := reader.ReadString('\n')
+		if err != nil {
+			t.Fatalf("Failed to read response for auth %d: %v", i, err)
+		}
+		expectedResponse := fmt.Sprintf("CONT\t%d\tUsername:\n", i)
+		if response != expectedResponse {
+			t.Fatalf("Expected CONT response for auth %d, got: %q", i, response)
+		}
+	}
+
+	// Now try one more AUTH PLAIN (with or without initial response)
+	// It should immediately fail due to DoS protection
+	_, _ = fmt.Fprintf(conn, "AUTH\t11\tPLAIN\tservice=smtp\n")
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("Failed to read response for exceeded auth: %v", err)
+	}
+
+	if !strings.HasPrefix(response, "FAIL\t11\t") || !strings.Contains(response, "reason=Too many authentication attempts") {
+		t.Errorf("Expected DoS FAIL response, got: %q", response)
+	}
+
+	// Test that an AUTH attempt WITH an initial response is also correctly blocked by DoS protection
+	encodedUser := base64.StdEncoding.EncodeToString([]byte("testuser"))
+	_, _ = fmt.Fprintf(conn, "AUTH\t12\tLOGIN\tservice=smtp\tresp=%s\n", encodedUser)
+	response2, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("Failed to read response for exceeded auth with initial response: %v", err)
+	}
+
+	if !strings.HasPrefix(response2, "FAIL\t12\t") || !strings.Contains(response2, "reason=Too many authentication attempts") {
+		t.Errorf("Expected DoS FAIL response with initial response, got: %q", response2)
+	}
+}

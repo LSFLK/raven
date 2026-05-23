@@ -176,8 +176,8 @@ func TestGroupMemberResolution(t *testing.T) {
 
 		case "/users/user-1":
 			resp := map[string]interface{}{
-				"id":               "user-1",
-				"ouId":             "ou-1",
+				"id":   "user-1",
+				"ouId": "ou-1",
 				"attributes": map[string]string{
 					"username": "alice",
 				},
@@ -186,8 +186,8 @@ func TestGroupMemberResolution(t *testing.T) {
 
 		case "/users/user-2":
 			resp := map[string]interface{}{
-				"id":               "user-2",
-				"ouId":             "ou-2",
+				"id":   "user-2",
+				"ouId": "ou-2",
 				"attributes": map[string]string{
 					"username": "bob",
 				},
