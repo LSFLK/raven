@@ -1181,8 +1181,14 @@ func ReadDataCommand(r *bufio.Reader, maxSize int64) ([]byte, error) {
 // multi-line continuations. Only lines starting with space/tab extend the previous header,
 // preventing malformed headers from corrupting adjacent fields.
 func extractAllHeaders(rawMessage string) []MessageHeader {
+	rawHeaderMessage := strings.Clone(rawMessage);
+	if headerEnd := strings.Index(rawMessage, "\r\n\r\n"); headerEnd > 0 {
+		rawHeaderMessage = rawHeaderMessage[:headerEnd]
+	} else if headerEnd := strings.Index(rawMessage, "\r\n\r\n"); headerEnd > 0 {
+		rawHeaderMessage = rawHeaderMessage[:headerEnd]
+	}
 	var headers []MessageHeader
-	lines := strings.Split(rawMessage, "\n")
+	lines := strings.Split(rawHeaderMessage, "\n")
 	sequence := 0
 	var currentHeaderName string
 	var currentHeaderValue strings.Builder
