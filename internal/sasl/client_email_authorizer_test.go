@@ -52,37 +52,37 @@ func TestAuthorizeOAuthClientCredentialsSender(t *testing.T) {
 	}
 
 	s := &Server{
-		domain:                    "example.com",
+		domain:                     "example.com",
 		oauthClientEmailAuthorizer: authorizer,
 	}
 
-	if err := s.authorizeOAuthClientCredentialsSender(oauthbearer.Claims{GrantType: "password"}, "", ""); err != nil {
+	if err := s.authorizeOAuthClientCredentialsSender(&oauthbearer.Claims{GrantType: "password"}, "", ""); err != nil {
 		t.Fatalf("expected non-client_credentials grant to skip check, got error: %v", err)
 	}
 
-	if err := s.authorizeOAuthClientCredentialsSender(oauthbearer.Claims{GrantType: "client_credentials"}, "", "sender"); err == nil {
+	if err := s.authorizeOAuthClientCredentialsSender(&oauthbearer.Claims{GrantType: "client_credentials"}, "", "sender"); err == nil {
 		t.Fatalf("expected error when client_id is missing")
 	}
 
-	if err := s.authorizeOAuthClientCredentialsSender(oauthbearer.Claims{GrantType: "client_credentials", ClientID: "client-a"}, "", ""); err == nil {
+	if err := s.authorizeOAuthClientCredentialsSender(&oauthbearer.Claims{GrantType: "client_credentials", ClientID: "client-a"}, "", ""); err == nil {
 		t.Fatalf("expected error when sender email is missing")
 	}
 
 	s.oauthClientEmailAuthorizer = nil
-	if err := s.authorizeOAuthClientCredentialsSender(oauthbearer.Claims{GrantType: "client_credentials", ClientID: "client-a"}, "", "sender@example.com"); err == nil {
+	if err := s.authorizeOAuthClientCredentialsSender(&oauthbearer.Claims{GrantType: "client_credentials", ClientID: "client-a"}, "", "sender@example.com"); err == nil {
 		t.Fatalf("expected error when authorizer config is missing")
 	}
 
 	s.oauthClientEmailAuthorizer = authorizer
-	if err := s.authorizeOAuthClientCredentialsSender(oauthbearer.Claims{GrantType: "client_credentials", ClientID: "client-a"}, "", "not-allowed@example.com"); err == nil {
+	if err := s.authorizeOAuthClientCredentialsSender(&oauthbearer.Claims{GrantType: "client_credentials", ClientID: "client-a"}, "", "not-allowed@example.com"); err == nil {
 		t.Fatalf("expected error for unauthorized sender email")
 	}
 
-	if err := s.authorizeOAuthClientCredentialsSender(oauthbearer.Claims{GrantType: "client_credentials", ClientID: "client-a"}, "", "sender@example.com"); err != nil {
+	if err := s.authorizeOAuthClientCredentialsSender(&oauthbearer.Claims{GrantType: "client_credentials", ClientID: "client-a"}, "", "sender@example.com"); err != nil {
 		t.Fatalf("expected sender@example.com to be authorized: %v", err)
 	}
 
-	if err := s.authorizeOAuthClientCredentialsSender(oauthbearer.Claims{GrantType: "client_credentials", ClientID: "client-a"}, "", "sender"); err != nil {
+	if err := s.authorizeOAuthClientCredentialsSender(&oauthbearer.Claims{GrantType: "client_credentials", ClientID: "client-a"}, "", "sender"); err != nil {
 		t.Fatalf("expected sender to be normalized with default domain and authorized: %v", err)
 	}
 }
