@@ -1198,14 +1198,6 @@ func extractAllHeaders(rawMessage string) []MessageHeader {
 
 		// Empty line marks end of headers section
 		if line == "" {
-			// Save last header if exists
-			if currentHeaderName != "" {
-				headers = append(headers, MessageHeader{
-					Name:     currentHeaderName,
-					Value:    currentHeaderValue.String(),
-					Sequence: sequence,
-				})
-			}
 			break
 		}
 
@@ -1241,6 +1233,14 @@ func extractAllHeaders(rawMessage string) []MessageHeader {
 		// Parse new header field
 		currentHeaderName = strings.TrimSpace(line[:colonIdx])
 		currentHeaderValue.WriteString(strings.TrimSpace(line[colonIdx+1:]))
+	}
+
+	if currentHeaderName != "" {
+		headers = append(headers, MessageHeader{
+			Name:     currentHeaderName,
+			Value:    currentHeaderValue.String(),
+			Sequence: sequence,
+		})
 	}
 
 	return headers

@@ -589,6 +589,77 @@ Body starts here.`
 	}
 }
 
+func TestExtractAllHeadersExcludesBody(t *testing.T) {
+	tests := []struct {
+		name       string
+		rawMessage string
+	}{
+		{
+			name: "CRLF separator",
+			rawMessage: "From: sender@example.com\r\n" +
+				"To: recipient@example.com\r\n" +
+				"Subject: Test Subject\r\n" +
+				"\r\n" +
+				"This is the body.\r\n" +
+				"X-Injected: evil\r\n" +
+				"More body text.\r\n",
+		},
+		{
+			name: "LF separator",
+			rawMessage: "From: sender@example.com\n" +
+				"To: recipient@example.com\n" +
+				"Subject: Test Subject\n" +
+				"\n" +
+				"This is the body.\n" +
+				"X-Injected: evil\n" +
+				"More body text.\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg, err := parser.ParseMIMEMessage(tt.rawMessage)
+			if err != nil {
+				t.Fatalf("Failed to parse message: %v", err)
+			}
+
+			foundSubject := false
+			for _, header := range msg.Headers {
+				if header.Name == "X-Injected" {
+					t.Errorf("Expected no X-Injected header from body, got %q", header.Value)
+				}
+				if header.Name == "Subject" {
+					foundSubject = true
+				}
+			}
+
+			if !foundSubject {
+				t.Error("Expected Subject header to be extracted from the header section")
+			}
+		})
+	}
+}
+
+func TestExtractAllHeadersStopsAtFirstBlankLine(t *testing.T) {
+	rawMessage := "From: sender@example.com\r\n" +
+		"To: recipient@example.com\n" +
+		"\n" +
+		"X-Injected: evil\r\n" +
+		"\r\n" +
+		"Body text.\r\n"
+
+	msg, err := parser.ParseMIMEMessage(rawMessage)
+	if err != nil {
+		t.Fatalf("Failed to parse message: %v", err)
+	}
+
+	for _, header := range msg.Headers {
+		if header.Name == "X-Injected" {
+			t.Errorf("Expected no X-Injected header from body, got %q", header.Value)
+		}
+	}
+}
+
 func TestIsValidEmail(t *testing.T) {
 	tests := []struct {
 		name  string
