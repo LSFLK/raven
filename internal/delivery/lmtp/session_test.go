@@ -3,7 +3,6 @@ package lmtp
 import (
 	"bufio"
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -75,15 +74,6 @@ func (m *mockConn) getWritten() string {
 	return m.writeBuf.String()
 }
 
-func decodeJSONBody(w http.ResponseWriter, r *http.Request, out any) bool {
-	if err := json.NewDecoder(r.Body).Decode(out); err != nil {
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return false
-	}
-
-	return true
-}
-
 func writeJSON(w http.ResponseWriter, payload any) bool {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
@@ -92,18 +82,6 @@ func writeJSON(w http.ResponseWriter, payload any) bool {
 	}
 
 	return true
-}
-
-func createLMTPTestJWT(exp int64) string {
-	header := map[string]string{"alg": "HS256", "typ": "JWT"}
-	headerJSON, _ := json.Marshal(header)
-	headerB64 := base64.RawURLEncoding.EncodeToString(headerJSON)
-
-	payload := map[string]int64{"exp": exp}
-	payloadJSON, _ := json.Marshal(payload)
-	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
-
-	return headerB64 + "." + payloadB64 + ".dummy-signature"
 }
 
 func setupTestStorage(t *testing.T) *storage.Storage {

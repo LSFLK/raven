@@ -352,41 +352,6 @@ type Member struct {
 	Type string `json:"type"` // "user" or "group"
 }
 
-// postJSON performs a POST request with JSON payload
-func (gr *GroupResolver) postJSON(endpoint string, payload any, assertion string, out any) error {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequest("POST", endpoint, strings.NewReader(string(body)))
-	if err != nil {
-		return err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	if assertion != "" {
-		req.Header.Set("Authorization", "Bearer "+assertion)
-	}
-
-	resp, err := gr.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(respBody)))
-	}
-
-	if out == nil {
-		return nil
-	}
-
-	return json.NewDecoder(resp.Body).Decode(out)
-}
-
 // getJSON performs a GET request with JSON response
 func (gr *GroupResolver) getJSON(endpoint, assertion string, out any) error {
 	req, err := http.NewRequest("GET", endpoint, nil)
