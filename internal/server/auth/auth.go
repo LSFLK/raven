@@ -447,7 +447,7 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 		"credentials": map[string]string{
 			"password": password,
 		},
-		"skip_assertion": true,
+		"skipAssertion": true,
 	}
 	requestBodyBytes, err := json.Marshal(requestPayload)
 	if err != nil {
@@ -462,6 +462,10 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
+	// Thunder's Direct API is gated by a shared secret; without it the endpoint answers 401.
+	if secret := idp.DirectAuthSecret(); secret != "" {
+		req.Header.Set("Direct-Auth-Secret", secret)
+	}
 
 	// TLS config for system CA bundle (default)
 	tlsConfig := &tls.Config{
