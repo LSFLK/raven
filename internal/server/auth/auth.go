@@ -17,6 +17,7 @@ import (
 	"raven/internal/auth/oauthbearer"
 	"raven/internal/blobstorage"
 	"raven/internal/conf"
+	"raven/internal/idp"
 	"raven/internal/models"
 )
 
@@ -295,7 +296,7 @@ func HandleAuthenticate(deps ServerDeps, conn net.Conn, tag string, parts []stri
 				return
 			}
 
-			derivedDomain := resolveDomainFromOrganizationUnit(cfg.AuthServerURL, claims.OrganizationUnitID, tokenUsername, "")
+			derivedDomain := resolveDomainFromOrganizationUnit(cfg.AuthServerURL, claims.OrganizationUnitID)
 			if derivedDomain == "" {
 				log.Printf("OAUTHBEARER: failed to resolve domain from ouId=%q for username=%q", claims.OrganizationUnitID, tokenUsername)
 				deps.SendResponse(conn, fmt.Sprintf("%s NO [AUTHENTICATIONFAILED] Authentication failed", tag))
@@ -502,7 +503,7 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 
 		expectedDomain := ""
 		if authResp.OrganizationUnit != "" {
-			derivedDomain := resolveDomainFromOrganizationUnit(cfg.AuthServerURL, authResp.OrganizationUnit, authUsername, password)
+			derivedDomain := resolveDomainFromOrganizationUnit(cfg.AuthServerURL, authResp.OrganizationUnit)
 			expectedDomain = strings.Trim(strings.TrimSpace(derivedDomain), ".")
 		}
 
@@ -600,7 +601,7 @@ func normalizeEmail(value string) string {
 	return local + "@" + domain
 }
 
-func resolveDomainFromOrganizationUnit(authServerURL, orgUnitID, username, password string) string {
+func resolveDomainFromOrganizationUnit(authServerURL, orgUnitID string) string {
 	baseURL, err := extractBaseURL(authServerURL)
 	if err != nil {
 		log.Printf("LOGIN: failed to parse auth server URL for OU domain resolution: %v", err)
@@ -609,15 +610,12 @@ func resolveDomainFromOrganizationUnit(authServerURL, orgUnitID, username, passw
 
 	log.Printf("LOGIN: resolving OU domain for org unit %s using bearer assertion", orgUnitID)
 
-	// Always prefer system assertion for OU reads because user-scoped assertions can be forbidden.
+	// Only a system token can read organization units. There is no user-credentials fallback:
+	// a token obtained by authenticating an end user carries no permissions and Thunder answers
+	// 403 Forbidden on these endpoints.
 	assertion := fetchSystemAssertion(baseURL)
 	if assertion == "" {
-		log.Printf("LOGIN: system assertion unavailable, attempting OU resolution with user assertion")
-		assertion = fetchAssertion(baseURL, username, password)
-	}
-
-	if assertion == "" {
-		log.Printf("LOGIN: failed to obtain assertion for OU domain resolution")
+		log.Printf("LOGIN: failed to obtain system token for OU domain resolution")
 		return ""
 	}
 
@@ -645,94 +643,18 @@ func extractBaseURL(rawURL string) (string, error) {
 	return parsed.Scheme + "://" + parsed.Host, nil
 }
 
+// fetchSystemAssertion obtains a token that can read organization units, which raven needs to
+// map a mail domain onto its Thunder organization unit.
 func fetchSystemAssertion(baseURL string) string {
-	username := getEnvOrDefault("IDP_SYSTEM_USERNAME", "admin")
-	password := getEnvOrDefault("IDP_SYSTEM_PASSWORD", "admin")
-	log.Printf("LOGIN: requesting system assertion for OU resolution using configured system identity")
+	log.Printf("LOGIN: requesting system token for OU resolution using raven's service account")
 
-	assertion := fetchAssertion(baseURL, username, password)
-	if assertion == "" {
-		log.Printf("LOGIN: failed to obtain system assertion using configured IDP system credentials")
-	}
-
-	return assertion
-}
-
-func fetchAssertion(baseURL, username, password string) string {
-	applicationID, err := conf.GetApplicationID()
+	token, _, err := idp.SystemToken(baseURL)
 	if err != nil {
-		log.Printf("LOGIN: failed to get application ID: %v", err)
-		return ""
-	}
-	if applicationID == "" {
-		log.Printf("LOGIN: application ID is empty")
+		log.Printf("LOGIN: failed to obtain system token: %v", err)
 		return ""
 	}
 
-	flowID, actionRef := startAuthenticationFlow(baseURL, applicationID)
-	if flowID == "" {
-		log.Printf("LOGIN: unable to start flow (no flow id returned)")
-		return ""
-	}
-
-	payload := map[string]any{
-		"flowId": flowID,
-		"inputs": map[string]string{
-			"username":              username,
-			"password":              password,
-			"requested_permissions": "system",
-		},
-		"action": actionRef,
-	}
-
-	var result struct {
-		Assertion string `json:"assertion"`
-	}
-
-	if err := postJSON(baseURL+"/flow/execute", payload, "", &result); err != nil {
-		log.Printf("LOGIN: flow execute failed for user %s: %v", username, err)
-		return ""
-	}
-
-	return strings.TrimSpace(result.Assertion)
-}
-
-func startAuthenticationFlow(baseURL, applicationID string) (string, string) {
-	configuredActionRef := strings.TrimSpace(os.Getenv("IDP_FLOW_ACTION"))
-	if configuredActionRef == "" {
-		configuredActionRef = strings.TrimSpace(os.Getenv("idp_flow_action"))
-	}
-
-	type executeFlowResponse struct {
-		FlowID string `json:"flowId"`
-		Data   struct {
-			Actions []struct {
-				Ref string `json:"ref"`
-			} `json:"actions"`
-		} `json:"data"`
-	}
-
-	var executeResult executeFlowResponse
-	err := postJSON(baseURL+"/flow/execute", map[string]string{
-		"applicationId": applicationID,
-		"flowType":      "AUTHENTICATION",
-	}, "", &executeResult)
-	if err == nil && executeResult.FlowID != "" {
-		actionRef := configuredActionRef
-		if actionRef == "" && len(executeResult.Data.Actions) > 0 {
-			actionRef = strings.TrimSpace(executeResult.Data.Actions[0].Ref)
-		}
-		if actionRef == "" {
-			actionRef = "action_001"
-		}
-
-		return executeResult.FlowID, actionRef
-	}
-	if err != nil {
-		log.Printf("LOGIN: flow bootstrap failed on /flow/execute: %v", err)
-	}
-
-	return "", ""
+	return token
 }
 
 func resolveOrganizationUnitDomain(baseURL, orgUnitID, assertion string) (string, error) {

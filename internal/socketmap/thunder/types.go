@@ -6,21 +6,9 @@ import (
 
 // Auth holds Thunder authentication state
 type Auth struct {
-	DevelopAppID string
-	FlowID       string
-	BearerToken  string
-	ExpiresAt    time.Time
-	LastRefresh  time.Time
-}
-
-// FlowStartResponse represents the response from flow start
-type FlowStartResponse struct {
-	FlowID string `json:"flowId"`
-}
-
-// FlowCompleteResponse represents the response from flow completion
-type FlowCompleteResponse struct {
-	Assertion string `json:"assertion"`
+	BearerToken string
+	ExpiresAt   time.Time
+	LastRefresh time.Time
 }
 
 // OrgUnitResponse represents an organization unit from Thunder

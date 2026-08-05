@@ -1060,32 +1060,17 @@ func TestSession_Integration_BasicFlow(t *testing.T) {
 }
 
 func TestGroupEmailDelivery(t *testing.T) {
+	// Raven authenticates to the identity server as a service account.
+	t.Setenv("IDP_CLIENT_ID", "RAVEN_SYSTEM")
+	t.Setenv("IDP_CLIENT_SECRET", "secret")
+
 	idpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/flow/execute":
-			if r.Method != http.MethodPost {
-				w.WriteHeader(http.StatusMethodNotAllowed)
-				return
-			}
-
-			var reqBody map[string]any
-			if !decodeJSONBody(w, r, &reqBody) {
-				return
-			}
-
-			if _, ok := reqBody["applicationId"]; ok {
-				_ = writeJSON(w, map[string]any{
-					"flowId": "flow-123",
-					"data": map[string]any{
-						"actions": []map[string]string{{"ref": "action_001"}},
-					},
-				})
-				return
-			}
-
-			token := createLMTPTestJWT(time.Now().Add(1 * time.Hour).Unix())
-			_ = writeJSON(w, map[string]any{"assertion": token})
-
+		case "/oauth2/token":
+			_ = writeJSON(w, map[string]any{
+				"access_token": "test-system-token",
+				"expires_in":   3600,
+			})
 		case "/groups":
 			_ = writeJSON(w, map[string]any{
 				"groups": []map[string]string{{"id": "group-eng", "name": "engineering"}},
@@ -1164,7 +1149,7 @@ func TestGroupEmailDelivery(t *testing.T) {
 	cfg.Delivery.QuotaEnabled = false
 
 	conn := newMockConn()
-	resolver := groupresolver.NewGroupResolver(idpServer.URL, "app-123", "admin", "admin")
+	resolver := groupresolver.NewGroupResolver(idpServer.URL)
 	session := NewSession(conn, stor, cfg, resolver)
 
 	// Send complete LMTP transaction with group email

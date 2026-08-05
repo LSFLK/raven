@@ -1,14 +1,12 @@
 package thunder
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"log"
 	"sync"
 	"time"
 
-	"raven/internal/conf"
+	"raven/internal/idp"
 )
 
 var (
@@ -16,130 +14,40 @@ var (
 	thunderAuthMutex sync.RWMutex
 )
 
-// Authenticate performs the full authentication flow with Thunder IDP
+// Authenticate obtains a system access token from Thunder for raven's service account.
+//
+// tokenRefreshSeconds caps how long the token is cached. Thunder's own expiry is honoured as
+// well and whichever comes first wins, so a short-lived token is never held past its validity.
 func Authenticate(host, port string, tokenRefreshSeconds int) (*Auth, error) {
 	log.Printf("  ┌─ Thunder Authentication ─────────")
 
-	// Step 1: Get Console App ID using shared utility
-	// This will try environment variables first, then fall back to extracting from thunder logs
-	developAppID, err := conf.GetApplicationID()
-	if err != nil {
-		log.Printf("  │ ✗ Failed to get Application ID: %v", err)
-		log.Printf("  │")
-		log.Printf("  │ Please ensure:")
-		log.Printf("  │ 1. Set THUNDER_DEVELOP_APP_ID, APPLICATION_ID, or applicationId environment variable")
-		log.Printf("  │ 2. Or ensure Thunder setup container has completed and is accessible via docker logs")
-		log.Printf("  │")
-		log.Printf("  │ To fix this issue:")
-		log.Printf("  │ 1. Check thunder-setup logs: docker logs thunder-setup")
-		log.Printf("  │ 2. Extract App ID manually and set environment:")
-		log.Printf(`  │    export THUNDER_DEVELOP_APP_ID=$(docker logs thunder-setup 2>&1 | grep 'CONSOLE_APP_ID:' | grep -o '[a-f0-9-]\{36\}')`)
-		log.Printf("  │ 3. Or if running in Docker, mount the Docker socket:")
-		log.Printf("  │    volumes: ['/var/run/docker.sock:/var/run/docker.sock']")
-		log.Printf("  └───────────────────────────────────")
-		return nil, fmt.Errorf("failed to get Application ID: %w", err)
-	}
-
-	log.Printf("  │ Using Application ID: %s", developAppID)
-
-	client := GetHTTPClient()
 	baseURL := fmt.Sprintf("https://%s:%s", host, port)
 
-	// Step 2: Start authentication flow
-	log.Printf("  │ Starting authentication flow...")
-	flowPayload := map[string]interface{}{
-		"applicationId": developAppID,
-		"flowType":      "AUTHENTICATION",
-	}
-	flowData, err := json.Marshal(flowPayload)
+	token, expiresAt, err := idp.SystemToken(baseURL)
 	if err != nil {
-		log.Printf("  │ ✗ Failed to marshal flow payload: %v", err)
+		log.Printf("  │ ✗ Failed to obtain system token: %v", err)
+		log.Printf("  │")
+		log.Printf("  │ Raven authenticates as a service account. Check that:")
+		log.Printf("  │ 1. IDP_CLIENT_ID and IDP_CLIENT_SECRET are both set")
+		log.Printf("  │ 2. That client exists in Thunder as a machine-to-machine application")
+		log.Printf("  │ 3. A role granting the 'system' permission is assigned to it")
 		log.Printf("  └───────────────────────────────────")
-		return nil, fmt.Errorf("failed to marshal flow payload: %w", err)
+		return nil, fmt.Errorf("failed to obtain system token: %w", err)
 	}
 
-	resp, err := client.Post(baseURL+"/flow/execute", "application/json", bytes.NewBuffer(flowData))
-	if err != nil {
-		log.Printf("  │ ✗ Failed to start flow: %v", err)
-		log.Printf("  └───────────────────────────────────")
-		return nil, fmt.Errorf("failed to start flow: %w", err)
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			log.Printf("  │ ⚠ Failed to close flow response body: %v", err)
-		}
-	}()
-
-	if resp.StatusCode != 200 {
-		log.Printf("  │ ✗ Flow start failed (HTTP %d)", resp.StatusCode)
-		log.Printf("  └───────────────────────────────────")
-		return nil, fmt.Errorf("flow start failed with status %d", resp.StatusCode)
+	refreshAt := time.Now().Add(time.Duration(tokenRefreshSeconds) * time.Second)
+	if expiresAt.Before(refreshAt) {
+		refreshAt = expiresAt
 	}
 
-	var flowResp FlowStartResponse
-	if err := json.NewDecoder(resp.Body).Decode(&flowResp); err != nil {
-		log.Printf("  │ ✗ Failed to parse flow response: %v", err)
-		log.Printf("  └───────────────────────────────────")
-		return nil, fmt.Errorf("failed to parse flow response: %w", err)
-	}
-
-	log.Printf("  │ ✓ Flow started (ID: %s)", flowResp.FlowID)
-
-	// Step 3: Complete authentication flow
-	log.Printf("  │ Completing authentication...")
-	authPayload := map[string]interface{}{
-		"flowId": flowResp.FlowID,
-		"inputs": map[string]string{
-			"username":              "admin",
-			"password":              "admin",
-			"requested_permissions": "system",
-		},
-		"action": "action_001",
-	}
-	authData, err := json.Marshal(authPayload)
-	if err != nil {
-		log.Printf("  │ ✗ Failed to marshal auth payload: %v", err)
-		log.Printf("  └───────────────────────────────────")
-		return nil, fmt.Errorf("failed to marshal auth payload: %w", err)
-	}
-
-	resp2, err := client.Post(baseURL+"/flow/execute", "application/json", bytes.NewBuffer(authData))
-	if err != nil {
-		log.Printf("  │ ✗ Failed to complete auth: %v", err)
-		log.Printf("  └───────────────────────────────────")
-		return nil, fmt.Errorf("failed to complete auth: %w", err)
-	}
-	defer func() {
-		if err := resp2.Body.Close(); err != nil {
-			log.Printf("  │ ⚠ Failed to close auth response body: %v", err)
-		}
-	}()
-
-	if resp2.StatusCode != 200 {
-		log.Printf("  │ ✗ Auth completion failed (HTTP %d)", resp2.StatusCode)
-		log.Printf("  └───────────────────────────────────")
-		return nil, fmt.Errorf("auth completion failed with status %d", resp2.StatusCode)
-	}
-
-	var authResp FlowCompleteResponse
-	if err := json.NewDecoder(resp2.Body).Decode(&authResp); err != nil {
-		log.Printf("  │ ✗ Failed to parse auth response: %v", err)
-		log.Printf("  └───────────────────────────────────")
-		return nil, fmt.Errorf("failed to parse auth response: %w", err)
-	}
-
-	log.Printf("  │ ✓ Authentication successful")
+	log.Printf("  │ ✓ Authentication successful (expires in %v)", time.Until(expiresAt).Round(time.Second))
 	log.Printf("  └───────────────────────────────────")
 
-	auth := &Auth{
-		DevelopAppID: developAppID,
-		FlowID:       flowResp.FlowID,
-		BearerToken:  authResp.Assertion,
-		ExpiresAt:    time.Now().Add(time.Duration(tokenRefreshSeconds) * time.Second),
-		LastRefresh:  time.Now(),
-	}
-
-	return auth, nil
+	return &Auth{
+		BearerToken: token,
+		ExpiresAt:   refreshAt,
+		LastRefresh: time.Now(),
+	}, nil
 }
 
 // GetAuth returns a valid Thunder auth token, refreshing if needed
