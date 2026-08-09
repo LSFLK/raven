@@ -26,22 +26,22 @@ func TestResolveMailboxEmailPriority(t *testing.T) {
 			name:          "login email wins",
 			loginIdentity: " user@example.com ",
 			authID:        "id@example.net",
-			domain:        "silver.example.com",
+			domain:        "opengovmail.example.com",
 			want:          "user@example.com",
 		},
 		{
 			name:          "auth id email used",
 			loginIdentity: "user2",
-			authID:        "user2@silver.example.com",
+			authID:        "user2@opengovmail.example.com",
 			domain:        "example.com",
-			want:          "user2@silver.example.com",
+			want:          "user2@opengovmail.example.com",
 		},
 		{
 			name:          "derived domain fallback",
 			loginIdentity: "user2",
 			authID:        "019cf0a6-114a",
-			domain:        "silver.example.com",
-			want:          "user2@silver.example.com",
+			domain:        "opengovmail.example.com",
+			want:          "user2@opengovmail.example.com",
 		},
 		{
 			name:          "empty when nothing resolvable",
@@ -133,7 +133,7 @@ func TestResolveOrganizationUnitDomainAndCycle(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			switch r.URL.Path {
 			case "/organization-units/ou-child":
-				_, _ = w.Write([]byte(`{"id":"ou-child","handle":"silver","parent":"ou-root"}`))
+				_, _ = w.Write([]byte(`{"id":"ou-child","handle":"opengovmail","parent":"ou-root"}`))
 			case "/organization-units/ou-root":
 				_, _ = w.Write([]byte(`{"id":"ou-root","handle":"example.com","parent":null}`))
 			default:
@@ -146,8 +146,8 @@ func TestResolveOrganizationUnitDomainAndCycle(t *testing.T) {
 		if err != nil {
 			t.Fatalf("resolveOrganizationUnitDomain() unexpected error: %v", err)
 		}
-		if domain != "silver.example.com" {
-			t.Fatalf("domain = %q, want %q", domain, "silver.example.com")
+		if domain != "opengovmail.example.com" {
+			t.Fatalf("domain = %q, want %q", domain, "opengovmail.example.com")
 		}
 	})
 
@@ -275,7 +275,7 @@ func TestResolveDomainFromOrganizationUnit_AdditionalBranches(t *testing.T) {
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"id":"ou-child","handle":"silver","parent":"ou-root"}`))
+			_, _ = w.Write([]byte(`{"id":"ou-child","handle":"opengovmail","parent":"ou-root"}`))
 		case "/organization-units/ou-root":
 			if r.Header.Get("Authorization") != "Bearer assertion-user" {
 				w.WriteHeader(http.StatusUnauthorized)
@@ -298,8 +298,8 @@ func TestResolveDomainFromOrganizationUnit_AdditionalBranches(t *testing.T) {
 		t.Fatalf("extractBaseURL() = %q, want %q", baseURL, srv.URL)
 	}
 
-	if got := resolveDomainFromOrganizationUnit(srv.URL+"/auth/credentials/authenticate", "ou-child", "user2", "pass"); got != "silver.example.com" {
-		t.Fatalf("resolveDomainFromOrganizationUnit() = %q, want %q", got, "silver.example.com")
+	if got := resolveDomainFromOrganizationUnit(srv.URL+"/auth/credentials/authenticate", "ou-child", "user2", "pass"); got != "opengovmail.example.com" {
+		t.Fatalf("resolveDomainFromOrganizationUnit() = %q, want %q", got, "opengovmail.example.com")
 	}
 }
 

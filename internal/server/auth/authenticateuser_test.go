@@ -243,7 +243,7 @@ func TestAuthenticateUser_SubdomainEmailFromIDP(t *testing.T) {
 	authServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"id":"user2@silver.example.com","type":"test-user","ouId":"silver"}`))
+		_, _ = w.Write([]byte(`{"id":"user2@opengovmail.example.com","type":"test-user","ouId":"opengovmail"}`))
 	}))
 	defer authServer.Close()
 
@@ -261,14 +261,14 @@ func TestAuthenticateUser_SubdomainEmailFromIDP(t *testing.T) {
 	conn := server.NewMockTLSConn()
 	state := &models.ClientState{}
 
-	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user2@silver.example.com", "password"}, state)
+	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user2@opengovmail.example.com", "password"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A001 OK") {
 		t.Fatalf("Expected successful login, got: %s", response)
 	}
 
-	if state.Email != "user2@silver.example.com" {
+	if state.Email != "user2@opengovmail.example.com" {
 		t.Fatalf("Expected canonical subdomain email, got: %s", state.Email)
 	}
 }
@@ -284,7 +284,7 @@ func TestAuthenticateUser_SubdomainEmailFromOrgUnitHierarchy(t *testing.T) {
 		case "/auth/credentials/authenticate":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"silveruser","ouId":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
+			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"opengovmailuser","ouId":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
 		case "/flow/execute":
 			var payload map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -333,7 +333,7 @@ func TestAuthenticateUser_SubdomainEmailFromOrgUnitHierarchy(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":"019cf0a5-4109-79ac-857b-07fc7b5c19ac","handle":"silver","parent":"019cf0a3-c234-7190-a4c9-d5f6860a44e9"}`))
+			_, _ = w.Write([]byte(`{"id":"019cf0a5-4109-79ac-857b-07fc7b5c19ac","handle":"opengovmail","parent":"019cf0a3-c234-7190-a4c9-d5f6860a44e9"}`))
 		case "/organization-units/019cf0a3-c234-7190-a4c9-d5f6860a44e9":
 			if r.Header.Get("Authorization") != "Bearer test-assertion" {
 				w.WriteHeader(http.StatusUnauthorized)
@@ -367,14 +367,14 @@ func TestAuthenticateUser_SubdomainEmailFromOrgUnitHierarchy(t *testing.T) {
 	conn := server.NewMockTLSConn()
 	state := &models.ClientState{}
 
-	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user2@silver.example.com", "password"}, state)
+	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user2@opengovmail.example.com", "password"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A001 OK") {
 		t.Fatalf("Expected successful login, got: %s", response)
 	}
 
-	if state.Email != "user2@silver.example.com" {
+	if state.Email != "user2@opengovmail.example.com" {
 		t.Fatalf("Expected OU-derived subdomain email, got: %s", state.Email)
 	}
 
@@ -394,7 +394,7 @@ func TestAuthenticateUser_UsernameWithDomainMismatchFromOrgUnit(t *testing.T) {
 		case "/auth/credentials/authenticate":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"silveruser","ouId":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
+			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"opengovmailuser","ouId":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
 		case "/flow/execute":
 			var payload map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -415,7 +415,7 @@ func TestAuthenticateUser_UsernameWithDomainMismatchFromOrgUnit(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":"019cf0a5-4109-79ac-857b-07fc7b5c19ac","handle":"silver","parent":"019cf0a3-c234-7190-a4c9-d5f6860a44e9"}`))
+			_, _ = w.Write([]byte(`{"id":"019cf0a5-4109-79ac-857b-07fc7b5c19ac","handle":"opengovmail","parent":"019cf0a3-c234-7190-a4c9-d5f6860a44e9"}`))
 		case "/organization-units/019cf0a3-c234-7190-a4c9-d5f6860a44e9":
 			if r.Header.Get("Authorization") != "Bearer test-assertion" {
 				w.WriteHeader(http.StatusUnauthorized)
@@ -463,7 +463,7 @@ func TestAuthenticateUser_UsernameWithDomainMatchesOrgUnit(t *testing.T) {
 		case "/auth/credentials/authenticate":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"silveruser","ouId":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
+			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"opengovmailuser","ouId":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
 		case "/flow/execute":
 			var payload map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -484,7 +484,7 @@ func TestAuthenticateUser_UsernameWithDomainMatchesOrgUnit(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":"019cf0a5-4109-79ac-857b-07fc7b5c19ac","handle":"silver","parent":"019cf0a3-c234-7190-a4c9-d5f6860a44e9"}`))
+			_, _ = w.Write([]byte(`{"id":"019cf0a5-4109-79ac-857b-07fc7b5c19ac","handle":"opengovmail","parent":"019cf0a3-c234-7190-a4c9-d5f6860a44e9"}`))
 		case "/organization-units/019cf0a3-c234-7190-a4c9-d5f6860a44e9":
 			if r.Header.Get("Authorization") != "Bearer test-assertion" {
 				w.WriteHeader(http.StatusUnauthorized)
@@ -513,7 +513,7 @@ func TestAuthenticateUser_UsernameWithDomainMatchesOrgUnit(t *testing.T) {
 	conn := server.NewMockTLSConn()
 	state := &models.ClientState{}
 
-	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user2@silver.example.com", "password"}, state)
+	s.HandleLogin(conn, "A001", []string{"A001", "LOGIN", "user2@opengovmail.example.com", "password"}, state)
 
 	response := conn.GetWrittenData()
 	if !strings.Contains(response, "A001 OK") {
