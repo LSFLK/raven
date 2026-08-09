@@ -60,7 +60,7 @@ docker run -d --rm \
   -v $(pwd)/data:/app/data \
   -v $(pwd)/certs:/certs \
   -v $(pwd)/delivery.yaml:/app/delivery.yaml \
-  ghcr.io/lsflk/raven:latest
+  ghcr.io/opengovmail/raven:latest
 ```
 
 See the [example delivery.yaml](../config/delivery.yaml) for reference.

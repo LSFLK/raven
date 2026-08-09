@@ -7,9 +7,9 @@
 **_A lightweight Mail Delivery Agent written in Go, providing IMAP, LMTP, and SASL support with SQLite-based storage._**
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
-![CI](https://img.shields.io/github/actions/workflow/status/LSFLK/raven/release.yaml)
-![Security Scan](https://img.shields.io/github/actions/workflow/status/LSFLK/raven/linters.yaml?label=security)
-![Last Commit](https://img.shields.io/github/last-commit/LSFLK/raven)
+![CI](https://img.shields.io/github/actions/workflow/status/OpenGovMail/raven/release.yaml)
+![Security Scan](https://img.shields.io/github/actions/workflow/status/OpenGovMail/raven/linters.yaml?label=security)
+![Last Commit](https://img.shields.io/github/last-commit/OpenGovMail/raven)
 
 <p align="center">
   •   <a href="#why-raven">Why Raven?</a> •
@@ -62,21 +62,21 @@ All services use a **multi-database SQLite architecture** for efficient data iso
 ### Option 1: Pull from GitHub Container Registry (Recommended)
 
 ```bash
-docker pull ghcr.io/lsflk/raven:latest
+docker pull ghcr.io/opengovmail/raven:latest
 docker run -d --rm \
   --name raven \
   -p 143:143 -p 993:993 -p 24:24 \
   -v $(pwd)/config:/etc/raven \
   -v $(pwd)/data:/app/data \
   -v $(pwd)/certs:/certs \
-  ghcr.io/lsflk/raven:latest
+  ghcr.io/opengovmail/raven:latest
 ```
 
 ### Option 2: Build from Source
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/LSFLK/raven.git
+git clone https://github.com/OpenGovMail/raven.git
 cd raven
 ```
 
@@ -134,9 +134,9 @@ You can see the [example delivery.yaml](../config/delivery.yaml) for reference. 
 
 ## Contributing
 
-Thank you for wanting to contribute to our project. Please see [CONTRIBUTING.md](https://github.com/LSFLK/raven/blob/main/docs/CONTRIBUTING.md) for more details.
+Thank you for wanting to contribute to our project. Please see [CONTRIBUTING.md](https://github.com/OpenGovMail/raven/blob/main/docs/CONTRIBUTING.md) for more details.
 
 ## License
 
-Distributed under the Apache 2.0 License. See [LICENSE](https://github.com/LSFLK/raven/blob/main/LICENSE) for more information.
+Distributed under the Apache 2.0 License. See [LICENSE](https://github.com/OpenGovMail/raven/blob/main/LICENSE) for more information.
 
