@@ -25,7 +25,7 @@ This project adheres to a code of conduct that all contributors are expected to 
    ```
 3. **Add the upstream repository**:
    ```bash
-   git remote add upstream https://github.com/LSFLK/raven.git
+   git remote add upstream https://github.com/OpenGovMail/raven.git
    ```
 
 ## How to Contribute

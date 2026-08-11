@@ -1495,7 +1495,7 @@ Content-Type: text/html; charset="UTF-8"
 <div dir=3D"ltr">Hi user,<div><img src=3D"cid:logo@example.com" alt=3D"Screens=
 hot 2026-01-04 at 11.33.43.png" width=3D"562" height=3D"556"><br></div></di=
 v><br><div class=3D"gmail_quote gmail_quote_container"><div dir=3D"ltr" cla=
-ss=3D"gmail_attr">On Tue, 20 Jan 2026 at 12:42, Aravinda H.W.K. &lt;<a href=
+ss=3D"gmail_attr">On Tue, 20 Jan 2026 at 12:42, User 1 &lt;<a href=
 =3D"mailto:user1@example.com">user1@example.com</a>&gt; wrote:<br><=
 /div><blockquote class=3D"gmail_quote" style=3D"margin:0px 0px 0px 0.8ex;bo=
 rder-left:1px solid rgb(204,204,204);padding-left:1ex">Hi user,<br>

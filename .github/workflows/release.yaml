@@ -44,8 +44,8 @@ jobs:
           target: raven-sasl
           push: true
           tags: |
-            ghcr.io/lsflk/raven-sasl:latest
-            ghcr.io/lsflk/raven-sasl:${{ steps.version.outputs.VERSION }}
+            ghcr.io/opengovmail/raven-sasl:latest
+            ghcr.io/opengovmail/raven-sasl:${{ steps.version.outputs.VERSION }}
 
       - name: Build and push raven-lmtp
         uses: docker/build-push-action@v5
@@ -55,8 +55,8 @@ jobs:
           target: raven-lmtp
           push: true
           tags: |
-            ghcr.io/lsflk/raven-lmtp:latest
-            ghcr.io/lsflk/raven-lmtp:${{ steps.version.outputs.VERSION }}
+            ghcr.io/opengovmail/raven-lmtp:latest
+            ghcr.io/opengovmail/raven-lmtp:${{ steps.version.outputs.VERSION }}
 
       - name: Build and push raven-imap
         uses: docker/build-push-action@v5
@@ -66,8 +66,8 @@ jobs:
           target: raven-imap
           push: true
           tags: |
-            ghcr.io/lsflk/raven-imap:latest
-            ghcr.io/lsflk/raven-imap:${{ steps.version.outputs.VERSION }}
+            ghcr.io/opengovmail/raven-imap:latest
+            ghcr.io/opengovmail/raven-imap:${{ steps.version.outputs.VERSION }}
 
       - name: Build and push raven-socketmap
         uses: docker/build-push-action@v5
@@ -77,8 +77,8 @@ jobs:
           target: raven-socketmap
           push: true
           tags: |
-            ghcr.io/lsflk/raven-socketmap:latest
-            ghcr.io/lsflk/raven-socketmap:${{ steps.version.outputs.VERSION }}
+            ghcr.io/opengovmail/raven-socketmap:latest
+            ghcr.io/opengovmail/raven-socketmap:${{ steps.version.outputs.VERSION }}
 
       - name: Build and push raven (combined)
         uses: docker/build-push-action@v5
@@ -88,5 +88,5 @@ jobs:
           target: raven
           push: true
           tags: |
-            ghcr.io/lsflk/raven:latest
-            ghcr.io/lsflk/raven:${{ steps.version.outputs.VERSION }}
+            ghcr.io/opengovmail/raven:latest
+            ghcr.io/opengovmail/raven:${{ steps.version.outputs.VERSION }}

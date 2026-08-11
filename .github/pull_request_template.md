@@ -26,7 +26,7 @@
 
 <!-- Explain how reviewers can test your changes. -->
 
-To test the server, use the instructions in the [README](https://github.com/LSFLK/raven/blob/main/test/README.md) in the `test` directory.
+To test the server, use the instructions in the [README](https://github.com/OpenGovMail/raven/blob/main/test/README.md) in the `test` directory.
 
 ---
 
