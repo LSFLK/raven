@@ -1,6 +1,6 @@
-# Contributing to Raven (Silver Go IMAP)
+# Contributing to Raven (OpenGovMail Go IMAP)
 
-Thank you for your interest in contributing to the Raven (Silver Go IMAP) project! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to the Raven (OpenGovMail Go IMAP) project! This document provides guidelines and instructions for contributing.
 
 ## Table of Contents
 

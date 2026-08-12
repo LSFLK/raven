@@ -222,7 +222,7 @@ func TestAuthenticateOAuth_RejectsSASLUserEmailMismatch(t *testing.T) {
 		"aud":      []string{aud},
 		"exp":      time.Now().Add(2 * time.Minute).Unix(),
 		"username": "user2",
-		"email":    "user2@silver.example.com",
+		"email":    "user2@opengovmail.example.com",
 		"sub":      "subject-2",
 	})
 	if err != nil {
