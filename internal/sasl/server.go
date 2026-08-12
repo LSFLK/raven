@@ -13,6 +13,7 @@ import (
 	"os"
 	"raven/internal/auth/oauthbearer"
 	"raven/internal/conf"
+	"raven/internal/idp"
 	"strings"
 	"sync"
 	"time"
@@ -681,7 +682,7 @@ func (s *Server) authenticate(username, password string) bool {
 		"credentials": map[string]string{
 			"password": password,
 		},
-		"skip_assertion": true,
+		"skipAssertion": true,
 	}
 
 	requestBodyBytes, err := json.Marshal(requestPayload)
@@ -697,6 +698,10 @@ func (s *Server) authenticate(username, password string) bool {
 		return false
 	}
 	req.Header.Set("Content-Type", "application/json")
+	// Thunder's Direct API is gated by a shared secret; without it the endpoint answers 401.
+	if secret := idp.DirectAuthSecret(); secret != "" {
+		req.Header.Set("Direct-Auth-Secret", secret)
+	}
 
 	// Create HTTP client with TLS config
 	tlsConfig := &tls.Config{

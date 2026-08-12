@@ -3,7 +3,6 @@ package lmtp
 import (
 	"bufio"
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -75,15 +74,6 @@ func (m *mockConn) getWritten() string {
 	return m.writeBuf.String()
 }
 
-func decodeJSONBody(w http.ResponseWriter, r *http.Request, out any) bool {
-	if err := json.NewDecoder(r.Body).Decode(out); err != nil {
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return false
-	}
-
-	return true
-}
-
 func writeJSON(w http.ResponseWriter, payload any) bool {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
@@ -92,18 +82,6 @@ func writeJSON(w http.ResponseWriter, payload any) bool {
 	}
 
 	return true
-}
-
-func createLMTPTestJWT(exp int64) string {
-	header := map[string]string{"alg": "HS256", "typ": "JWT"}
-	headerJSON, _ := json.Marshal(header)
-	headerB64 := base64.RawURLEncoding.EncodeToString(headerJSON)
-
-	payload := map[string]int64{"exp": exp}
-	payloadJSON, _ := json.Marshal(payload)
-	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
-
-	return headerB64 + "." + payloadB64 + ".dummy-signature"
 }
 
 func setupTestStorage(t *testing.T) *storage.Storage {
@@ -1060,32 +1038,17 @@ func TestSession_Integration_BasicFlow(t *testing.T) {
 }
 
 func TestGroupEmailDelivery(t *testing.T) {
+	// Raven authenticates to the identity server as a service account.
+	t.Setenv("IDP_CLIENT_ID", "RAVEN_SYSTEM")
+	t.Setenv("IDP_CLIENT_SECRET", "secret")
+
 	idpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/flow/execute":
-			if r.Method != http.MethodPost {
-				w.WriteHeader(http.StatusMethodNotAllowed)
-				return
-			}
-
-			var reqBody map[string]any
-			if !decodeJSONBody(w, r, &reqBody) {
-				return
-			}
-
-			if _, ok := reqBody["applicationId"]; ok {
-				_ = writeJSON(w, map[string]any{
-					"flowId": "flow-123",
-					"data": map[string]any{
-						"actions": []map[string]string{{"ref": "action_001"}},
-					},
-				})
-				return
-			}
-
-			token := createLMTPTestJWT(time.Now().Add(1 * time.Hour).Unix())
-			_ = writeJSON(w, map[string]any{"assertion": token})
-
+		case "/oauth2/token":
+			_ = writeJSON(w, map[string]any{
+				"access_token": "test-system-token",
+				"expires_in":   3600,
+			})
 		case "/groups":
 			_ = writeJSON(w, map[string]any{
 				"groups": []map[string]string{{"id": "group-eng", "name": "engineering"}},
@@ -1164,7 +1127,7 @@ func TestGroupEmailDelivery(t *testing.T) {
 	cfg.Delivery.QuotaEnabled = false
 
 	conn := newMockConn()
-	resolver := groupresolver.NewGroupResolver(idpServer.URL, "app-123", "admin", "admin")
+	resolver := groupresolver.NewGroupResolver(idpServer.URL)
 	session := NewSession(conn, stor, cfg, resolver)
 
 	// Send complete LMTP transaction with group email

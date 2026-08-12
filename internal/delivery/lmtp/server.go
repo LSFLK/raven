@@ -6,12 +6,10 @@ import (
 	"log"
 	"net"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
 	"raven/internal/blobstorage"
-	"raven/internal/conf"
 	"raven/internal/db"
 	"raven/internal/delivery/config"
 	"raven/internal/delivery/groupresolver"
@@ -66,24 +64,9 @@ func initGroupResolver(cfg *config.Config) *groupresolver.GroupResolver {
 		return nil
 	}
 
-	systemUsername := strings.TrimSpace(os.Getenv("IDP_SYSTEM_USERNAME"))
-	if systemUsername == "" {
-		systemUsername = "admin"
-	}
-
-	systemPassword := strings.TrimSpace(os.Getenv("IDP_SYSTEM_PASSWORD"))
-	if systemPassword == "" {
-		systemPassword = "admin"
-	}
-
-	// Use shared application ID retrieval (env variables or thunder logs)
-	appID, err := conf.GetApplicationID()
-	if err != nil {
-		log.Printf("Warning: Failed to get application ID for group resolver: %v", err)
-		appID = ""
-	}
-
-	gr := groupresolver.NewGroupResolver(cfg.IDPBaseURL, appID, systemUsername, systemPassword)
+	// Credentials come from the environment via the idp package: raven authenticates to Thunder as
+	// a service account rather than as an administrator, so there is nothing to pass in here.
+	gr := groupresolver.NewGroupResolver(cfg.IDPBaseURL)
 	log.Printf("Initialized group resolver with IDP: %s", cfg.IDPBaseURL)
 
 	return gr

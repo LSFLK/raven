@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -88,36 +87,50 @@ func TestExtractBaseURL(t *testing.T) {
 	}
 }
 
-func TestStartAuthenticationFlowExecuteBehavior(t *testing.T) {
-	t.Setenv("IDP_FLOW_ACTION", "")
-	t.Setenv("idp_flow_action", "")
+func TestFetchSystemAssertion(t *testing.T) {
+	t.Run("returns the access token", func(t *testing.T) {
+		t.Setenv("IDP_CLIENT_ID", "RAVEN_SYSTEM")
+		t.Setenv("IDP_CLIENT_SECRET", "secret")
 
-	t.Run("execute returns action ref", func(t *testing.T) {
 		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/flow/execute" {
+			if r.URL.Path != "/oauth2/token" {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
+			if id, secret, ok := r.BasicAuth(); !ok || id != "RAVEN_SYSTEM" || secret != "secret" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"flowId":"f-1","data":{"actions":[{"ref":"action_123"}]}}`))
+			_, _ = w.Write([]byte(`{"access_token":"token-abc","expires_in":3600}`))
 		}))
 		defer srv.Close()
 
-		flowID, action := startAuthenticationFlow(srv.URL, "app-1")
-		if flowID != "f-1" || action != "action_123" {
-			t.Fatalf("startAuthenticationFlow() = (%q,%q), want (%q,%q)", flowID, action, "f-1", "action_123")
+		if got := fetchSystemAssertion(srv.URL); got != "token-abc" {
+			t.Fatalf("fetchSystemAssertion() = %q, want %q", got, "token-abc")
 		}
 	})
 
-	t.Run("returns empty when execute fails", func(t *testing.T) {
-		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusNotFound)
+	t.Run("returns empty when no service account is configured", func(t *testing.T) {
+		t.Setenv("IDP_CLIENT_ID", "")
+		t.Setenv("IDP_CLIENT_SECRET", "")
+
+		if got := fetchSystemAssertion("https://idp.example.com"); got != "" {
+			t.Fatalf("fetchSystemAssertion() = %q, want empty", got)
+		}
+	})
+
+	t.Run("returns empty when the token endpoint rejects the client", func(t *testing.T) {
+		t.Setenv("IDP_CLIENT_ID", "RAVEN_SYSTEM")
+		t.Setenv("IDP_CLIENT_SECRET", "wrong")
+
+		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
 		}))
 		defer srv.Close()
 
-		flowID, action := startAuthenticationFlow(srv.URL, "app-1")
-		if flowID != "" || action != "" {
-			t.Fatalf("startAuthenticationFlow() = (%q,%q), want empty results", flowID, action)
+		if got := fetchSystemAssertion(srv.URL); got != "" {
+			t.Fatalf("fetchSystemAssertion() = %q, want empty", got)
 		}
 	})
 }
@@ -232,52 +245,31 @@ func TestPostJSONAndGetJSON_ErrorAndSuccess(t *testing.T) {
 }
 
 func TestResolveDomainFromOrganizationUnit_AdditionalBranches(t *testing.T) {
-	if got := resolveDomainFromOrganizationUnit("not a url", "ou-1", "user", "pass"); got != "" {
+	if got := resolveDomainFromOrganizationUnit("not a url", "ou-1"); got != "" {
 		t.Fatalf("expected empty result for invalid auth URL, got %q", got)
 	}
 
-	t.Setenv("THUNDER_DEVELOP_APP_ID", "app-1")
-	t.Setenv("IDP_SYSTEM_USERNAME", "admin")
-	t.Setenv("IDP_SYSTEM_PASSWORD", "admin")
-	t.Setenv("IDP_FLOW_ACTION", "")
-	t.Setenv("idp_flow_action", "")
+	t.Setenv("IDP_CLIENT_ID", "RAVEN_SYSTEM")
+	t.Setenv("IDP_CLIENT_SECRET", "secret")
 
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/flow/execute":
-			defer func() { _ = r.Body.Close() }()
-			var payload map[string]any
-			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				_, _ = w.Write([]byte("invalid json"))
-				return
-			}
-
-			if _, hasFlowType := payload["flowType"]; hasFlowType {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"flowId":"flow-1","data":{"actions":[{"ref":"action_1"}]}}`))
-				return
-			}
-
-			inputs, _ := payload["inputs"].(map[string]any)
-			username, _ := inputs["username"].(string)
-			if username == "admin" {
+		case "/oauth2/token":
+			if id, secret, ok := r.BasicAuth(); !ok || id != "RAVEN_SYSTEM" || secret != "secret" {
 				w.WriteHeader(http.StatusUnauthorized)
-				_, _ = w.Write([]byte("unauthorized"))
 				return
 			}
-
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"assertion":"assertion-user"}`))
+			_, _ = w.Write([]byte(`{"access_token":"system-token","expires_in":3600}`))
 		case "/organization-units/ou-child":
-			if r.Header.Get("Authorization") != "Bearer assertion-user" {
+			if r.Header.Get("Authorization") != "Bearer system-token" {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"id":"ou-child","handle":"opengovmail","parent":"ou-root"}`))
 		case "/organization-units/ou-root":
-			if r.Header.Get("Authorization") != "Bearer assertion-user" {
+			if r.Header.Get("Authorization") != "Bearer system-token" {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
@@ -298,7 +290,7 @@ func TestResolveDomainFromOrganizationUnit_AdditionalBranches(t *testing.T) {
 		t.Fatalf("extractBaseURL() = %q, want %q", baseURL, srv.URL)
 	}
 
-	if got := resolveDomainFromOrganizationUnit(srv.URL+"/auth/credentials/authenticate", "ou-child", "user2", "pass"); got != "opengovmail.example.com" {
+	if got := resolveDomainFromOrganizationUnit(srv.URL+"/auth/credentials/authenticate", "ou-child"); got != "opengovmail.example.com" {
 		t.Fatalf("resolveDomainFromOrganizationUnit() = %q, want %q", got, "opengovmail.example.com")
 	}
 }
@@ -317,67 +309,6 @@ func TestHandleSSLConnection_LoadCertFailureClosesConn(t *testing.T) {
 	if !conn.closed {
 		t.Fatal("expected connection to be closed on cert load failure")
 	}
-}
-
-func TestFetchAssertionBranches(t *testing.T) {
-	t.Run("returns empty when app id unavailable", func(t *testing.T) {
-		t.Setenv("THUNDER_DEVELOP_APP_ID", "")
-		t.Setenv("APPLICATION_ID", "")
-		t.Setenv("applicationId", "")
-
-		tmpDir := t.TempDir()
-		oldWD, err := os.Getwd()
-		if err != nil {
-			t.Fatalf("failed to get cwd: %v", err)
-		}
-		if err := os.Chdir(tmpDir); err != nil {
-			t.Fatalf("failed to chdir: %v", err)
-		}
-		defer func() { _ = os.Chdir(oldWD) }()
-
-		if got := fetchAssertion("https://idp.example.com", "user", "pass"); got != "" {
-			t.Fatalf("fetchAssertion() = %q, want empty", got)
-		}
-	})
-
-	t.Run("returns empty when flow bootstrap fails", func(t *testing.T) {
-		t.Setenv("THUNDER_DEVELOP_APP_ID", "app-1")
-
-		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusNotFound)
-		}))
-		defer srv.Close()
-
-		if got := fetchAssertion(srv.URL, "user", "pass"); got != "" {
-			t.Fatalf("fetchAssertion() = %q, want empty", got)
-		}
-	})
-
-	t.Run("returns trimmed assertion", func(t *testing.T) {
-		t.Setenv("THUNDER_DEVELOP_APP_ID", "app-1")
-
-		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			defer func() { _ = r.Body.Close() }()
-			var payload map[string]any
-			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			if _, hasFlowType := payload["flowType"]; hasFlowType {
-				_, _ = w.Write([]byte(`{"flowId":"flow-x","data":{"actions":[{"ref":"action_9"}]}}`))
-				return
-			}
-
-			_, _ = w.Write([]byte(`{"assertion":"  token-abc  "}`))
-		}))
-		defer srv.Close()
-
-		if got := fetchAssertion(srv.URL, "user", "pass"); got != "token-abc" {
-			t.Fatalf("fetchAssertion() = %q, want %q", got, "token-abc")
-		}
-	})
 }
 
 type sslTrackingConn struct {

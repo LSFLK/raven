@@ -10,15 +10,6 @@ import (
 	"time"
 )
 
-func decodeRequestJSON(w http.ResponseWriter, r *http.Request, out any) bool {
-	if err := json.NewDecoder(r.Body).Decode(out); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return false
-	}
-
-	return true
-}
-
 func writeResponseJSON(w http.ResponseWriter, payload any) bool {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
@@ -75,32 +66,22 @@ func TestExtractJWTExpiry(t *testing.T) {
 }
 
 func TestGroupResolverAuthentication(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/flow/execute" && r.Method == http.MethodPost {
-			var reqBody map[string]interface{}
-			if !decodeRequestJSON(w, r, &reqBody) {
-				return
-			}
+	// Raven authenticates to the identity server as a service account.
+	t.Setenv("IDP_CLIENT_ID", "RAVEN_SYSTEM")
+	t.Setenv("IDP_CLIENT_SECRET", "secret")
 
-			if _, ok := reqBody["applicationId"]; ok {
-				resp := map[string]interface{}{
-					"flowId": "flow-123",
-					"data": map[string]interface{}{
-						"actions": []map[string]string{{"ref": "action_001"}},
-					},
-				}
-				_ = writeResponseJSON(w, resp)
-			} else if _, ok := reqBody["flowId"]; ok {
-				exp := time.Now().Add(1 * time.Hour).Unix()
-				token := createTestJWT(exp)
-				resp := map[string]interface{}{"assertion": token}
-				_ = writeResponseJSON(w, resp)
-			}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/oauth2/token" && r.Method == http.MethodPost {
+			exp := time.Now().Add(1 * time.Hour).Unix()
+			_ = writeResponseJSON(w, map[string]interface{}{
+				"access_token": createTestJWT(exp),
+				"expires_in":   3600,
+			})
 		}
 	}))
 	defer server.Close()
 
-	gr := NewGroupResolver(server.URL, "app-123", "admin", "admin")
+	gr := NewGroupResolver(server.URL)
 	assertion, err := gr.getOrFreshAssertion()
 
 	if err != nil {
@@ -122,31 +103,18 @@ func TestGroupResolverAuthentication(t *testing.T) {
 }
 
 func TestGroupMemberResolution(t *testing.T) {
+	// Raven authenticates to the identity server as a service account.
+	t.Setenv("IDP_CLIENT_ID", "RAVEN_SYSTEM")
+	t.Setenv("IDP_CLIENT_SECRET", "secret")
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/flow/execute":
-			var reqBody map[string]interface{}
-			if !decodeRequestJSON(w, r, &reqBody) {
-				return
-			}
-
-			if _, ok := reqBody["applicationId"]; ok {
-				// Bootstrap request
-				resp := map[string]interface{}{
-					"flowId": "flow-123",
-					"data": map[string]interface{}{
-						"actions": []map[string]string{{"ref": "action_001"}},
-					},
-				}
-				_ = writeResponseJSON(w, resp)
-			} else {
-				// Flow execute request
-				exp := time.Now().Add(1 * time.Hour).Unix()
-				token := createTestJWT(exp)
-				resp := map[string]interface{}{"assertion": token}
-				_ = writeResponseJSON(w, resp)
-			}
-
+		case "/oauth2/token":
+			exp := time.Now().Add(1 * time.Hour).Unix()
+			_ = writeResponseJSON(w, map[string]interface{}{
+				"access_token": createTestJWT(exp),
+				"expires_in":   3600,
+			})
 		case "/groups":
 			auth := r.Header.Get("Authorization")
 			if auth == "" {
@@ -216,7 +184,7 @@ func TestGroupMemberResolution(t *testing.T) {
 	}))
 	defer server.Close()
 
-	gr := NewGroupResolver(server.URL, "app-123", "admin", "admin")
+	gr := NewGroupResolver(server.URL)
 	members, err := gr.ResolveGroupMembers("engineering")
 
 	if err != nil {
@@ -240,29 +208,18 @@ func TestGroupMemberResolution(t *testing.T) {
 }
 
 func TestGroupNotFound(t *testing.T) {
+	// Raven authenticates to the identity server as a service account.
+	t.Setenv("IDP_CLIENT_ID", "RAVEN_SYSTEM")
+	t.Setenv("IDP_CLIENT_SECRET", "secret")
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/flow/execute":
-			var reqBody map[string]interface{}
-			if !decodeRequestJSON(w, r, &reqBody) {
-				return
-			}
-
-			if _, ok := reqBody["applicationId"]; ok {
-				resp := map[string]interface{}{
-					"flowId": "flow-123",
-					"data": map[string]interface{}{
-						"actions": []map[string]string{{"ref": "action_001"}},
-					},
-				}
-				_ = writeResponseJSON(w, resp)
-			} else {
-				exp := time.Now().Add(1 * time.Hour).Unix()
-				token := createTestJWT(exp)
-				resp := map[string]interface{}{"assertion": token}
-				_ = writeResponseJSON(w, resp)
-			}
-
+		case "/oauth2/token":
+			exp := time.Now().Add(1 * time.Hour).Unix()
+			_ = writeResponseJSON(w, map[string]interface{}{
+				"access_token": createTestJWT(exp),
+				"expires_in":   3600,
+			})
 		case "/groups":
 			auth := r.Header.Get("Authorization")
 			if auth == "" {
@@ -280,7 +237,7 @@ func TestGroupNotFound(t *testing.T) {
 	}))
 	defer server.Close()
 
-	gr := NewGroupResolver(server.URL, "app-123", "admin", "admin")
+	gr := NewGroupResolver(server.URL)
 	_, err := gr.ResolveGroupMembers("nonexistent")
 
 	if err == nil {

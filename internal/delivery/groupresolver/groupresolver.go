@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"raven/internal/idp"
 )
 
 const (
@@ -27,23 +29,19 @@ type AssertionCache struct {
 // GroupResolver handles group resolution from IDP
 type GroupResolver struct {
 	baseURL        string
-	applicationID  string
 	assertionCache *AssertionCache
 	mu             sync.RWMutex
 	httpClient     *http.Client
-	systemUsername string
-	systemPassword string
-	flowActionRef  string
 }
 
-// NewGroupResolver creates a new GroupResolver
-func NewGroupResolver(baseURL, applicationID, systemUsername, systemPassword string) *GroupResolver {
+// NewGroupResolver creates a new GroupResolver.
+//
+// It takes no credentials: raven authenticates to Thunder as a service account, configured
+// through the environment. See the idp package.
+func NewGroupResolver(baseURL string) *GroupResolver {
 	return &GroupResolver{
-		baseURL:        baseURL,
-		applicationID:  applicationID,
-		systemUsername: systemUsername,
-		systemPassword: systemPassword,
-		httpClient:     buildHTTPClient(),
+		baseURL:    baseURL,
+		httpClient: buildHTTPClient(),
 	}
 }
 
@@ -154,87 +152,9 @@ func (gr *GroupResolver) getOrFreshAssertion() (string, error) {
 	return assertion, nil
 }
 
-// fetchAssertion performs the IDP authentication flow to get an assertion
+// fetchAssertion obtains a system access token for raven's service account.
 func (gr *GroupResolver) fetchAssertion() (string, time.Time, error) {
-	// Step 1: Start authentication flow
-	flowID, actionRef, err := gr.startAuthenticationFlow()
-	if err != nil {
-		return "", time.Time{}, fmt.Errorf("failed to start authentication flow: %w", err)
-	}
-
-	if actionRef != "" {
-		gr.flowActionRef = actionRef
-	}
-	if gr.flowActionRef == "" {
-		gr.flowActionRef = "action_001"
-	}
-
-	// Step 2: Execute flow with credentials
-	payload := map[string]any{
-		"flowId": flowID,
-		"inputs": map[string]string{
-			"username":              gr.systemUsername,
-			"password":              gr.systemPassword,
-			"requested_permissions": "system",
-		},
-		"action": gr.flowActionRef,
-	}
-
-	var result struct {
-		Assertion string `json:"assertion"`
-	}
-
-	if err := gr.postJSON(gr.baseURL+"/flow/execute", payload, "", &result); err != nil {
-		return "", time.Time{}, fmt.Errorf("flow execute failed: %w", err)
-	}
-
-	assertion := strings.TrimSpace(result.Assertion)
-	if assertion == "" {
-		return "", time.Time{}, fmt.Errorf("no assertion returned from IDP")
-	}
-
-	// Decode JWT to get expiry
-	expiresAt, err := extractJWTExpiry(assertion)
-	if err != nil {
-		// If we can't decode, assume 1 hour expiry
-		log.Printf("GroupResolver: could not decode JWT expiry, assuming 1 hour: %v", err)
-		expiresAt = time.Now().Add(1 * time.Hour)
-	}
-
-	return assertion, expiresAt, nil
-}
-
-// startAuthenticationFlow initiates the authentication flow with the IDP
-func (gr *GroupResolver) startAuthenticationFlow() (string, string, error) {
-	type executeFlowResponse struct {
-		FlowID string `json:"flowId"`
-		Data   struct {
-			Actions []struct {
-				Ref string `json:"ref"`
-			} `json:"actions"`
-		} `json:"data"`
-	}
-
-	var result executeFlowResponse
-	err := gr.postJSON(gr.baseURL+"/flow/execute", map[string]string{
-		"applicationId": gr.applicationID,
-		"flowType":      "AUTHENTICATION",
-	}, "", &result)
-
-	if err != nil {
-		return "", "", err
-	}
-
-	if result.FlowID == "" {
-		return "", "", fmt.Errorf("no flowId returned from IDP")
-	}
-
-	actionRef := ""
-	if len(result.Data.Actions) > 0 {
-		actionRef = strings.TrimSpace(result.Data.Actions[0].Ref)
-	}
-
-	return result.FlowID, actionRef, nil
+	return idp.SystemToken(gr.baseURL)
 }
 
 // lookupGroupIDByName looks up a group ID by its name
@@ -430,41 +350,6 @@ func firstNonEmpty(values ...string) string {
 type Member struct {
 	ID   string `json:"id"`
 	Type string `json:"type"` // "user" or "group"
-}
-
-// postJSON performs a POST request with JSON payload
-func (gr *GroupResolver) postJSON(endpoint string, payload any, assertion string, out any) error {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequest("POST", endpoint, strings.NewReader(string(body)))
-	if err != nil {
-		return err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	if assertion != "" {
-		req.Header.Set("Authorization", "Bearer "+assertion)
-	}
-
-	resp, err := gr.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(respBody)))
-	}
-
-	if out == nil {
-		return nil
-	}
-
-	return json.NewDecoder(resp.Body).Decode(out)
 }
 
 // getJSON performs a GET request with JSON response

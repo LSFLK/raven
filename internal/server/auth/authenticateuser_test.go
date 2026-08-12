@@ -1,7 +1,6 @@
 package auth_test
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -276,56 +275,23 @@ func TestAuthenticateUser_SubdomainEmailFromIDP(t *testing.T) {
 // TestAuthenticateUser_SubdomainEmailFromOrgUnitHierarchy verifies domain construction
 // from organization-unit handles when auth response doesn't include an email id.
 func TestAuthenticateUser_SubdomainEmailFromOrgUnitHierarchy(t *testing.T) {
-	flowExecuteCalls := 0
-	t.Setenv("IDP_SYSTEM_USERNAME", "svc-admin")
-	t.Setenv("IDP_SYSTEM_PASSWORD", "svc-secret")
+	tokenCalls := 0
+	t.Setenv("IDP_CLIENT_ID", "RAVEN_SYSTEM")
+	t.Setenv("IDP_CLIENT_SECRET", "svc-secret")
 	authServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/auth/credentials/authenticate":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"opengovmailuser","ouId":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
-		case "/flow/execute":
-			var payload map[string]any
-			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				t.Fatalf("Failed to decode flow payload: %v", err)
+		case "/oauth2/token":
+			tokenCalls++
+			if id, secret, ok := r.BasicAuth(); !ok || id != "RAVEN_SYSTEM" || secret != "svc-secret" {
+				t.Fatalf("Expected the service account's credentials, got id=%q ok=%v", id, ok)
 			}
-
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-
-			if _, ok := payload["applicationId"]; ok {
-				flowExecuteCalls++
-				if payload["flowType"] != "AUTHENTICATION" {
-					t.Fatalf("Expected AUTHENTICATION flow type, got %#v", payload["flowType"])
-				}
-				_, _ = w.Write([]byte(`{"flowId":"019cf0fe-2f92-77c9-b613-01e2638b4b2e","flowStatus":"INCOMPLETE","type":"VIEW","data":{"actions":[{"ref":"action_009","nextNode":"basic_auth"}]}}`))
-				return
-			}
-
-			flowExecuteCalls++
-			if payload["flowId"] != "019cf0fe-2f92-77c9-b613-01e2638b4b2e" {
-				t.Fatalf("Expected returned flow id, got %#v", payload["flowId"])
-			}
-			if payload["action"] != "action_009" {
-				t.Fatalf("Expected returned action ref, got %#v", payload["action"])
-			}
-
-			inputs, ok := payload["inputs"].(map[string]any)
-			if !ok {
-				t.Fatalf("Expected inputs map in flow execute payload, got %#v", payload["inputs"])
-			}
-			if inputs["username"] != "svc-admin" {
-				t.Fatalf("Expected system username svc-admin, got %#v", inputs["username"])
-			}
-			if inputs["password"] != "svc-secret" {
-				t.Fatalf("Expected system password to be forwarded, got %#v", inputs["password"])
-			}
-			if inputs["requested_permissions"] != "system" {
-				t.Fatalf("Expected requested_permissions=system, got %#v", inputs["requested_permissions"])
-			}
-
-			_, _ = w.Write([]byte(`{"flowId":"019cf0fe-2f92-77c9-b613-01e2638b4b2e","flowStatus":"COMPLETE","data":{},"assertion":"test-assertion"}`))
+			_, _ = w.Write([]byte(`{"access_token":"test-assertion","expires_in":3600}`))
 		case "/organization-units/019cf0a5-4109-79ac-857b-07fc7b5c19ac":
 			if r.Header.Get("Authorization") != "Bearer test-assertion" {
 				w.WriteHeader(http.StatusUnauthorized)
@@ -378,16 +344,17 @@ func TestAuthenticateUser_SubdomainEmailFromOrgUnitHierarchy(t *testing.T) {
 		t.Fatalf("Expected OU-derived subdomain email, got: %s", state.Email)
 	}
 
-	if flowExecuteCalls != 2 {
-		t.Fatalf("Expected flow execute to be called twice, got %d", flowExecuteCalls)
+	if tokenCalls == 0 {
+		t.Fatalf("Expected the token endpoint to be called, got %d calls", tokenCalls)
 	}
 }
 
 // TestAuthenticateUser_UsernameWithDomainMismatchFromOrgUnit rejects email logins
 // when the login domain does not match the OU-derived domain.
 func TestAuthenticateUser_UsernameWithDomainMismatchFromOrgUnit(t *testing.T) {
-	t.Setenv("IDP_SYSTEM_USERNAME", "svc-admin")
-	t.Setenv("IDP_SYSTEM_PASSWORD", "svc-secret")
+	t.Setenv("IDP_CLIENT_ID", "RAVEN_SYSTEM")
+	t.Setenv("IDP_CLIENT_SECRET", "svc-secret")
+	tokenCalls := 0
 
 	authServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -395,19 +362,14 @@ func TestAuthenticateUser_UsernameWithDomainMismatchFromOrgUnit(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"opengovmailuser","ouId":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
-		case "/flow/execute":
-			var payload map[string]any
-			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				t.Fatalf("Failed to decode flow payload: %v", err)
+		case "/oauth2/token":
+			tokenCalls++
+			if id, secret, ok := r.BasicAuth(); !ok || id != "RAVEN_SYSTEM" || secret != "svc-secret" {
+				t.Fatalf("Expected the service account's credentials, got id=%q ok=%v", id, ok)
 			}
-
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			if _, ok := payload["applicationId"]; ok {
-				_, _ = w.Write([]byte(`{"flowId":"019cf0fe-2f92-77c9-b613-01e2638b4b2e","flowStatus":"INCOMPLETE","type":"VIEW","data":{"actions":[{"ref":"action_009"}]}}`))
-				return
-			}
-			_, _ = w.Write([]byte(`{"flowId":"019cf0fe-2f92-77c9-b613-01e2638b4b2e","flowStatus":"COMPLETE","data":{},"assertion":"test-assertion"}`))
+			_, _ = w.Write([]byte(`{"access_token":"test-assertion","expires_in":3600}`))
 		case "/organization-units/019cf0a5-4109-79ac-857b-07fc7b5c19ac":
 			if r.Header.Get("Authorization") != "Bearer test-assertion" {
 				w.WriteHeader(http.StatusUnauthorized)
@@ -455,8 +417,9 @@ func TestAuthenticateUser_UsernameWithDomainMismatchFromOrgUnit(t *testing.T) {
 // TestAuthenticateUser_UsernameWithDomainMatchesOrgUnit accepts email logins
 // when the login domain matches the OU-derived domain.
 func TestAuthenticateUser_UsernameWithDomainMatchesOrgUnit(t *testing.T) {
-	t.Setenv("IDP_SYSTEM_USERNAME", "svc-admin")
-	t.Setenv("IDP_SYSTEM_PASSWORD", "svc-secret")
+	t.Setenv("IDP_CLIENT_ID", "RAVEN_SYSTEM")
+	t.Setenv("IDP_CLIENT_SECRET", "svc-secret")
+	tokenCalls := 0
 
 	authServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -464,19 +427,14 @@ func TestAuthenticateUser_UsernameWithDomainMatchesOrgUnit(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"id":"019cf0a6-114a-7dad-bea1-9a36bc728ece","type":"opengovmailuser","ouId":"019cf0a5-4109-79ac-857b-07fc7b5c19ac"}`))
-		case "/flow/execute":
-			var payload map[string]any
-			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				t.Fatalf("Failed to decode flow payload: %v", err)
+		case "/oauth2/token":
+			tokenCalls++
+			if id, secret, ok := r.BasicAuth(); !ok || id != "RAVEN_SYSTEM" || secret != "svc-secret" {
+				t.Fatalf("Expected the service account's credentials, got id=%q ok=%v", id, ok)
 			}
-
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			if _, ok := payload["applicationId"]; ok {
-				_, _ = w.Write([]byte(`{"flowId":"019cf0fe-2f92-77c9-b613-01e2638b4b2e","flowStatus":"INCOMPLETE","type":"VIEW","data":{"actions":[{"ref":"action_009"}]}}`))
-				return
-			}
-			_, _ = w.Write([]byte(`{"flowId":"019cf0fe-2f92-77c9-b613-01e2638b4b2e","flowStatus":"COMPLETE","data":{},"assertion":"test-assertion"}`))
+			_, _ = w.Write([]byte(`{"access_token":"test-assertion","expires_in":3600}`))
 		case "/organization-units/019cf0a5-4109-79ac-857b-07fc7b5c19ac":
 			if r.Header.Get("Authorization") != "Bearer test-assertion" {
 				w.WriteHeader(http.StatusUnauthorized)
