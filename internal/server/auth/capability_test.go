@@ -49,6 +49,7 @@ func TestCapabilityCommand_RFCCompliance(t *testing.T) {
 			forbidCaps: []string{
 				"AUTH=PLAIN",
 				"LOGIN",
+				"SASL-IR",
 			},
 		},
 		{
@@ -58,6 +59,7 @@ func TestCapabilityCommand_RFCCompliance(t *testing.T) {
 				"IMAP4rev1",
 				"AUTH=PLAIN",
 				"LOGIN",
+				"SASL-IR",
 				"UIDPLUS",
 				"IDLE",
 				"NAMESPACE",
@@ -96,9 +98,9 @@ func TestCapabilityCommand_RFCCompliance(t *testing.T) {
 			capLine := lines[0]
 
 			if oauthReady {
-				tt.expectCaps = append(tt.expectCaps, "AUTH=OAUTHBEARER", "AUTH=XOAUTH2", "SASL-IR")
+				tt.expectCaps = append(tt.expectCaps, "AUTH=OAUTHBEARER", "AUTH=XOAUTH2")
 			} else {
-				tt.forbidCaps = append(tt.forbidCaps, "AUTH=OAUTHBEARER", "AUTH=XOAUTH2", "SASL-IR")
+				tt.forbidCaps = append(tt.forbidCaps, "AUTH=OAUTHBEARER", "AUTH=XOAUTH2")
 			}
 
 			// Check required capabilities using exact token matching

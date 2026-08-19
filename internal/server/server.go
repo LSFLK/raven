@@ -82,13 +82,13 @@ func (s *IMAPServer) greetingCapabilities(isTLS bool) string {
 	capabilities := []string{"IMAP4rev1"}
 
 	if isTLS {
-		capabilities = append(capabilities, "AUTH=PLAIN", "LOGIN")
+		capabilities = append(capabilities, "AUTH=PLAIN", "LOGIN", "SASL-IR")
 	} else {
 		capabilities = append(capabilities, "STARTTLS", "LOGINDISABLED")
 	}
 
 	if s.oauthSASLReady() {
-		capabilities = append(capabilities, "AUTH=OAUTHBEARER", "AUTH=XOAUTH2", "SASL-IR")
+		capabilities = append(capabilities, "AUTH=OAUTHBEARER", "AUTH=XOAUTH2")
 	}
 
 	capabilities = append(capabilities, "UIDPLUS", "IDLE", "LITERAL+")
