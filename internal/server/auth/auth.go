@@ -47,13 +47,13 @@ func buildCapabilities(deps ServerDeps, isTLS bool) []string {
 	capabilities := []string{"IMAP4rev1"}
 
 	if isTLS {
-		capabilities = append(capabilities, "AUTH=PLAIN", "LOGIN")
+		capabilities = append(capabilities, "AUTH=PLAIN", "LOGIN", "SASL-IR")
 	} else {
 		capabilities = append(capabilities, "STARTTLS", "LOGINDISABLED")
 	}
 
 	if oauthSASLReady(deps) {
-		capabilities = append(capabilities, "AUTH=OAUTHBEARER", "AUTH=XOAUTH2", "SASL-IR")
+		capabilities = append(capabilities, "AUTH=OAUTHBEARER", "AUTH=XOAUTH2")
 	}
 
 	capabilities = append(capabilities,
@@ -149,31 +149,46 @@ func HandleAuthenticate(deps ServerDeps, conn net.Conn, tag string, parts []stri
 			return
 		}
 
-		// Send continuation request
-		deps.SendResponse(conn, "+ ")
+		var authData string
+		if len(parts) >= 4 {
+			// Client sent the initial response inline, e.g. "AUTHENTICATE PLAIN <base64>".
+			// No continuation round-trip.
+			ir := strings.TrimSpace(parts[3])
+			if ir == "=" {
+				// "=" denotes an explicit zero-length initial response, distinct from
+				// omitting the argument entirely.
+				authData = ""
+			} else {
+				authData = ir
+			}
+		} else {
+			// Send continuation request
+			deps.SendResponse(conn, "+ ")
 
-		// Read the authentication data
-		buf := make([]byte, 8192)
-		_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second))
-		n, err := conn.Read(buf)
-		if err != nil {
-			deps.SendResponse(conn, fmt.Sprintf("%s NO Authentication failed", tag))
-			return
-		}
+			// Read the authentication data
+			buf := make([]byte, 8192)
+			_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+			n, err := conn.Read(buf)
+			if err != nil {
+				deps.SendResponse(conn, fmt.Sprintf("%s NO Authentication failed", tag))
+				return
+			}
 
-		authData := strings.TrimSpace(string(buf[:n]))
+			authData = strings.TrimSpace(string(buf[:n]))
 
-		// Client may cancel authentication with a single "*"
-		if authData == "*" {
-			deps.SendResponse(conn, fmt.Sprintf("%s BAD Authentication exchange cancelled", tag))
-			return
+			// Client may cancel authentication with a single "*". This only applies to
+			// a reply to the "+ " challenge above -- an inline value has no challenge
+			// to cancel.
+			if authData == "*" {
+				deps.SendResponse(conn, fmt.Sprintf("%s BAD Authentication exchange cancelled", tag))
+				return
+			}
 		}
 
 		log.Printf("AUTHENTICATE PLAIN: received %d bytes of auth data", len(authData))
 
 		// Decode base64 as per SASL challenge/response (PLAIN uses base64 here)
-		var decoded []byte
-		decoded, err = base64.StdEncoding.DecodeString(authData)
+		decoded, err := base64.StdEncoding.DecodeString(authData)
 		if err != nil {
 			log.Printf("AUTHENTICATE PLAIN: base64 decode failed: %v, treating as plain", err)
 			// If decode fails, fall back to treating the input as plain (some test-clients may do this)

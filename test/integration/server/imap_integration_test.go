@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"encoding/base64"
 	"raven/internal/db"
 	"strings"
 	"testing"
@@ -59,6 +60,42 @@ func TestIMAPServerToClient_Login(t *testing.T) {
 	}
 
 	// Logout
+	_ = client.Logout()
+}
+
+// TestIMAPServerToClient_AuthenticatePlainInlineIR tests AUTHENTICATE PLAIN with the
+// initial response sent inline on the command line, instead of via a "+ " continuation.
+func TestIMAPServerToClient_AuthenticatePlainInlineIR(t *testing.T) {
+	dbManager := helpers.SetupTestDatabase(t)
+	defer helpers.TeardownTestDatabase(t, dbManager)
+
+	_ = helpers.CreateTestUser(t, dbManager.DBManager, "alice@example.com")
+
+	imapServer := helpers.StartTestIMAPServer(t, dbManager.DBManager)
+	defer imapServer.Stop(t)
+
+	client := helpers.ConnectIMAP(t, imapServer.Address)
+	defer func() { _ = client.Close() }()
+
+	creds := "\x00alice@example.com\x00password"
+	inline := base64.StdEncoding.EncodeToString([]byte(creds))
+
+	responses, err := client.SendCommand("AUTHENTICATE PLAIN " + inline)
+	if err != nil {
+		t.Fatalf("AUTHENTICATE PLAIN failed: %v", err)
+	}
+
+	for _, line := range responses {
+		if strings.HasPrefix(line, "+ ") {
+			t.Errorf("Inline initial response should not trigger a continuation prompt, got: %s", line)
+		}
+	}
+
+	last := responses[len(responses)-1]
+	if !strings.Contains(last, "OK") {
+		t.Errorf("Expected OK response, got: %s", last)
+	}
+
 	_ = client.Logout()
 }
 
