@@ -308,6 +308,49 @@ func TestAuthenticatePlainEmptyCredentialsResponse(t *testing.T) {
 	}
 }
 
+// TestAuthenticatePlainSASLIRInline covers PLAIN with the initial response sent inline
+// instead of via a "+" continuation. No data is queued on the mock conn's read side, so a
+// regression back to the two-step flow would hang/timeout instead of failing cleanly.
+func TestAuthenticatePlainSASLIRInline(t *testing.T) {
+	s, cleanup := server.SetupTestServer(t)
+	defer cleanup()
+
+	conn := server.NewMockTLSConn()
+	state := &models.ClientState{Authenticated: false}
+	inline := base64.StdEncoding.EncodeToString([]byte("\x00testuser\x00testpass"))
+
+	s.HandleAuthenticate(conn, "A006", []string{"A006", "AUTHENTICATE", "PLAIN", inline}, state)
+
+	response := conn.GetWrittenData()
+	if strings.Contains(response, "+ ") {
+		t.Errorf("Inline SASL-IR response should not send a continuation request, got: %s", response)
+	}
+	if !strings.Contains(response, "A006") {
+		t.Errorf("Expected tagged response for A006, got: %s", response)
+	}
+}
+
+// TestAuthenticatePlainSASLIRExplicitEmpty covers the "=" inline argument, which means an
+// explicit empty response rather than "no response given" -- it must not trigger a "+ "
+// continuation, and since PLAIN needs real credentials it should fail auth.
+func TestAuthenticatePlainSASLIRExplicitEmpty(t *testing.T) {
+	s, cleanup := server.SetupTestServer(t)
+	defer cleanup()
+
+	conn := server.NewMockTLSConn()
+	state := &models.ClientState{Authenticated: false}
+
+	s.HandleAuthenticate(conn, "A007", []string{"A007", "AUTHENTICATE", "PLAIN", "="}, state)
+
+	response := conn.GetWrittenData()
+	if strings.Contains(response, "+ ") {
+		t.Errorf("Explicit empty SASL-IR (\"=\") should not send a continuation request, got: %s", response)
+	}
+	if !strings.Contains(response, "A007 NO") {
+		t.Errorf("Expected auth failure for empty credentials, got: %s", response)
+	}
+}
+
 // TestAuthenticatePlainTwoPartFallback tests the non-standard username\x00password fallback path.
 func TestAuthenticatePlainTwoPartFallback(t *testing.T) {
 	s, cleanup := server.SetupTestServer(t)
