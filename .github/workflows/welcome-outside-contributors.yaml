@@ -13,7 +13,6 @@ jobs:
       welcome:
             if: >-
                   ${{
-                    !github.event.issue.pull_request &&
                     github.event.comment.user.type != 'Bot' &&
                     contains(
                       fromJson('["NONE","FIRST_TIMER","FIRST_TIME_CONTRIBUTOR","CONTRIBUTOR"]'),
@@ -22,7 +21,7 @@ jobs:
                   }}
             runs-on: ubuntu-latest
             steps:
-                  - name: Welcome first-time outside commenters on issues
+                  - name: Welcome first-time outside commenters
                     uses: actions/github-script@v7
                     with:
                           github-token: ${{ secrets.OPENGOVMAIL_BOT_TOKEN || github.token }}
