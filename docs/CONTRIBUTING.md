@@ -51,19 +51,9 @@ We welcome various types of contributions:
 ### Go Code Style
 
 - Follow standard Go conventions and idioms
-- Use `gofmt` to format your code
+- Use `gofmt -l .` to format your code
 - Run `go vet` to catch common mistakes
 - Consider using `golangci-lint` for comprehensive linting
-
-Before opening a pull request, check Go formatting from the repository root:
-
-```bash
-gofmt -l .
-```
-
-No output means all checked files are formatted correctly. To format a reported
-file, run `gofmt -w path/to/file.go`. CI runs this check before `golangci-lint`
-and fails if any files need formatting.
 
 ### Code Organization
 
