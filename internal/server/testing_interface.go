@@ -24,6 +24,11 @@ func NewTestInterface(server *IMAPServer) *TestInterface {
 	return &TestInterface{server: server}
 }
 
+// SendGreeting exposes sendGreeting for testing
+func (t *TestInterface) SendGreeting(conn net.Conn, isTLS bool) {
+	t.server.sendGreeting(conn, isTLS)
+}
+
 // HandleCapability exposes the capability handler for testing
 func (t *TestInterface) HandleCapability(conn net.Conn, tag string, state *models.ClientState) {
 	auth.HandleCapability(t.server, conn, tag, []string{tag, "CAPABILITY"}, state)

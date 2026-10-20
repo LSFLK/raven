@@ -43,7 +43,10 @@ func oauthSASLReady(deps ServerDeps) bool {
 	return deps.GetConfig() != nil && deps.GetOAuthValidator() != nil
 }
 
-func buildCapabilities(deps ServerDeps, isTLS bool) []string {
+// BuildCapabilities returns the full capability list for the given TLS state.
+// It is used by both the greeting and the explicit CAPABILITY command so that
+// the two responses are always in sync.
+func BuildCapabilities(deps ServerDeps, isTLS bool) []string {
 	capabilities := []string{"IMAP4rev1"}
 
 	if isTLS {
@@ -85,7 +88,7 @@ func HandleCapability(deps ServerDeps, conn net.Conn, tag string, parts []string
 		}
 	}
 
-	capabilities := buildCapabilities(deps, isTLS)
+	capabilities := BuildCapabilities(deps, isTLS)
 
 	// Send CAPABILITY response
 	deps.SendResponse(conn, "* CAPABILITY "+strings.Join(capabilities, " "))
@@ -362,7 +365,7 @@ func HandleAuthenticate(deps ServerDeps, conn net.Conn, tag string, parts []stri
 		state.Username = actualUsername
 		state.Email = mailboxEmail
 
-		capabilities := strings.Join(buildCapabilities(deps, true), " ")
+		capabilities := strings.Join(BuildCapabilities(deps, true), " ")
 		deps.SendResponse(conn, fmt.Sprintf("%s OK [CAPABILITY %s] Authenticated", tag, capabilities))
 		return
 
@@ -577,7 +580,7 @@ func authenticateUser(deps ServerDeps, conn net.Conn, tag string, username strin
 		}
 
 		// Per RFC 3501, include CAPABILITY response code in OK response.
-		capabilities := strings.Join(buildCapabilities(deps, isTLS), " ")
+		capabilities := strings.Join(BuildCapabilities(deps, isTLS), " ")
 		deps.SendResponse(conn, fmt.Sprintf("%s OK [CAPABILITY %s] Authenticated", tag, capabilities))
 	} else {
 		body, _ := io.ReadAll(resp.Body)

@@ -322,3 +322,79 @@ func TestCapabilityCommand_ConcurrentAccess(t *testing.T) {
 		}
 	}
 }
+
+// TestGreeting_MatchesCapabilityCommand verifies that the greeting CAPABILITY list
+// is identical to the explicit CAPABILITY command response for both plain and TLS connections.
+func TestGreeting_MatchesCapabilityCommand(t *testing.T) {
+	tests := []struct {
+		name     string
+		isTLS    bool
+		mockConn func() MockConnInterface
+	}{
+		{
+			name:     "Plain connection",
+			isTLS:    false,
+			mockConn: func() MockConnInterface { return NewMockConn() },
+		},
+		{
+			name:     "TLS connection",
+			isTLS:    true,
+			mockConn: func() MockConnInterface { return NewMockTLSConn() },
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := SetupTestServerSimple(t)
+
+			// 1. Get greeting response
+			greetingConn := tt.mockConn()
+			srv.SendGreeting(greetingConn, tt.isTLS)
+			greetingData := strings.TrimSpace(greetingConn.GetWrittenData())
+
+			// Extract capability string from "* OK [CAPABILITY <caps>] SQLite IMAP server ready"
+			start := strings.Index(greetingData, "[CAPABILITY ")
+			if start == -1 {
+				t.Fatalf("Greeting missing [CAPABILITY ...]: %s", greetingData)
+			}
+			start += len("[CAPABILITY ")
+			end := strings.Index(greetingData[start:], "]")
+			if end == -1 {
+				t.Fatalf("Malformed greeting capability response code: %s", greetingData)
+			}
+			greetingCaps := strings.Fields(greetingData[start : start+end])
+
+			// 2. Get explicit CAPABILITY command response
+			cmdConn := tt.mockConn()
+			state := &models.ClientState{Authenticated: false}
+			srv.HandleCapability(cmdConn, "A001", state)
+			cmdData := strings.TrimSpace(cmdConn.GetWrittenData())
+			lines := strings.Split(cmdData, "\r\n")
+			if len(lines) < 1 || !strings.HasPrefix(lines[0], "* CAPABILITY ") {
+				t.Fatalf("Unexpected CAPABILITY command response: %s", cmdData)
+			}
+			cmdCaps := strings.Fields(strings.TrimPrefix(lines[0], "* CAPABILITY "))
+
+			// 3. Verify greeting and command capabilities are identical
+			if strings.Join(greetingCaps, " ") != strings.Join(cmdCaps, " ") {
+				t.Errorf("Greeting capabilities mismatch!\nGreeting: %v\nCommand:  %v", greetingCaps, cmdCaps)
+			}
+
+			// Verify required capabilities (including NAMESPACE and UNSELECT) are present
+			expected := []string{"IMAP4rev1", "UIDPLUS", "IDLE", "NAMESPACE", "UNSELECT", "LITERAL+"}
+			for _, exp := range expected {
+				found := false
+				for _, capItem := range greetingCaps {
+					if capItem == exp {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("Expected capability %q to be present in greeting, got: %v", exp, greetingCaps)
+				}
+			}
+		})
+	}
+}
+
