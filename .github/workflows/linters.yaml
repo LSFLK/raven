@@ -20,6 +20,14 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.25'
+      - name: Check Go formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::The following files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
