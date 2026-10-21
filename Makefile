@@ -493,7 +493,7 @@ deps:
 
 # Format code
 fmt:
-	go fmt ./...
+	golangci-lint fmt
 
 # Lint code
 lint:

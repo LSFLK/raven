@@ -397,4 +397,3 @@ func TestGreeting_MatchesCapabilityCommand(t *testing.T) {
 		})
 	}
 }
-
