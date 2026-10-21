@@ -74,7 +74,6 @@ func (s *IMAPServer) initOAuthValidation() {
 	s.oauthVal = validator
 }
 
-
 // GetConfig returns cached process configuration loaded at startup.
 func (s *IMAPServer) GetConfig() *conf.Config {
 	return s.cfg
